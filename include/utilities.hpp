@@ -23,7 +23,7 @@
 
 void mat4_to_float_array(glm::mat4 i_mat, float o_array[16]);
 void float_array_to_mat4(glm::mat4& o_mat, float i_array[16]);
-void ScreenPosToWorldRay(
+void screen_pos_to_world_ray(
     int mouseX, int mouseY,             // Mouse position, in pixels, from bottom-left corner of the window
     int screenWidth, int screenHeight,  // Window size, in pixels
     glm::mat4 ViewMatrix,               // Camera position and orientation
@@ -32,18 +32,51 @@ void ScreenPosToWorldRay(
     glm::vec3& out_direction            // Ouput : Direction, in world space, of the ray that goes "through" the mouse.
 );
 
+struct GBuffer {
+    enum GBUFFER_TEXTURE_TYPE {
+        GBUFFER_TEXTURE_TYPE_POSITION = 0,
+        GBUFFER_TEXTURE_TYPE_DIFFUSE  = 1,
+        GBUFFER_TEXTURE_TYPE_NORMAL   = 2,
+        GBUFFER_TEXTURE_TYPE_TEXCOORD = 3,
+        GBUFFER_NUM_TEXTURES          = 4
+    };
+    GLuint fbo;
+    GLuint textures[GBUFFER_NUM_TEXTURES];
+    GLuint depthTexture;
+} typedef GBuffer;
+
+GBuffer generate_gbuffer(unsigned int windowWidth, unsigned int windowHeight);
+
+struct Material {
+    std::string name;
+    float     albedo[3] = {1,1,1};
+    float     diffuse[3]        = {1,1,1};
+    float     specular[3]       = {1,1,1};
+    float     transFilter[3]    = {1,1,1};
+    float     dissolve          = 1.0;
+    float     specExp       = 10;
+    float     reflectSharp  = 60;
+    float     opticDensity  = 1.0;
+    GLuint    tAlbedo       = GL_FALSE;
+    GLuint    tDiffuse      = GL_FALSE;
+    GLuint    tNormal       = GL_FALSE;
+
+} typedef Material;
+
 struct ModelAsset {
-    GLuint   programID;
-    GLuint   texture;
-    GLuint   indices;
-    GLuint 	 vertices;
-    GLuint 	 uvs;
-    GLuint 	 normals;
-    GLuint   vao;
-    GLenum   drawMode;
-    GLenum   drawType;
-    GLint    drawStart;
-    GLint    drawCount;
+    std::string name;
+    GLuint     programID;
+    Material * mat;
+    GLuint     indices;
+    GLuint 	   vertices;
+    GLuint 	   uvs;
+    GLuint 	   normals;
+    GLuint 	   tangents;
+    GLuint     vao;
+    GLenum     drawMode;
+    GLenum     drawType;
+    GLint      drawStart;
+    GLint      drawCount;
 } typedef ModelAsset;
 
 //struct Id {
@@ -96,6 +129,7 @@ struct Entity {
 //	}
 //} typedef EntitySlotMap;
 
-void load_asset(ModelAsset &asset, std::string path);
+bool load_mtl(Material * mat, const std::string &path);
+void load_asset(ModelAsset * asset, const std::string &objpath, const std::string &mtlpath);
 
 #endif /* ifndef UTILITIES_HPP */

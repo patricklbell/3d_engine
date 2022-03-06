@@ -2,11 +2,48 @@
 #include <stdlib.h>
 #include <string.h>
 #include <string>
+#define cimg_display 0
+#include "CImg.h"
+using namespace cimg_library;
 
 #include <GL/glew.h>
 
 #include <GLFW/glfw3.h>
 
+GLuint loadImage(std::string imagepath){
+	printf("Loading texture: %s\n", imagepath.c_str());
+	CImg<unsigned char> src(imagepath.c_str());
+	int w = src.width();
+	int h = src.height();
+	//printf("width: %d, height: %d, size: %d, depth: %d\n",src.width(), src.height(), (int)src.size(), src.depth() );
+
+	src.permute_axes("cxyz");
+
+	// Create one OpenGL texture
+	GLuint textureID;
+	glGenTextures(1, &textureID);
+	
+	// "Bind" the newly created texture : all future texture functions will modify this texture
+	glBindTexture(GL_TEXTURE_2D, textureID);
+
+	// Give the image to OpenGL
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, src.data());
+
+	// Poor filtering, or ...
+	//glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	//glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST); 
+
+	// ... nice trilinear filtering ...
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+	// ... which requires mipmaps. Generate them automatically.
+	glGenerateMipmap(GL_TEXTURE_2D);
+
+	// Return the ID of the texture we just created
+	return textureID;
+}
 
 GLuint loadBMP_custom(std::string imagepath){
 
@@ -23,9 +60,9 @@ GLuint loadBMP_custom(std::string imagepath){
 	// Open the file
 	FILE * file = fopen(imagepath.c_str(),"rb");
 	if (!file){
-		printf("%s could not be opened. Are you in the right directory ? Don't forget to read the FAQ !\n", imagepath.c_str());
+		printf("Could not open BMP: %s\n", imagepath.c_str());
 		getchar();
-		return 0;
+		return GL_FALSE;
 	}
 
 	// Read the header, i.e. the 54 first bytes
@@ -95,7 +132,7 @@ GLuint loadBMP_custom(std::string imagepath){
 }
 
 // Since GLFW 3, glfwLoadTexture2D() has been removed. You have to use another texture loading library, 
-// or do it yourself (just like loadBMP_custom and loadDDS)
+// or do it yourself (just like loadImage and loadDDS)
 //GLuint loadTGA_glfw(const char * imagepath){
 //
 //	// Create one OpenGL texture

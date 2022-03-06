@@ -1,7 +1,13 @@
 # CMake entry point
 cmake_minimum_required (VERSION 3.0)
-set (CMAKE_CXX_STANDARD 17)
+
 project (engine)
+
+set (CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17")
+if(MSVC)
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /std:c++17")
+endif(MSVC)
 
 find_package(OpenGL REQUIRED)
 
@@ -23,9 +29,9 @@ include_directories(
 	external/glm-0.9.7.1/
 	external/glew-2.1.0/include/
 	external/imgui/include/
-	external/tinygltf/
 	external/bullet-2.82-r2704/src/
 	external/assimp-3.0.1270/include/
+	external/CImg-3.0.3_pre021822/
 	include/
 )
 
@@ -73,7 +79,7 @@ set(CMAKE_BUILD_TYPE Debug)
 
 add_executable (engine ${SOURCES})
 
-target_link_libraries(engine
+target_link_libraries(engine 
 	${ALL_LIBS}
 )
 
