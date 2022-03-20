@@ -1,4 +1,5 @@
 // Include standard headers
+#include "graphics.hpp"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string>
@@ -6,13 +7,8 @@
 #include <vector>
 #include <stack>
 #include <array>
-
-// Include ImGui
-#include "imgui.h"
-#include "ImGuizmo.h"
-#include "imgui_impl_glfw.h"
-#include "imgui_impl_opengl3.h"
-#include "imfilebrowser.hpp"
+#include <map>
+#include <filesystem>
 
 // Include GLEW
 #include <GL/glew.h>
@@ -55,192 +51,6 @@ void scroll_callback(GLFWwindow* window, double xoffset, double yoffset){
 /*! \enum CameraState
  *
  */
-enum CameraState { 
-    TRACKBALL = 0,
-    SHOOTER = 1,
-};
-
-bool edit_transform(float* cameraView, float* cameraProjection, float* matrix, float cameraDistance)
-{
-    static ImGuizmo::OPERATION mCurrentGizmoOperation(ImGuizmo::TRANSLATE);
-    static ImGuizmo::MODE mCurrentGizmoMode(ImGuizmo::LOCAL);
-    static bool useSnap = false;
-    static float snap[3] = { 1.f, 1.f, 1.f };
-    static float bounds[] = { -0.5f, -0.5f, -0.5f, 0.5f, 0.5f, 0.5f };
-    static float boundsSnap[] = { 0.1f, 0.1f, 0.1f };
-    static bool boundSizing = false;
-    static bool boundSizingSnap = false;
-    bool change_occured = false;
-
-    if (ImGui::IsKeyPressed(90))
-        mCurrentGizmoOperation = ImGuizmo::TRANSLATE;
-    if (ImGui::IsKeyPressed(69))
-        mCurrentGizmoOperation = ImGuizmo::ROTATE;
-    if (ImGui::IsKeyPressed(82)) // r Key
-        mCurrentGizmoOperation = ImGuizmo::SCALE;
-    if (ImGui::RadioButton("Translate", mCurrentGizmoOperation == ImGuizmo::TRANSLATE))
-        mCurrentGizmoOperation = ImGuizmo::TRANSLATE;
-    ImGui::SameLine();
-    if (ImGui::RadioButton("Rotate", mCurrentGizmoOperation == ImGuizmo::ROTATE))
-        mCurrentGizmoOperation = ImGuizmo::ROTATE;
-    ImGui::SameLine();
-    if (ImGui::RadioButton("Scale", mCurrentGizmoOperation == ImGuizmo::SCALE))
-        mCurrentGizmoOperation = ImGuizmo::SCALE;
-    float matrixTranslation[3], matrixRotation[3], matrixScale[3];
-    ImGuizmo::DecomposeMatrixToComponents(matrix, matrixTranslation, matrixRotation, matrixScale);
-    if(ImGui::InputFloat3("Tr", matrixTranslation)) change_occured = true;
-    if(ImGui::InputFloat3("Rt", matrixRotation)) change_occured = true;
-    if(ImGui::InputFloat3("Sc", matrixScale)) change_occured = true;
-    ImGuizmo::RecomposeMatrixFromComponents(matrixTranslation, matrixRotation, matrixScale, matrix);
-
-    if (ImGui::IsKeyPressed(83))
-        useSnap = !useSnap;
-    ImGui::Checkbox("", &useSnap);
-    ImGui::SameLine();
-
-    switch (mCurrentGizmoOperation)
-    {
-    case ImGuizmo::TRANSLATE:
-        ImGui::InputFloat3("Snap", &snap[0]);
-        break;
-    case ImGuizmo::ROTATE:
-        ImGui::InputFloat("Angle Snap", &snap[0]);
-        break;
-    case ImGuizmo::SCALE:
-        ImGui::InputFloat("Scale Snap", &snap[0]);
-        break;
-    }
-    ImGui::Checkbox("Bound Sizing", &boundSizing);
-    if (boundSizing)
-    {
-        ImGui::PushID(3);
-        ImGui::Checkbox("", &boundSizingSnap);
-        ImGui::SameLine();
-        ImGui::InputFloat3("Snap", boundsSnap);
-        ImGui::PopID();
-    }
-
-    ImGuiIO& io = ImGui::GetIO();
-    float viewManipulateRight = io.DisplaySize.x;
-    float viewManipulateTop = 0;
-    ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
-
-    ImGuizmo::Manipulate(cameraView, cameraProjection, mCurrentGizmoOperation, mCurrentGizmoMode, matrix, NULL, useSnap ? &snap[0] : NULL, boundSizing ? bounds : NULL, boundSizingSnap ? boundsSnap : NULL);
-    return change_occured || ImGuizmo::IsUsing();
-}
-
-class GLDebugDrawer : public btIDebugDraw {
-    GLuint shaderProgram;
-    glm::mat4 MVP;
-    GLuint VBO, VAO;
-    int m_debugMode;
-
-public:
-    GLDebugDrawer()
-    {
-        MVP = glm::mat4(1.0f);
-        std::cout<<"Intialising debug drawer\n"; 
-
-        const char *vertexShaderSource = "#version 330 core\n"
-                                         "layout (location = 0) in vec3 aPos;\n"
-                                         "uniform mat4 MVP;\n"
-                                         "void main()\n"
-                                         "{\n"
-                                         "   gl_Position = MVP * vec4(aPos.x, aPos.y, aPos.z, 1.0);\n"
-                                         "}\0";
-        const char *fragmentShaderSource = "#version 330 core\n"
-                                           "out vec4 FragColor;\n"
-                                           "uniform vec3 color;\n"
-                                           "void main()\n"
-                                           "{\n"
-                                           "   FragColor = vec4(color, 1.0f);\n"
-                                           "}\n\0";
-
-        // vertex shader
-        int vertexShader = glCreateShader(GL_VERTEX_SHADER);
-        glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
-        glCompileShader(vertexShader);
-        // check for shader compile errors
-
-        // fragment shader
-        int fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-        glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
-        glCompileShader(fragmentShader);
-        // check for shader compile errors
-
-        // link shaders
-        shaderProgram = glCreateProgram();
-        glAttachShader(shaderProgram, vertexShader);
-        glAttachShader(shaderProgram, fragmentShader);
-        glLinkProgram(shaderProgram);
-        // check for linking errors
-
-        glDeleteShader(vertexShader);
-        glDeleteShader(fragmentShader);
-    }
-    virtual ~GLDebugDrawer()
-    {
-        glDeleteVertexArrays(1, &VAO);
-        glDeleteBuffers(1, &VBO);
-        glDeleteProgram(shaderProgram);
-    }
-    void   drawLine(const btVector3& from, const btVector3& to, const btVector3& color)
-    {
-        float vertices[] = {
-            from.getX(), from.getY(), from.getZ(),
-            to.getX(), to.getY(), to.getZ(),
-        };
-
-        glGenVertexArrays(1, &VAO);
-        glGenBuffers(1, &VBO);
-        glBindVertexArray(VAO);
-
-        glBindBuffer(GL_ARRAY_BUFFER, VBO);
-        glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), &vertices, GL_STATIC_DRAW);
-
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
-        glEnableVertexAttribArray(0);
-
-        glBindBuffer(GL_ARRAY_BUFFER, 0);
-        glBindVertexArray(0);
-
-        glUseProgram(shaderProgram);
-        glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "MVP"), 1, GL_FALSE, &MVP[0][0]);
-        glUniform3fv(glGetUniformLocation(shaderProgram, "color"), 1, &color.m_floats[0]);
-
-        glBindVertexArray(VAO);
-        glDrawArrays(GL_LINES, 0, 2);
-    }
-    void    drawContactPoint(const btVector3& PointOnB,const btVector3& normalOnB,btScalar distance,int lifeTime,const btVector3& color){
-        drawSphere(PointOnB, 0.1, color);
-        drawLine(PointOnB, PointOnB+normalOnB.normalized()*0.5, color);
-    }
-    void   reportErrorWarning(const char* warningString)
-    {
-        std::cout << "<------BulletPhysics Debug------>\n" << warningString << "\n";
-    }
-
-    void   draw3dText(const btVector3& location, const char* textString)
-    {
-        std::cout << "<------BulletPhysics Debug------>\n" << textString << "\n";
-    }
-
-    void   setDebugMode(int debugMode)
-    {
-        m_debugMode = debugMode;
-    }
-
-    int    getDebugMode() const
-    {
-        return m_debugMode;
-    }
-    int setMVP(glm::mat4 mvp)
-    {
-        MVP = mvp;
-        return 1;
-    }
-};
-
 int main( void )
 {
     // Initialise GLFW
@@ -312,29 +122,109 @@ int main( void )
     // Accept fragment if it closer to the camera than the former one
     glDepthFunc(GL_LESS);
 
-    // Create and compile our GLSL program from the shaders
-    GLuint geomProgramID = LoadShaders("geom.vert", "geom.frag");
-
-    // grab uniforms to modify
-    GLuint u_time = glGetUniformLocation(geomProgramID, "time");
-    GLuint u_MVP = glGetUniformLocation(geomProgramID, "MVP");
-    GLuint u_model = glGetUniformLocation(geomProgramID, "model");
-    GLuint u_dir_light_position = glGetUniformLocation(geomProgramID, "dirLightPos");
-    GLuint u_dir_light_color = glGetUniformLocation(geomProgramID, "dirLightColor");
-    GLuint u_diffuse_map = glGetUniformLocation(geomProgramID, "diffuseMap");
-    GLuint u_normal_map = glGetUniformLocation(geomProgramID, "normalMap");
-
     // Projection matrix : 45 Field of View, screen ratio, display range : 0.1 unit <-> 100 units
     // Scale to window size
     glm::mat4 Projection;
     GBuffer gbuffer;
     {
-        GLint windowWidth, windowHeight;
-	    glfwGetWindowSize(window, &windowWidth, &windowHeight);
-        gbuffer = generate_gbuffer(windowWidth, windowHeight);
-        Projection = glm::perspective(glm::radians(45.0f), (float)windowWidth/(float)windowHeight, 0.1f, 100.0f);
+        GLint window_width, window_height;
+	    glfwGetWindowSize(window, &window_width, &window_height);
+        gbuffer = generate_gbuffer(window_width, window_height);
+        Projection = glm::perspective(glm::radians(45.0f), (float)window_width/(float)window_height, 0.1f, 100.0f);
     }
 	
+    // Create and compile our GLSL program from the shaders
+    GLuint geometryProgramID = load_shader("data/shaders/geometry.gl","",true);
+
+    // grab geom uniforms to modify
+    GLuint u_geom_MVP = glGetUniformLocation(geometryProgramID, "MVP");
+    GLuint u_geom_model = glGetUniformLocation(geometryProgramID, "model");
+
+    glUseProgram(geometryProgramID);
+    glUniform1i(glGetUniformLocation(geometryProgramID, "diffuseMap"), 0);
+    glUniform1i(glGetUniformLocation(geometryProgramID, "normalMap"),  1);
+
+    // Deferred shaders
+    GLuint directionalProgramID = load_shader("data/shaders/light_pass.vert", "data/shaders/dir_light_pass.frag",false);
+    GLuint u_dir_screen_size = glGetUniformLocation(directionalProgramID, "screenSize");
+    GLuint u_dir_light_color = glGetUniformLocation(directionalProgramID, "lightColor");
+    GLuint u_dir_light_direction = glGetUniformLocation(directionalProgramID, "lightDirection");
+    GLuint u_dir_camera_position = glGetUniformLocation(directionalProgramID, "cameraPosition");
+
+    glUseProgram(directionalProgramID);
+    const glm::mat4 identity = glm::mat4();
+    glUniformMatrix4fv(glGetUniformLocation(directionalProgramID, "MVP"), 1, GL_FALSE, &identity[0][0]);
+    glUniform1i(glGetUniformLocation(directionalProgramID, "positionMap"), GBuffer::GBUFFER_TEXTURE_TYPE_POSITION);
+    glUniform1i(glGetUniformLocation(directionalProgramID, "normalMap"), GBuffer::GBUFFER_TEXTURE_TYPE_NORMAL);
+    glUniform1i(glGetUniformLocation(directionalProgramID, "diffuseMap"), GBuffer::GBUFFER_TEXTURE_TYPE_DIFFUSE);
+
+    GLuint pointProgramID = load_shader("data/shaders/light_pass.vert", "data/shaders/point_light_pass.frag",false);
+
+    glUseProgram(pointProgramID);
+    glUniformMatrix4fv(glGetUniformLocation(pointProgramID, "MVP"), 1, GL_FALSE, &identity[0][0]);
+    glUniform1i(glGetUniformLocation(pointProgramID, "positionMap"), GBuffer::GBUFFER_TEXTURE_TYPE_POSITION);
+    glUniform1i(glGetUniformLocation(pointProgramID, "normalMap"), GBuffer::GBUFFER_TEXTURE_TYPE_NORMAL);
+    glUniform1i(glGetUniformLocation(pointProgramID, "diffuseMap"), GBuffer::GBUFFER_TEXTURE_TYPE_DIFFUSE);
+
+    std::filesystem::file_time_type empty_file_time;
+    std::map<std::string, std::map<std::string, std::filesystem::file_time_type>> shaderUpdateTimes = {
+        {"geometryProgramID", {{"data/shaders/geometry.gl", empty_file_time}}},
+        {"directionalProgramID", {{"data/shaders/light_pass.vert", empty_file_time}, {"data/shaders/dir_light_pass.frag",empty_file_time}}},
+        {"pointProgramID", {{"data/shaders/light_pass.vert", empty_file_time}, {"data/shaders/dir_light_pass.frag", empty_file_time}}}
+    };
+    for (auto &program : shaderUpdateTimes) {
+       for (auto &pair : program.second) {
+           pair.second = std::filesystem::last_write_time(pair.first);
+       } 
+    }
+
+    // Setup screen quad [-1, -1] -> [1, 1]
+    //GLuint screen_quad_vao;
+	//{
+    //    const unsigned short indices_buffer_data[] = { 4, 3, 1, 2, 4, 1 };
+    //    static const GLfloat vertex_buffer_data[] = { 
+    //        -1.0f,  1.0f, 0.0f,
+    //         1.0f,  1.0f, 0.0f,
+    //        -1.0f, -1.0f, 0.0f,
+    //         1.0f, -1.0f, 0.0f,
+    //    };
+    //    static const GLfloat uv_buffer_data[] = { 
+    //         1.0f,  1.0f,
+    //         0.0f,  1.0f,
+    //         0.0f,  0.0f,
+    //         1.0f,  0.0f,
+    //    };
+    //    GLuint vertexbuffer, indicesbuffer, uvbuffer;
+    //    glGenBuffers(1, &vertexbuffer);
+    //    glGenBuffers(1, &indicesbuffer);
+    //    glGenBuffers(1, &uvbuffer);
+
+    //    glBindVertexArray(screen_quad_vao);
+
+    //    glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer);
+    //    glBufferData(GL_ARRAY_BUFFER, sizeof(vertex_buffer_data), &vertex_buffer_data[0], GL_STATIC_DRAW);
+    //    glVertexAttribPointer(0, 3, GL_FLOAT, false, 0, 0);
+    //    glEnableVertexAttribArray(0);
+
+    //    glBindBuffer(GL_ARRAY_BUFFER, uvbuffer);
+    //    glBufferData(GL_ARRAY_BUFFER, sizeof(uv_buffer_data), &uv_buffer_data[0], GL_STATIC_DRAW);
+    //    glVertexAttribPointer(1, 2, GL_FLOAT, false, 0, 0);
+    //    glEnableVertexAttribArray(1);
+
+    //    // Generate a buffer for the indices as well
+    //    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indicesbuffer);
+    //    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices_buffer_data), &indices_buffer_data[0], GL_STATIC_DRAW);
+
+    //    glBindVertexArray(0);
+    //}
+    ModelAsset *quad = new ModelAsset;
+    load_asset(quad, "data/models/quad.obj", "");
+    quad->name = "quad";
+    quad->programID = directionalProgramID;
+    quad->drawMode = GL_TRIANGLES;
+    quad->drawStart = 0;
+    quad->drawType = GL_UNSIGNED_SHORT;
+
     // Initialize Bullet
     // Build the broadphase
     btBroadphaseInterface* broadphase = new btDbvtBroadphase();
@@ -360,17 +250,7 @@ int main( void )
         btVector3(0, 0, 0)    // local inertia
     );
 
-    // Camera
-    auto const cameraUp = glm::vec3(0,1,0);
-    glm::vec3 cameraPosition = glm::normalize(glm::vec3(4, 3, -3));
-    glm::vec3 cameraPivot = glm::vec3(0,0,0);
-    float cameraDistance = glm::length(cameraPosition - cameraPivot);
-    glm::mat4 View = glm::lookAt(
-                         cameraPosition * cameraDistance, // Camera is at (4,3,-3), in World Space
-                         glm::vec3(0, 0, 0), // and looks at the origin
-                         glm::vec3(0, 1, 0)  // Head is up (set to 0,-1,0 to look upside-down)
-                     );
-    glm::vec3 sun_position = glm::vec3(-0.7071067811865475, -0.7071067811865475, 0);
+    glm::vec3 sun_direction = glm::vec3(-0.7071067811865475, -0.7071067811865475, 0);
     glm::vec3 sun_color = glm::vec3(0.941, 0.933, 0.849);
 
 	// Setup bullet debug renderer
@@ -384,17 +264,17 @@ int main( void )
     for (auto path : asset_names) {
         auto asset = new ModelAsset;
         asset->mat = new Material;
-        load_asset(asset, path+".obj", path+".mtl");
+        load_asset(asset, "data/models/"+path+".obj", "data/models/" + path+".mtl");
         asset->name = path;
-        asset->programID = geomProgramID;
+        asset->programID = geometryProgramID;
         asset->drawMode = GL_TRIANGLES;
         asset->drawStart = 0;
         asset->drawType = GL_UNSIGNED_SHORT;
 
         assets.push_back(asset);
     }
-    GLuint default_tDiffuse = loadImage("default_diffuse.bmp");
-    GLuint default_tNormal  = loadImage("default_normal.bmp");
+    GLuint default_tDiffuse = load_image("data/textures/default_diffuse.bmp");
+    GLuint default_tNormal  = load_image("data/textures/default_normal.bmp");
     
     // Create instances
     btRigidBody *rigidbodies[ENTITY_COUNT] = {};
@@ -421,54 +301,75 @@ int main( void )
         rigidbodies[id]->setUserIndex(id);
     }
 
-    // Background
-    ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
-    glClearColor(clear_color.x, clear_color.y, clear_color.z, clear_color.w);
+    //GLuint tSkybox = load_cubemap({"Skybox1.bmp", "Skybox2.bmp","Skybox3.bmp","Skybox4.bmp","Skybox5.bmp","Skybox6.bmp"});
 
-    // Setup Dear ImGui context
-    IMGUI_CHECKVERSION();
-    ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO();
-    (void)io;
-    //io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
-    //io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
-    
-    // create a file browser instance
-    ImGui::FileBrowser fileDialog;
-    std::string fileDialogType = "";
-
-    // Setup Dear ImGui style
-    ImGui::StyleColorsDark();
-
-    // Setup Platform/Renderer backends
-    ImGui_ImplGlfw_InitForOpenGL(window, true);
-    ImGui_ImplOpenGL3_Init(glsl_version.c_str());
-
-    // Define movement state
-    CameraState cameraState = TRACKBALL; 
-
-    // Scale to window size
-    GLint oldWindowWidth, oldWindowHeight;
-    glfwGetWindowSize(window, &oldWindowWidth, &oldWindowHeight);
-
+    // Update all variables whose delta is checked
     double old_xpos, old_ypos;
-
     int selected_entity = -1;
+    double last_time = glfwGetTime();
+    double last_filesystem_hotswap_time = last_time;
+    glfwGetWindowSize(window, &window_width, &window_height);
+    glfwSetWindowSizeCallback(window, window_resize_callback);
     do {
-        // Might be jank
-        // Scale to window size
-        GLint windowWidth, windowHeight;
-        glfwGetWindowSize(window, &windowWidth, &windowHeight);
-        if (windowWidth != oldWindowWidth || windowHeight != oldWindowHeight){
-            Projection = glm::perspective(glm::radians(45.0f), (float)windowWidth/(float)windowHeight, 0.1f, 100.0f);
+        if (window_resized){
+            update_camera_projection(camera);
+            gbuffer = generate_gbuffer();
         }
-        oldWindowWidth = windowWidth;
-        oldWindowHeight = windowHeight;
 
-        static double lastTime = glfwGetTime();
-        double currentTime = glfwGetTime();
-        float deltaTime = currentTime - lastTime;
-        lastTime = currentTime;
+        double current_time = glfwGetTime();
+        float true_dt = current_time - last_time;
+        last_time = current_time;
+        float dt = 1.0/60.0;
+
+        // Hotswap shader files
+        if(current_time - last_filesystem_hotswap_time >= 1.0){
+            last_filesystem_hotswap_time = current_time;
+            for (auto &program : shaderUpdateTimes) {
+                for (auto &pair : program.second) {
+                    if(pair.second != std::filesystem::last_write_time(pair.first)){
+                        std::cout << "Reloading shaders.\n"; 
+                        pair.second = std::filesystem::last_write_time(pair.first);
+                        if(program.first == "geometryProgramID"){
+                            // Create and compile our GLSL program from the shaders
+                            geometryProgramID = load_shader("data/shaders/geometry.gl","",true);
+
+                            // grab geom uniforms to modify
+                            GLuint u_geom_MVP = glGetUniformLocation(geometryProgramID, "MVP");
+                            GLuint u_geom_model = glGetUniformLocation(geometryProgramID, "model");
+
+                            glUseProgram(geometryProgramID);
+                            glUniform1i(glGetUniformLocation(geometryProgramID, "diffuseMap"), 0);
+                            glUniform1i(glGetUniformLocation(geometryProgramID, "normalMap"),  1);
+                        }
+                        else if(program.first == "directionalProgramID"){
+                            // Deferred shaders
+                            directionalProgramID = load_shader("data/shaders/light_pass.vert", "data/shaders/dir_light_pass.frag",false);
+                            GLuint u_dir_screen_size = glGetUniformLocation(directionalProgramID, "screenSize");
+                            GLuint u_dir_light_color = glGetUniformLocation(directionalProgramID, "lightColor");
+                            GLuint u_dir_light_direction = glGetUniformLocation(directionalProgramID, "lightDirection");
+                            GLuint u_dir_camera_position = glGetUniformLocation(directionalProgramID, "cameraPosition");
+
+                            glUseProgram(directionalProgramID);
+                            const glm::mat4 identity = glm::mat4();
+                            glUniformMatrix4fv(glGetUniformLocation(directionalProgramID, "MVP"), 1, GL_FALSE, &identity[0][0]);
+                            glUniform1i(glGetUniformLocation(directionalProgramID, "positionMap"), GBuffer::GBUFFER_TEXTURE_TYPE_POSITION);
+                            glUniform1i(glGetUniformLocation(directionalProgramID, "normalMap"), GBuffer::GBUFFER_TEXTURE_TYPE_NORMAL);
+                            glUniform1i(glGetUniformLocation(directionalProgramID, "diffuseMap"), GBuffer::GBUFFER_TEXTURE_TYPE_DIFFUSE);
+                        }
+                        else if(program.first == "pointProgramID"){
+                            pointProgramID = load_shader("data/shaders/light_pass.vert", "data/shaders/point_light_pass.frag",false);
+
+                            glUseProgram(pointProgramID);
+                            glUniformMatrix4fv(glGetUniformLocation(pointProgramID, "MVP"), 1, GL_FALSE, &identity[0][0]);
+                            glUniform1i(glGetUniformLocation(pointProgramID, "positionMap"), GBuffer::GBUFFER_TEXTURE_TYPE_POSITION);
+                            glUniform1i(glGetUniformLocation(pointProgramID, "normalMap"), GBuffer::GBUFFER_TEXTURE_TYPE_NORMAL);
+                            glUniform1i(glGetUniformLocation(pointProgramID, "diffuseMap"), GBuffer::GBUFFER_TEXTURE_TYPE_DIFFUSE);
+                        }
+                        break;
+                    }
+                } 
+            }
+        }
 
         // Process Events
         double xpos, ypos;
@@ -480,8 +381,8 @@ int main( void )
                 cameraState = SHOOTER;
 
                 // Reset mouse position for next frame
-                xpos = (float)windowWidth/2;
-                ypos = (float)windowHeight/2;
+                xpos = (float)window_width/2;
+                ypos = (float)window_height/2;
 
                 glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
                 selected_entity = -1;
@@ -503,7 +404,7 @@ int main( void )
                 glm::vec3 out_direction;
                 screen_pos_to_world_ray(
                     xpos, ypos,
-                    windowWidth, windowHeight,
+                    window_width, window_height,
                     View,
                     Projection,
                     out_origin,
@@ -536,8 +437,8 @@ int main( void )
                 cameraPosition = cameraPivot + glm::normalize(cameraPosition - cameraPivot)*cameraDistance;
 
                 // step 1 : Calculate the amount of rotation given the mouse movement.
-                float deltaAngleX = (2 * M_PI / (float)windowWidth); // a movement from left to right = 2*PI = 360 deg
-                float deltaAngleY = (M_PI / (float)windowHeight);  // a movement from top to bottom = PI = 180 deg
+                float deltaAngleX = (2 * M_PI / (float)window_width); // a movement from left to right = 2*PI = 360 deg
+                float deltaAngleY = (M_PI / (float)window_height);  // a movement from top to bottom = PI = 180 deg
                 float xAngle = (old_xpos - xpos) * deltaAngleX;
                 float yAngle = (old_ypos - ypos) * deltaAngleY;
 
@@ -576,16 +477,16 @@ int main( void )
             static const float cameraMovementSpeed = 2.0;
 
             // Reset mouse position for next frame
-            glfwSetCursorPos(window, (float)windowWidth/2, (float)windowHeight/2);
+            glfwSetCursorPos(window, (float)window_width/2, (float)window_height/2);
             
             glm::vec3 cameraDirection = glm::normalize(cameraPivot - cameraPosition);
 
             // step 1 : Calculate the amount of rotation given the mouse movement.
-            float deltaAngleX = (2 * M_PI / (float)windowWidth); // a movement from left to right = 2*PI = 360 deg
-            float deltaAngleY = (M_PI / (float)windowHeight);  // a movement from top to bottom = PI = 180 deg
+            float deltaAngleX = (2 * M_PI / (float)window_width); // a movement from left to right = 2*PI = 360 deg
+            float deltaAngleY = (M_PI / (float)window_height);  // a movement from top to bottom = PI = 180 deg
                                                                //
-            float xAngle = (float)((float)windowWidth/2 -  xpos) * deltaAngleX;
-            float yAngle = (float)((float)windowHeight/2 - ypos) * deltaAngleY;
+            float xAngle = (float)((float)window_width/2 -  xpos) * deltaAngleX;
+            float yAngle = (float)((float)window_height/2 - ypos) * deltaAngleY;
 
             // Extra step to handle the problem when the camera direction is the same as the up vector
             //auto cameraViewDir = glm::vec3(-glm::transpose(View)[2]);
@@ -602,19 +503,19 @@ int main( void )
 
             // Move forward
             if (glfwGetKey( window, GLFW_KEY_UP ) == GLFW_PRESS){
-                cameraPosition += cameraDirection * deltaTime * cameraMovementSpeed;
+                cameraPosition += cameraDirection * true_dt * cameraMovementSpeed;
             }
             // Move backward
             if (glfwGetKey( window, GLFW_KEY_DOWN ) == GLFW_PRESS){
-                cameraPosition -= cameraDirection * deltaTime * cameraMovementSpeed;
+                cameraPosition -= cameraDirection * true_dt * cameraMovementSpeed;
             }
             // Strafe right
             if (glfwGetKey( window, GLFW_KEY_RIGHT ) == GLFW_PRESS){
-                cameraPosition += cameraRight * deltaTime * cameraMovementSpeed;
+                cameraPosition += cameraRight * true_dt * cameraMovementSpeed;
             }
             // Strafe left
             if (glfwGetKey( window, GLFW_KEY_LEFT ) == GLFW_PRESS){
-                cameraPosition -= cameraRight * deltaTime * cameraMovementSpeed;
+                cameraPosition -= cameraRight * true_dt * cameraMovementSpeed;
             }
 
             View = glm::lookAt(cameraPosition, cameraPosition + cameraDirectionRotated, cameraUp);
@@ -625,7 +526,7 @@ int main( void )
         old_xpos = xpos;
         old_ypos = ypos;
 
-        //dynamicsWorld->stepSimulation(deltaTime);
+        //dynamicsWorld->stepSimulation(true_dt);
 
         //// Update matrixes of physics objects
         //for (auto &rigidbody : rigidbodies) {
@@ -646,17 +547,24 @@ int main( void )
         //	}
         //}
  
-        // Bind gbuffer to write during geometry pass
+        // Clear attachment 4 from previous frame
+
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, gbuffer.fbo);
+        glDrawBuffer(GL_COLOR_ATTACHMENT4);
+        glClearColor(0,0,0,0);
+        glClear(GL_COLOR_BUFFER_BIT);
+
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, gbuffer.fbo);
+        static const GLenum drawBuffers[] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1, GL_COLOR_ATTACHMENT2 };
+        glDrawBuffers(3, drawBuffers);
 
         // Only the geometry pass updates the depth buffer
         glDepthMask(GL_TRUE);
-
-        glClearColor(clear_color.x,clear_color.y, clear_color.z, clear_color.w);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
         glEnable(GL_DEPTH_TEST);
-        glDisable(GL_BLEND);
+        // Note face culling wont work with certain techniques ie grass
+        glEnable(GL_CULL_FACE);
+
         for (auto entity : entities) {
             if(entity == nullptr)
                 continue;
@@ -664,14 +572,10 @@ int main( void )
             ModelAsset* asset = entity->asset;
             glUseProgram(asset->programID);
 
-            glUniform1f(u_time, (float)currentTime);
-
             auto MVP = Projection * View * entity->transform;
 
-            glUniformMatrix4fv(u_MVP, 1, GL_FALSE, &MVP[0][0]);
-            glUniformMatrix4fv(u_model, 1, GL_FALSE, &entity->transform[0][0]);
-            glUniform3fv(u_dir_light_position, 1, &sun_position[0]);
-            glUniform3fv(u_dir_light_color, 1, &sun_color[0]);
+            glUniformMatrix4fv(u_geom_MVP, 1, GL_FALSE, &MVP[0][0]);
+            glUniformMatrix4fv(u_geom_model, 1, GL_FALSE, &entity->transform[0][0]);
             
             glActiveTexture(GL_TEXTURE0);
             if(asset->mat->tDiffuse != GL_FALSE){
@@ -679,43 +583,66 @@ int main( void )
             } else {
                 glBindTexture(GL_TEXTURE_2D, default_tDiffuse);
             }
-            glUniform1i(u_diffuse_map, 0);
 
             glActiveTexture(GL_TEXTURE1);
-            if(asset->mat->tDiffuse != GL_FALSE){
+            if(asset->mat->tNormal != GL_FALSE){
                 glBindTexture(GL_TEXTURE_2D, asset->mat->tNormal);
             } else {
                 glBindTexture(GL_TEXTURE_2D, default_tNormal);
             }
-            glUniform1i(u_normal_map, 1);
 
             //bind VAO and draw
             glBindVertexArray(asset->vao);
             glDrawElements(asset->drawMode, asset->drawCount, asset->drawType, (void*)asset->drawStart);
         }
         glBindVertexArray(0);
-        glUseProgram(0);
         glDepthMask(GL_FALSE);
-        glDisable(GL_DEPTH_TEST);
+        glDisable(GL_CULL_FACE);
 
-        // Perform lighting pass from gbuffer
-        glEnable(GL_BLEND);
-        glBlendEquation(GL_FUNC_ADD);
-        glBlendFunc(GL_ONE, GL_ONE);
+        // Point light calculations
+        glEnable(GL_STENCIL_TEST);
+        glDisable(GL_STENCIL_TEST);
 
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+        // Draw to attachment 4 during light pass and bind framebuffer textures
+        glDrawBuffer(GL_COLOR_ATTACHMENT4);
         for (unsigned int i = 0 ; i < GBuffer::GBUFFER_NUM_TEXTURES; i++) {
             glActiveTexture(GL_TEXTURE0 + i);
             glBindTexture(GL_TEXTURE_2D, gbuffer.textures[GBuffer::GBUFFER_TEXTURE_TYPE_POSITION + i]);
         }
-        glClear(GL_COLOR_BUFFER_BIT);
+
+        // Directional light pass
+        glUseProgram(directionalProgramID);
+        
+        glDisable(GL_DEPTH_TEST);
+        glEnable(GL_BLEND);
+        glBlendEquation(GL_FUNC_ADD);
+        glBlendFunc(GL_ONE, GL_ONE);
+
+        glUniform2f(u_dir_screen_size, window_width, window_height);
+        glUniform3fv(u_dir_light_color, 1, &sun_color[0]);
+        glUniform3fv(u_dir_light_direction, 1, &sun_direction[0]);
+        glUniform3fv(u_dir_camera_position, 1, &cameraPosition[0]);
+
+        //glBindVertexArray(screen_quad_vao);
+        //glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, 0);
+        glBindVertexArray(quad->vao);
+        glDrawElements(quad->drawMode, quad->drawCount, quad->drawType, (void*)quad->drawStart);
+        glBindVertexArray(0);
+
+        glDisable(GL_BLEND);
+
+        // Copy color buffer to framebuffer and draw to screen
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, gbuffer.fbo);
+        glReadBuffer(GL_COLOR_ATTACHMENT4);
+
+        glBlitFramebuffer(0, 0, window_width, window_height, 0, 0, window_width, window_height, GL_COLOR_BUFFER_BIT, GL_LINEAR);
 
         // Draw bt debug
         //btDebugDrawer.setMVP(Projection * View);
         //dynamicsWorld->debugDrawWorld();
 
-        // Start the Dear ImGui fram();
+        // Start the Dear ImGui frame;
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
@@ -858,7 +785,8 @@ int main( void )
             
             ImGui::ColorEdit3("Clear color", (float*)&clear_color); // Edit 3 floats representing a color
             ImGui::ColorEdit3("Sun color", (float*)&sun_color); // Edit 3 floats representing a color
-            ImGui::InputFloat3("Sun direction", (float*)&sun_position);
+            if(ImGui::InputFloat3("Sun direction", (float*)&sun_direction))
+                sun_direction = glm::normalize(sun_direction);
             if (ImGui::BeginMenuBar())
             {
                 if (ImGui::BeginMenu("Menu"))
@@ -872,12 +800,11 @@ int main( void )
 
             ImGui::Begin("GBuffer");
             {
-                ImGui::Image((void *)(intptr_t)gbuffer.textures[GBuffer::GBUFFER_TEXTURE_TYPE_DIFFUSE], ImVec2((int)windowWidth/10, (int)windowHeight/10));
+                ImGui::Image((void *)(intptr_t)gbuffer.textures[GBuffer::GBUFFER_TEXTURE_TYPE_DIFFUSE], ImVec2((int)window_width/10, (int)window_height/10), ImVec2(0, 1), ImVec2(1, 0));
                 ImGui::SameLine();
-                ImGui::Image((void *)(intptr_t)gbuffer.textures[GBuffer::GBUFFER_TEXTURE_TYPE_NORMAL], ImVec2((int)windowWidth/10, (int)windowHeight/10));
-                ImGui::Image((void *)(intptr_t)gbuffer.textures[GBuffer::GBUFFER_TEXTURE_TYPE_TEXCOORD], ImVec2((int)windowWidth/10, (int)windowHeight/10));
+                ImGui::Image((void *)(intptr_t)gbuffer.textures[GBuffer::GBUFFER_TEXTURE_TYPE_NORMAL], ImVec2((int)window_width/10, (int)window_height/10), ImVec2(0, 1), ImVec2(1, 0));
                 ImGui::SameLine();
-                ImGui::Image((void *)(intptr_t)gbuffer.textures[GBuffer::GBUFFER_TEXTURE_TYPE_POSITION], ImVec2((int)windowWidth/10, (int)windowHeight/10));
+                ImGui::Image((void *)(intptr_t)gbuffer.textures[GBuffer::GBUFFER_TEXTURE_TYPE_POSITION], ImVec2((int)window_width/10, (int)window_height/10), ImVec2(0, 1), ImVec2(1, 0)) ;
             }
             ImGui::End();
             fileDialog.Display();
@@ -886,11 +813,11 @@ int main( void )
                 std::cout << "Selected filename: " << fileDialog.GetSelected().string() << std::endl;
                 if(fileDialogType == "asset.mat.tDiffuse"){
                     if(selected_entity != -1)
-                        entities[selected_entity]->asset->mat->tDiffuse = loadImage(fileDialog.GetSelected().string());
+                        entities[selected_entity]->asset->mat->tDiffuse = load_image(fileDialog.GetSelected().string());
                 }
                 else if(fileDialogType == "asset.mat.tNormal"){
                     if(selected_entity != -1)
-                        entities[selected_entity]->asset->mat->tNormal = loadImage(fileDialog.GetSelected().string());
+                        entities[selected_entity]->asset->mat->tNormal = load_image(fileDialog.GetSelected().string());
                 }
                 fileDialog.ClearSelected();
             }

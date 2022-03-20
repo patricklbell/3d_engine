@@ -1,6 +1,5 @@
 # CMake entry point
 cmake_minimum_required (VERSION 3.0)
-
 project (engine)
 
 set (CMAKE_CXX_STANDARD 17)
@@ -85,29 +84,29 @@ target_link_libraries(engine
 
 set_target_properties(engine PROPERTIES COMPILE_DEFINITIONS "USE_ASSIMP")
 
-# Copy Shaders
-add_custom_command(
-    TARGET engine POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-    "${PROJECT_SOURCE_DIR}/shaders"
-    $<TARGET_FILE_DIR:engine>
-)
-
-# Copy Textures
-add_custom_command(
-    TARGET engine POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-    "${PROJECT_SOURCE_DIR}/textures"
-    $<TARGET_FILE_DIR:engine>
-)
-
-# Copy Models
-add_custom_command(
-    TARGET engine POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-    "${PROJECT_SOURCE_DIR}/models"
-    $<TARGET_FILE_DIR:engine>
-)
+## Copy Shaders
+#add_custom_command(
+#    TARGET engine POST_BUILD
+#    COMMAND ${CMAKE_COMMAND} -E copy_directory
+#    "${PROJECT_SOURCE_DIR}/shaders"
+#    $<TARGET_FILE_DIR:engine>
+#)
+#
+## Copy Textures
+#add_custom_command(
+#    TARGET engine POST_BUILD
+#    COMMAND ${CMAKE_COMMAND} -E copy_directory
+#    "${PROJECT_SOURCE_DIR}/textures"
+#    $<TARGET_FILE_DIR:engine>
+#)
+#
+## Copy Models
+#add_custom_command(
+#    TARGET engine POST_BUILD
+#    COMMAND ${CMAKE_COMMAND} -E copy_directory
+#    "${PROJECT_SOURCE_DIR}/models"
+#    $<TARGET_FILE_DIR:engine>
+#)
 
 # Copy compile_commands.json
 IF( EXISTS "${CMAKE_CURRENT_BINARY_DIR}/compile_commands.json" )

@@ -1,7 +1,7 @@
 #ifndef TEXTURE_HPP
 #define TEXTURE_HPP
 
-GLuint loadImage(std::string imagepath);
+GLuint load_image(std::string imagepath, bool is_srgb=false);
 
 // Load a .BMP file using our custom loader
 GLuint loadBMP_custom(std::string imagepath);
@@ -13,6 +13,6 @@ GLuint loadBMP_custom(std::string imagepath);
 
 // Load a .DDS file using GLFW's own loader
 GLuint loadDDS(const char * imagepath);
-
+GLuint load_cubemap(std::vector<std::string> filenames);
 
 #endif

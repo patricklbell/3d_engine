@@ -10,7 +10,7 @@ using namespace cimg_library;
 
 #include <GLFW/glfw3.h>
 
-GLuint loadImage(std::string imagepath){
+GLuint load_image(std::string imagepath, bool is_srgb=false){
 	printf("Loading texture: %s\n", imagepath.c_str());
 	CImg<unsigned char> src(imagepath.c_str());
 	int w = src.width();
@@ -27,7 +27,10 @@ GLuint loadImage(std::string imagepath){
 	glBindTexture(GL_TEXTURE_2D, textureID);
 
 	// Give the image to OpenGL
-	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, src.data());
+	if(is_srgb)
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_SRGB, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, src.data());
+	else
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, src.data());
 
 	// Poor filtering, or ...
 	//glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
@@ -251,6 +254,28 @@ GLuint loadDDS(const char * imagepath){
 	free(buffer); 
 
 	return textureID;
+}
 
+GLuint load_cubemap(std::vector<std::string> filenames){
+    GLuint textureID;
+    glGenTextures(1, &textureID);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, textureID);
 
+    for(unsigned int i = 0; i < filenames.size(); i++)
+    {
+        CImg<unsigned char> src(filenames[i].c_str());
+        int w = src.width();
+        int h = src.height();
+        src.permute_axes("cxyz");
+        glTexImage2D(
+            GL_TEXTURE_CUBE_MAP_POSITIVE_X + i,
+            0, GL_RGB, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, src.data()
+        );
+    }
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+	return textureID;
 }
