@@ -12,6 +12,7 @@
 #include "imgui.h"
 
 #include "controls.hpp"
+#include "editor.hpp"
 #include "graphics.hpp"
 #include "utilities.hpp"
 #include "globals.hpp"
@@ -42,7 +43,8 @@ void initEditorControls(){
 
 void handleEditorControls(Camera &camera, Entity *entities[ENTITY_COUNT], float dt) {
     // Stores the previous state of input, updated at end of function
-    static int space_state = GLFW_RELEASE;
+    static int space_key_state = GLFW_RELEASE;
+    static int d_key_state = GLFW_RELEASE;
     static int mouse_left_state = GLFW_RELEASE;
     static double mouse_left_press_time = glfwGetTime();
 
@@ -51,7 +53,10 @@ void handleEditorControls(Camera &camera, Entity *entities[ENTITY_COUNT], float 
     glfwGetCursorPos(window, &mouse_position.x, &mouse_position.y);
     delta_mouse_position = mouse_position - delta_mouse_position;
 
-    if(glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS && space_state == GLFW_RELEASE){
+    if(glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS && d_key_state == GLFW_RELEASE){
+        editor::draw_bt_debug = !editor::draw_bt_debug; 
+    }
+    if(glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS && space_key_state == GLFW_RELEASE){
         if(camera.state == Camera::TYPE::TRACKBALL) {
             camera.state = Camera::TYPE::SHOOTER;
 
@@ -176,7 +181,8 @@ void handleEditorControls(Camera &camera, Entity *entities[ENTITY_COUNT], float 
         glfwGetCursorPos(window, &mouse_position.x, &mouse_position.y);
     }
 
-    space_state = glfwGetKey(window, GLFW_KEY_SPACE);
+    space_key_state = glfwGetKey(window, GLFW_KEY_SPACE);
+    d_key_state     = glfwGetKey(window, GLFW_KEY_D);
     if(mouse_left_state == GLFW_RELEASE && glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT)) mouse_left_press_time = glfwGetTime();
     mouse_left_state = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT);
 }

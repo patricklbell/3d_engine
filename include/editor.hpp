@@ -20,7 +20,7 @@
 bool editTransform(const Camera &camera, float* matrix);
 void loadEditorGui();
 
-void drawEditorGui(Camera &camera, Entity *entities[ENTITY_COUNT], std::vector<ModelAsset *> &assets, std::stack<int> &free_entity_stack, std::stack<int> &delete_entity_stack, int &id_counter, btRigidBody *rigidbodies[ENTITY_COUNT], btRigidBody::btRigidBodyConstructionInfo rigidbody_CI, GBuffer &gb);
+void drawEditorGui(Camera &camera, Entity *entities[ENTITY_COUNT], std::vector<Asset *> &assets, std::stack<int> &free_entity_stack, std::stack<int> &delete_entity_stack, int &id_counter, btRigidBody *rigidbodies[ENTITY_COUNT], btRigidBody::btRigidBodyConstructionInfo rigidbody_CI, GBuffer &gb);
 class GLDebugDrawer : public btIDebugDraw {
     GLuint shaderProgram;
     glm::mat4 MVP;
@@ -137,6 +137,7 @@ namespace editor {
     extern std::string im_file_dialog_type;
     extern GLDebugDrawer bt_debug_drawer;
     extern ImGui::FileBrowser im_file_dialog;
+    extern bool draw_bt_debug;
 }
 
 #endif

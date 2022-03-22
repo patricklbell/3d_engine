@@ -28,6 +28,7 @@
 namespace editor {
     std::string im_file_dialog_type;
     GLDebugDrawer bt_debug_drawer;
+    bool draw_bt_debug;
     ImGui::FileBrowser im_file_dialog;
 }
 using namespace editor;
@@ -130,12 +131,13 @@ bool editTransform(const Camera &camera, float* matrix){
     return change_occured || ImGuizmo::IsUsing();
 }
 
-void drawEditorGui(Camera &camera, Entity *entities[ENTITY_COUNT], std::vector<ModelAsset *> &assets, std::stack<int> &free_entity_stack, std::stack<int> &delete_entity_stack, int &id_counter, btRigidBody *rigidbodies[ENTITY_COUNT], btRigidBody::btRigidBodyConstructionInfo rigidbody_CI, GBuffer &gb){
+void drawEditorGui(Camera &camera, Entity *entities[ENTITY_COUNT], std::vector<Asset *> &assets, std::stack<int> &free_entity_stack, std::stack<int> &delete_entity_stack, int &id_counter, btRigidBody *rigidbodies[ENTITY_COUNT], btRigidBody::btRigidBodyConstructionInfo rigidbody_CI, GBuffer &gb){
 
     // @->todo Batch debug rendering
-    bt_debug_drawer.setMVP(camera.projection * camera.view);
-    dynamics_world->debugDrawWorld();
-
+    if(draw_bt_debug){
+        bt_debug_drawer.setMVP(camera.projection * camera.view);
+        dynamics_world->debugDrawWorld();
+    }
 
     // Start the Dear ImGui frame;
     ImGui_ImplOpenGL3_NewFrame();
@@ -163,31 +165,31 @@ void drawEditorGui(Camera &camera, Entity *entities[ENTITY_COUNT], std::vector<M
             rigidbodies[selected_entity]->setMotionState(new btDefaultMotionState(transform));
             dynamics_world->addRigidBody(rigidbodies[selected_entity]);
             
-            if (ImGui::CollapsingHeader("Material", ImGuiTreeNodeFlags_DefaultOpen)) {
-                ImGui::ColorEdit3("Albedo Color", entities[selected_entity]->asset->mat->albedo);
-                ImGui::ColorEdit3("Diffuse Color", entities[selected_entity]->asset->mat->diffuse);
-                ImGui::InputFloat("Specular Color", &entities[selected_entity]->asset->mat->optic_density);
-                ImGui::InputFloat("Reflection Sharpness", &entities[selected_entity]->asset->mat->reflect_sharp);
-                ImGui::InputFloat("Specular Exponent (size)", &entities[selected_entity]->asset->mat->spec_exp);
-                ImGui::InputFloat("Dissolve", &entities[selected_entity]->asset->mat->dissolve);
-                ImGui::ColorEdit3("Transmission Filter", entities[selected_entity]->asset->mat->trans_filter);
-                
-                void * texDiffuse = (void *)(intptr_t)entities[selected_entity]->asset->mat->t_diffuse;
-                if(ImGui::ImageButton(texDiffuse, ImVec2(128,128))){
-                    im_file_dialog_type = "asset.mat.tDiffuse";
-                    im_file_dialog.SetTypeFilters({ ".bmp" });
-                    im_file_dialog.Open();
-                }
+            //if (ImGui::CollapsingHeader("Material", ImGuiTreeNodeFlags_DefaultOpen)) {
+            //    ImGui::ColorEdit3("Albedo Color", entities[selected_entity]->asset->mat->albedo);
+            //    ImGui::ColorEdit3("Diffuse Color", entities[selected_entity]->asset->mat->diffuse);
+            //    ImGui::InputFloat("Specular Color", &entities[selected_entity]->asset->mat->optic_density);
+            //    ImGui::InputFloat("Reflection Sharpness", &entities[selected_entity]->asset->mat->reflect_sharp);
+            //    ImGui::InputFloat("Specular Exponent (size)", &entities[selected_entity]->asset->mat->spec_exp);
+            //    ImGui::InputFloat("Dissolve", &entities[selected_entity]->asset->mat->dissolve);
+            //    ImGui::ColorEdit3("Transmission Filter", entities[selected_entity]->asset->mat->trans_filter);
+            //    
+            //    void * texDiffuse = (void *)(intptr_t)entities[selected_entity]->asset->mat->t_diffuse;
+            //    if(ImGui::ImageButton(texDiffuse, ImVec2(128,128))){
+            //        im_file_dialog_type = "asset.mat.tDiffuse";
+            //        im_file_dialog.SetTypeFilters({ ".bmp" });
+            //        im_file_dialog.Open();
+            //    }
 
-                ImGui::SameLine();
+            //    ImGui::SameLine();
 
-                void * texNormal = (void *)(intptr_t)entities[selected_entity]->asset->mat->t_normal;
-                if(ImGui::ImageButton(texNormal, ImVec2(128,128))){
-                    im_file_dialog_type = "asset.mat.tNormal";
-                    im_file_dialog.SetTypeFilters({ ".bmp" });
-                    im_file_dialog.Open();
-                }
-            }
+            //    void * texNormal = (void *)(intptr_t)entities[selected_entity]->asset->mat->t_normal;
+            //    if(ImGui::ImageButton(texNormal, ImVec2(128,128))){
+            //        im_file_dialog_type = "asset.mat.tNormal";
+            //        im_file_dialog.SetTypeFilters({ ".bmp" });
+            //        im_file_dialog.Open();
+            //    }
+            //}
             if(ImGui::Button("Duplicate")){
                 int id;
                 if(free_entity_stack.size() == 0){
@@ -303,14 +305,14 @@ void drawEditorGui(Camera &camera, Entity *entities[ENTITY_COUNT], std::vector<M
         if(im_file_dialog.HasSelected())
         {
             std::cout << "Selected filename: " << im_file_dialog.GetSelected().string() << std::endl;
-            if(im_file_dialog_type == "asset.mat.tDiffuse"){
-                if(selected_entity != -1)
-                    entities[selected_entity]->asset->mat->t_diffuse = loadImage(im_file_dialog.GetSelected().string());
-            }
-            else if(im_file_dialog_type == "asset.mat.tNormal"){
-                if(selected_entity != -1)
-                    entities[selected_entity]->asset->mat->t_normal = loadImage(im_file_dialog.GetSelected().string());
-            }
+            //if(im_file_dialog_type == "asset.mat.tDiffuse"){
+            //    if(selected_entity != -1)
+            //        entities[selected_entity]->asset->mat->t_diffuse = loadImage(im_file_dialog.GetSelected().string());
+            //}
+            //else if(im_file_dialog_type == "asset.mat.tNormal"){
+            //    if(selected_entity != -1)
+            //        entities[selected_entity]->asset->mat->t_normal = loadImage(im_file_dialog.GetSelected().string());
+            //}
             im_file_dialog.ClearSelected();
         }
     }

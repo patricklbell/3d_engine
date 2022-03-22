@@ -23,7 +23,7 @@ uniform vec3        cameraPosition;
 
 #define AMBIENT_INTENSITY  0.1
 #define DIFFUSE_INTENSITY  0.8
-#define SPECULAR_POWER     30
+#define SPECULAR_EXP       30
 #define SPECULAR_INTENSITY 4
 
 vec4 calcDirectionalLight(vec3 position, vec3 normal)
@@ -40,7 +40,7 @@ vec4 calcDirectionalLight(vec3 position, vec3 normal)
         vec3 halfwayDirection = normalize(-lightDirection + viewDirection);
         float specularFactor = dot(normal, halfwayDirection);
         if (specularFactor > 0) {
-            specularFactor = pow(specularFactor, SPECULAR_POWER);
+            specularFactor = pow(specularFactor, SPECULAR_EXP);
             specularColor = vec4(lightColor * SPECULAR_INTENSITY * specularFactor, 1.0f);
         }
     }
@@ -61,6 +61,8 @@ void main()
     vec3 normal = normalize(texture(normalMap, texcoord).xyz);
 
     out_color = vec4(color, 1.0) * calcDirectionalLight(position, normal);
+
+    // Gamma correction
     const float gamma = 1.5;
     out_color.rgb = pow(out_color.rgb, vec3(1.0/gamma));
 } 

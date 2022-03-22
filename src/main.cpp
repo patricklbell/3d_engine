@@ -112,6 +112,8 @@ int main() {
     glfwGetWindowSize(window, &window_width, &window_height);
     glfwSetWindowSizeCallback(window, windowSizeCallback);
 
+    initDefaultMaterial();
+
     Camera camera;
     createDefaultCamera(camera);
 
@@ -120,14 +122,14 @@ int main() {
 
     // Load shaders
     loadGeometryShader("data/shaders/geometry.gl");
-    loadDirectionalLightShader("data/shaders/directional.gl");
+    loadPostShader("data/shaders/post.gl");
     loadPointLightShader("data/shaders/point.gl");
 
     // Map for last update time for hotswaping files
     std::filesystem::file_time_type empty_file_time;
     std::map<const std::string, std::pair<shader::TYPE, std::filesystem::file_time_type>> shader_update_times = {
         {"data/shaders/geometry.gl", {shader::TYPE::GEOMETRY, empty_file_time}},
-        {"data/shaders/directional.gl", {shader::TYPE::DIRECTIONAL, empty_file_time}},
+        {"data/shaders/post.gl", {shader::TYPE::POST, empty_file_time}},
         {"data/shaders/point.gl", {shader::TYPE::POINT, empty_file_time}},
     };
     // Fill in with correct file time
@@ -175,10 +177,10 @@ int main() {
 
     //    glBindVertexArray(0);
     //}
-    ModelAsset *quad = new ModelAsset;
-    loadAsset(quad, "data/models/quad.obj", "");
+    Asset *quad = new Asset;
+    loadAsset(quad, "data/models/quad.obj");
     quad->name = "quad";
-    quad->program_id = shader::directional;
+    quad->program_id = shader::post;
     quad->draw_mode = GL_TRIANGLES;
     quad->draw_start = 0;
     quad->draw_type = GL_UNSIGNED_SHORT;
@@ -214,22 +216,13 @@ int main() {
     sun_color = glm::vec3(0.941, 0.933, 0.849);
 
     // Load assets
-    std::vector<std::string> asset_names = {"cube", "capsule", "WoodenCrate"};
-    std::vector<ModelAsset *> assets;
-    GLuint default_t_diffuse = loadImage("data/textures/default_diffuse.bmp");
-    GLuint default_t_normal  = loadImage("data/textures/default_normal.bmp");
-    for (auto name : asset_names) {
-        auto asset = new ModelAsset;
-        asset->mat = new Material;
-        asset->mat->t_diffuse = default_t_diffuse;
-        asset->mat->t_normal  = default_t_normal;
-        loadAsset(asset, "data/models/"+name+".obj", "data/models/" + name+".mtl");
-        asset->name = name;
-        asset->program_id = shader::geometry;
-        asset->draw_mode = GL_TRIANGLES;
-        asset->draw_start = 0;
-        asset->draw_type = GL_UNSIGNED_SHORT;
-
+    std::vector<std::string> asset_names = {"cube", "capsule", "WoodenCrate", "lamp"};
+    std::vector<std::string> asset_paths = {"data/models/cube.obj", "data/models/capsule.obj", "data/models/WoodenCrate.obj", "data/models/lamp.obj"};
+    std::vector<Asset *> assets;
+    for (int i = 0; i < asset_paths.size(); ++i) {
+        auto asset = new Asset;
+        loadAsset(asset, asset_paths[i]);
+        asset->name = asset_names[i];
         assets.push_back(asset);
     }
     
@@ -291,8 +284,8 @@ int main() {
                         case shader::TYPE::GEOMETRY:
                             loadGeometryShader(pair.first.c_str());
                             break;
-                        case shader::TYPE::DIRECTIONAL:
-                            loadDirectionalLightShader(pair.first.c_str());
+                        case shader::TYPE::POST:
+                            loadPostShader(pair.first.c_str());
                             break;
                         case shader::TYPE::POINT:
                             loadPointLightShader(pair.first.c_str());
@@ -332,7 +325,7 @@ int main() {
         drawGeometryGbuffer(entities, camera);
 
         bindDeffered(gbuffer);
-        drawDirectional(camera.position, quad);
+        drawPost(camera.position, quad);
 
         drawGbufferToBackbuffer(gbuffer);
 

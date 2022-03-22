@@ -3,31 +3,40 @@
 
 #include <string>
 #include <vector>
+#include <unordered_map>
 
 #include <glm/glm.hpp>
+
+#include <assimp/scene.h> 
 
 #include <GLFW/glfw3.h>
 
 struct Material {
     std::string name;
-    float     albedo[3] = {1,1,1};
-    float     diffuse[3]        = {1,1,1};
-    float     specular[3]       = {1,1,1};
-    float     trans_filter[3]    = {1,1,1};
-    float     dissolve          = 1.0;
-    float     spec_exp       = 10;
-    float     reflect_sharp  = 60;
-    float     optic_density  = 1.0;
-    GLuint    t_albedo       = GL_FALSE;
-    GLuint    t_diffuse      = GL_FALSE;
-    GLuint    t_normal       = GL_FALSE;
+    float     ambient[3]       = {1,1,1};
+    float     diffuse[3]       = {1,1,1};
+    float     specular[3]      = {1,1,1};
+    float     trans_filter[3]  = {1,1,1};
+    float     dissolve         = 1.0;
+    float     spec_exp         = 10;
+    float     spec_int         = 10;
+    float     reflect_sharp    = 60;
+    float     optic_density    = 1.0;
+    GLuint    t_ambient        = GL_FALSE;
+    GLuint    t_diffuse        = GL_FALSE;
+    GLuint    t_normal         = GL_FALSE;
 
 } typedef Material;
 
-struct ModelAsset {
+extern Material *default_material;
+
+void initDefaultMaterial();
+
+struct Asset {
     std::string name;
+    int        num_meshes;
     GLuint     program_id;
-    Material * mat;
+    Material **materials;
     GLuint     indices;
     GLuint 	   vertices;
     GLuint 	   uvs;
@@ -36,19 +45,22 @@ struct ModelAsset {
     GLuint     vao;
     GLenum     draw_mode;
     GLenum     draw_type;
-    GLint      draw_start;
-    GLint      draw_count;
-} typedef ModelAsset;
+    GLint     *draw_start;
+    GLint     *draw_count;
+} typedef Asset;
 
 bool loadAssimp(
-	std::string path, 
+	std::string path,
+	std::vector<std::pair<unsigned int, unsigned int>> & mesh_ranges,
+	std::vector<std::string> & mesh_materials,
 	std::vector<unsigned short> & indices,
 	std::vector<glm::vec3> & vertices,
 	std::vector<glm::vec2> & uvs,
 	std::vector<glm::vec3> & normals,
 	std::vector<glm::vec3> & tangents
 );
-bool loadMtl(Material *mat, const std::string &path);
-void loadAsset(ModelAsset *asset, const std::string &objpath, const std::string &mtlpath);
-
+bool loadMtl(std::unordered_map<std::string, Material *> &material_map, const std::string &path);
+bool loadAssetObj(Asset *asset, const std::string &objpath, const std::string &mtlpath);
+bool loadAsset(Asset *asset, const std::string &path);
+GLuint loadTextureFromAssimp(aiMaterial *mat, aiTextureType texture_type);
 #endif

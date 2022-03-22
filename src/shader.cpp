@@ -22,8 +22,8 @@
 namespace shader {
     GLuint geometry;
     struct GeometryUniforms geometry_uniforms;
-    GLuint directional;
-    struct DirectionalUniforms directional_uniforms;
+    GLuint post;
+    struct PostUniforms post_uniforms;
     GLuint point;
     struct PointUniforms point_uniforms;
 }
@@ -127,14 +127,14 @@ void loadGeometryShader(std::string path){
 	glUniform1i(glGetUniformLocation(program_id, "normalMap"),  1);
 }
 
-void loadDirectionalLightShader(std::string path){
+void loadPostShader(std::string path){
 	GLuint program_id = loadShader(path);
-	directional = program_id;
+	post = program_id;
 
-	directional_uniforms.screen_size = glGetUniformLocation(program_id, "screenSize");
-	directional_uniforms.light_color = glGetUniformLocation(program_id, "lightColor");
-	directional_uniforms.light_direction = glGetUniformLocation(program_id, "lightDirection");
-	directional_uniforms.camera_position = glGetUniformLocation(program_id, "cameraPosition");
+	post_uniforms.screen_size = glGetUniformLocation(program_id, "screenSize");
+	post_uniforms.light_color = glGetUniformLocation(program_id, "lightColor");
+	post_uniforms.light_direction = glGetUniformLocation(program_id, "lightDirection");
+	post_uniforms.camera_position = glGetUniformLocation(program_id, "cameraPosition");
 
 	glUseProgram(program_id);
 	glUniformMatrix4fv(glGetUniformLocation(program_id, "MVP"), 1, GL_FALSE, &glm::mat4()[0][0]);
@@ -157,6 +157,6 @@ void loadPointLightShader(std::string path){
 
 void deleteShaderPrograms(){
     glDeleteProgram(geometry);
-    glDeleteProgram(directional);
+    glDeleteProgram(post);
     glDeleteProgram(point);
 }

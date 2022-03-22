@@ -33,9 +33,9 @@ void updateCameraProjection(Camera &camera);
 struct GBuffer {
     enum GBUFFER_TEXTURE_TYPE {
         GBUFFER_TEXTURE_TYPE_POSITION = 0,
-        GBUFFER_TEXTURE_TYPE_DIFFUSE  = 1,
-        GBUFFER_TEXTURE_TYPE_NORMAL   = 2,
-        GBUFFER_NUM_TEXTURES          = 3
+        GBUFFER_TEXTURE_TYPE_DIFFUSE,
+        GBUFFER_TEXTURE_TYPE_NORMAL,
+        GBUFFER_NUM_TEXTURES,
     };
     GLuint fbo;
     GLuint textures[GBUFFER_NUM_TEXTURES];
@@ -50,7 +50,7 @@ void clearGBuffer(GBuffer &gb);
 void drawGeometryGbuffer(Entity *entities[ENTITY_COUNT], const Camera &camera);
 
 void bindDeffered(GBuffer &gb);
-void drawDirectional(const glm::vec3 &camera_position, ModelAsset *quad);
+void drawPost(const glm::vec3 &camera_position, Asset *quad);
 void drawGbufferToBackbuffer(GBuffer &gb);
 
 #endif

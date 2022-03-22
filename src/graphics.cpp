@@ -15,6 +15,7 @@
 int    window_width;
 int    window_height;
 bool   window_resized;
+Material *default_material;
 
 void windowSizeCallback(GLFWwindow* window, int width, int height){
     if(width != window_width || height != window_height) window_resized = true;
@@ -26,7 +27,7 @@ void windowSizeCallback(GLFWwindow* window, int width, int height){
 
 void createDefaultCamera(Camera &camera){
     camera.state = Camera::TYPE::TRACKBALL;
-    camera.position = glm::normalize(glm::vec3(6, 6, 6));
+    camera.position = glm::vec3(3,3,3);
     camera.target = glm::vec3(0,0,0);
     updateCameraProjection(camera);
     updateCameraView(camera);
@@ -48,7 +49,7 @@ void createGBuffer(GBuffer &gb){
     glGenTextures(1, &gb.depthTexture);
     glGenTextures(1, &gb.finalTexture);
 
-    for (unsigned int i = 0 ; i < GBuffer::GBUFFER_NUM_TEXTURES ; i++) {
+    for (unsigned int i = 0 ; i < GBuffer::GBUFFER_NUM_TEXTURES; i++) {
         glBindTexture(GL_TEXTURE_2D, gb.textures[i]);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB32F, window_width, window_height, 0, GL_RGB, GL_FLOAT, NULL);
         glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -103,7 +104,7 @@ void drawGeometryGbuffer(Entity *entities[ENTITY_COUNT], const Camera &camera){
         if(entity == nullptr)
             continue;
 
-        ModelAsset *asset = entity->asset;
+        Asset *asset = entity->asset;
 
         glUseProgram(asset->program_id);
 
@@ -111,16 +112,18 @@ void drawGeometryGbuffer(Entity *entities[ENTITY_COUNT], const Camera &camera){
 
         glUniformMatrix4fv(shader::geometry_uniforms.mvp, 1, GL_FALSE, &MVP[0][0]);
         glUniformMatrix4fv(shader::geometry_uniforms.model, 1, GL_FALSE, &entity->transform[0][0]);
-        
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, asset->mat->t_diffuse);
 
-        glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_2D, asset->mat->t_normal);
+        for (int j = 0; j < asset->num_meshes; ++j) {
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, asset->materials[j]->t_diffuse);
 
-        //bind VAO and draw
-        glBindVertexArray(asset->vao);
-        glDrawElements(asset->draw_mode, asset->draw_count, asset->draw_type, (void *)asset->draw_start);
+            glActiveTexture(GL_TEXTURE1);
+            glBindTexture(GL_TEXTURE_2D, asset->materials[j]->t_normal);
+
+            //bind VAO and draw
+            glBindVertexArray(asset->vao);
+            glDrawElements(asset->draw_mode, asset->draw_count[j], asset->draw_type, (GLvoid*)(sizeof(GLubyte) * asset->draw_start[j]));
+        }
     }
 }
 
@@ -135,8 +138,8 @@ void bindDeffered(GBuffer &gb){
 }
 
 // &todo formalise screen space quad
-void drawDirectional(const glm::vec3 &camera_position, ModelAsset *quad){
-    glUseProgram(shader::directional);
+void drawPost(const glm::vec3 &camera_position, Asset *quad){
+    glUseProgram(shader::post);
     
     // Ignore all depth and culling as rendering to screen quad
     glDepthMask(GL_FALSE);
@@ -147,13 +150,13 @@ void drawDirectional(const glm::vec3 &camera_position, ModelAsset *quad){
     glBlendEquation(GL_FUNC_ADD);
     glBlendFunc(GL_ONE, GL_ONE);
 
-    glUniform2f(shader::directional_uniforms.screen_size, window_width, window_height);
-    glUniform3fv(shader::directional_uniforms.light_color, 1, &sun_color[0]);
-    glUniform3fv(shader::directional_uniforms.light_direction, 1, &sun_direction[0]);
-    glUniform3fv(shader::directional_uniforms.camera_position, 1, &camera_position[0]);
+    glUniform2f(shader::post_uniforms.screen_size, window_width, window_height);
+    glUniform3fv(shader::post_uniforms.light_color, 1, &sun_color[0]);
+    glUniform3fv(shader::post_uniforms.light_direction, 1, &sun_direction[0]);
+    glUniform3fv(shader::post_uniforms.camera_position, 1, &camera_position[0]);
 
     glBindVertexArray(quad->vao);
-    glDrawElements(quad->draw_mode, quad->draw_count, quad->draw_type, (void*)quad->draw_start);
+    glDrawElements(quad->draw_mode, quad->draw_count[0], quad->draw_type, (GLvoid*)0);
 }
 
 void drawGbufferToBackbuffer(GBuffer &gb){
