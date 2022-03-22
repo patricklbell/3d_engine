@@ -1,3 +1,13 @@
+#include "editor.hpp"
+
+#include <stack>
+
+// Include GLEW
+#include <GL/glew.h>
+
+// Include GLFW
+#include <GLFW/glfw3.h>
+
 // Include ImGui
 #include "glm/gtc/quaternion.hpp"
 #include "imgui.h"
@@ -6,24 +16,36 @@
 #include "imgui_impl_opengl3.h"
 #include "imfilebrowser.hpp"
 
+#include <btBulletDynamicsCommon.h>
 
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
-void load_imgui(){
+#include "globals.hpp"
+#include "graphics.hpp"
+#include "texture.hpp"
+
+namespace editor {
+    std::string im_file_dialog_type;
+    GLDebugDrawer bt_debug_drawer;
+    ImGui::FileBrowser im_file_dialog;
+}
+using namespace editor;
+
+void loadEditorGui(){
     // Background
     ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
-    glClearColor(clear_color.x, clear_color.y, clear_color.z, clear_color.w);
 
     // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO();
+    auto &io = ImGui::GetIO();
     (void)io;
     //io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;     // Enable Keyboard Controls
     //io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;      // Enable Gamepad Controls
     
     // create a file browser instance
-    ImGui::FileBrowser fileDialog;
-    std::string fileDialogType = "";
+    im_file_dialog_type = "";
 
     // Setup Dear ImGui style
     ImGui::StyleColorsDark();
@@ -32,48 +54,50 @@ void load_imgui(){
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init(glsl_version.c_str());
 
-
+	// Setup bullet debug renderer
+    bt_debug_drawer.init();
+    dynamics_world->setDebugDrawer(&bt_debug_drawer);
+	bt_debug_drawer.setDebugMode(1);
 }
 
-bool edit_transform(float* cameraView, float* cameraProjection, float* matrix, float cameraDistance)
-{
-    static ImGuizmo::OPERATION mCurrentGizmoOperation(ImGuizmo::TRANSLATE);
-    static ImGuizmo::MODE mCurrentGizmoMode(ImGuizmo::LOCAL);
-    static bool useSnap = false;
+bool editTransform(const Camera &camera, float* matrix){
+    static ImGuizmo::OPERATION current_guizmo_operation(ImGuizmo::TRANSLATE);
+    static ImGuizmo::MODE current_guizmo_mode(ImGuizmo::LOCAL);
+    static bool use_snap = false;
     static float snap[3] = { 1.f, 1.f, 1.f };
     static float bounds[] = { -0.5f, -0.5f, -0.5f, 0.5f, 0.5f, 0.5f };
-    static float boundsSnap[] = { 0.1f, 0.1f, 0.1f };
-    static bool boundSizing = false;
-    static bool boundSizingSnap = false;
+    static float bound_snap[] = { 0.1f, 0.1f, 0.1f };
+    static bool bound_sizing = false;
+    static bool bound_sizing_snap = false;
     bool change_occured = false;
 
     if (ImGui::IsKeyPressed(90))
-        mCurrentGizmoOperation = ImGuizmo::TRANSLATE;
+        current_guizmo_operation = ImGuizmo::TRANSLATE;
     if (ImGui::IsKeyPressed(69))
-        mCurrentGizmoOperation = ImGuizmo::ROTATE;
+        current_guizmo_operation = ImGuizmo::ROTATE;
     if (ImGui::IsKeyPressed(82)) // r Key
-        mCurrentGizmoOperation = ImGuizmo::SCALE;
-    if (ImGui::RadioButton("Translate", mCurrentGizmoOperation == ImGuizmo::TRANSLATE))
-        mCurrentGizmoOperation = ImGuizmo::TRANSLATE;
+        current_guizmo_operation = ImGuizmo::SCALE;
+    if (ImGui::RadioButton("Translate", current_guizmo_operation == ImGuizmo::TRANSLATE))
+        current_guizmo_operation = ImGuizmo::TRANSLATE;
     ImGui::SameLine();
-    if (ImGui::RadioButton("Rotate", mCurrentGizmoOperation == ImGuizmo::ROTATE))
-        mCurrentGizmoOperation = ImGuizmo::ROTATE;
+    if (ImGui::RadioButton("Rotate", current_guizmo_operation == ImGuizmo::ROTATE))
+        current_guizmo_operation = ImGuizmo::ROTATE;
     ImGui::SameLine();
-    if (ImGui::RadioButton("Scale", mCurrentGizmoOperation == ImGuizmo::SCALE))
-        mCurrentGizmoOperation = ImGuizmo::SCALE;
-    float matrixTranslation[3], matrixRotation[3], matrixScale[3];
-    ImGuizmo::DecomposeMatrixToComponents(matrix, matrixTranslation, matrixRotation, matrixScale);
-    if(ImGui::InputFloat3("Tr", matrixTranslation)) change_occured = true;
-    if(ImGui::InputFloat3("Rt", matrixRotation)) change_occured = true;
-    if(ImGui::InputFloat3("Sc", matrixScale)) change_occured = true;
-    ImGuizmo::RecomposeMatrixFromComponents(matrixTranslation, matrixRotation, matrixScale, matrix);
+    if (ImGui::RadioButton("Scale", current_guizmo_operation == ImGuizmo::SCALE))
+        current_guizmo_operation = ImGuizmo::SCALE;
+    float matrix_translation[3], matrix_rotation[3], matrix_scale[3];
+    ImGuizmo::DecomposeMatrixToComponents(matrix, matrix_translation, matrix_rotation, matrix_scale);
+    if(ImGui::InputFloat3("Tr", matrix_translation)) change_occured = true;
+    if(ImGui::InputFloat3("Rt", matrix_rotation)) change_occured = true;
+    if(ImGui::InputFloat3("Sc", matrix_scale)) change_occured = true;
+    ImGuizmo::RecomposeMatrixFromComponents(matrix_translation, matrix_rotation, matrix_scale, matrix);
 
     if (ImGui::IsKeyPressed(83))
-        useSnap = !useSnap;
-    ImGui::Checkbox("", &useSnap);
+        use_snap = !use_snap;
+    ImGui::Checkbox("", &use_snap);
     ImGui::SameLine();
 
-    switch (mCurrentGizmoOperation)
+    switch (current_guizmo_operation)
     {
     case ImGuizmo::TRANSLATE:
         ImGui::InputFloat3("Snap", &snap[0]);
@@ -84,14 +108,16 @@ bool edit_transform(float* cameraView, float* cameraProjection, float* matrix, f
     case ImGuizmo::SCALE:
         ImGui::InputFloat("Scale Snap", &snap[0]);
         break;
+    default:
+        break;
     }
-    ImGui::Checkbox("Bound Sizing", &boundSizing);
-    if (boundSizing)
+    ImGui::Checkbox("Bound Sizing", &bound_sizing);
+    if (bound_sizing)
     {
         ImGui::PushID(3);
-        ImGui::Checkbox("", &boundSizingSnap);
+        ImGui::Checkbox("", &bound_sizing_snap);
         ImGui::SameLine();
-        ImGui::InputFloat3("Snap", boundsSnap);
+        ImGui::InputFloat3("Snap", bound_snap);
         ImGui::PopID();
     }
 
@@ -100,120 +126,198 @@ bool edit_transform(float* cameraView, float* cameraProjection, float* matrix, f
     float viewManipulateTop = 0;
     ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
 
-    ImGuizmo::Manipulate(cameraView, cameraProjection, mCurrentGizmoOperation, mCurrentGizmoMode, matrix, NULL, useSnap ? &snap[0] : NULL, boundSizing ? bounds : NULL, boundSizingSnap ? boundsSnap : NULL);
+    ImGuizmo::Manipulate(&camera.view[0][0], &camera.projection[0][0], current_guizmo_operation, current_guizmo_mode, matrix, NULL, use_snap ? &snap[0] : NULL, bound_sizing ? bounds : NULL, bound_sizing_snap ? bound_snap : NULL);
     return change_occured || ImGuizmo::IsUsing();
 }
 
-class GLDebugDrawer : public btIDebugDraw {
-    GLuint shaderProgram;
-    glm::mat4 MVP;
-    GLuint VBO, VAO;
-    int m_debugMode;
+void drawEditorGui(Camera &camera, Entity *entities[ENTITY_COUNT], std::vector<ModelAsset *> &assets, std::stack<int> &free_entity_stack, std::stack<int> &delete_entity_stack, int &id_counter, btRigidBody *rigidbodies[ENTITY_COUNT], btRigidBody::btRigidBodyConstructionInfo rigidbody_CI, GBuffer &gb){
 
-public:
-    GLDebugDrawer()
+    // @->todo Batch debug rendering
+    bt_debug_drawer.setMVP(camera.projection * camera.view);
+    dynamics_world->debugDrawWorld();
+
+
+    // Start the Dear ImGui frame;
+    ImGui_ImplOpenGL3_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
+    ImGui::NewFrame();
+
+    ImGuizmo::SetOrthographic(true);
+    ImGuizmo::BeginFrame();
     {
-        MVP = glm::mat4(1.0f);
-        std::cout<<"Intialising debug drawer\n"; 
+        if(selected_entity != -1) {
+            ImGui::Begin("Model Properties");
 
-        const char *vertexShaderSource = "#version 330 core\n"
-                                         "layout (location = 0) in vec3 aPos;\n"
-                                         "uniform mat4 MVP;\n"
-                                         "void main()\n"
-                                         "{\n"
-                                         "   gl_Position = MVP * vec4(aPos.x, aPos.y, aPos.z, 1.0);\n"
-                                         "}\0";
-        const char *fragmentShaderSource = "#version 330 core\n"
-                                           "out vec4 FragColor;\n"
-                                           "uniform vec3 color;\n"
-                                           "void main()\n"
-                                           "{\n"
-                                           "   FragColor = vec4(color, 1.0f);\n"
-                                           "}\n\0";
+            editTransform(camera, (float *)&entities[selected_entity]->transform[0][0]);
+ 
+            if(camera.state == Camera::TYPE::TRACKBALL){
+                camera.target = glm::vec3(entities[selected_entity]->transform[3]);
+            }
 
-        // vertex shader
-        int vertexShader = glCreateShader(GL_VERTEX_SHADER);
-        glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
-        glCompileShader(vertexShader);
-        // check for shader compile errors
+            // &todo Edit rigidbody inplace
+            dynamics_world->removeRigidBody(rigidbodies[selected_entity]);
+           
+            btTransform transform;
+            transform.setFromOpenGLMatrix((float*)&entities[selected_entity]->transform[0][0]);
 
-        // fragment shader
-        int fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-        glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
-        glCompileShader(fragmentShader);
-        // check for shader compile errors
+            rigidbodies[selected_entity]->setMotionState(new btDefaultMotionState(transform));
+            dynamics_world->addRigidBody(rigidbodies[selected_entity]);
+            
+            if (ImGui::CollapsingHeader("Material", ImGuiTreeNodeFlags_DefaultOpen)) {
+                ImGui::ColorEdit3("Albedo Color", entities[selected_entity]->asset->mat->albedo);
+                ImGui::ColorEdit3("Diffuse Color", entities[selected_entity]->asset->mat->diffuse);
+                ImGui::InputFloat("Specular Color", &entities[selected_entity]->asset->mat->optic_density);
+                ImGui::InputFloat("Reflection Sharpness", &entities[selected_entity]->asset->mat->reflect_sharp);
+                ImGui::InputFloat("Specular Exponent (size)", &entities[selected_entity]->asset->mat->spec_exp);
+                ImGui::InputFloat("Dissolve", &entities[selected_entity]->asset->mat->dissolve);
+                ImGui::ColorEdit3("Transmission Filter", entities[selected_entity]->asset->mat->trans_filter);
+                
+                void * texDiffuse = (void *)(intptr_t)entities[selected_entity]->asset->mat->t_diffuse;
+                if(ImGui::ImageButton(texDiffuse, ImVec2(128,128))){
+                    im_file_dialog_type = "asset.mat.tDiffuse";
+                    im_file_dialog.SetTypeFilters({ ".bmp" });
+                    im_file_dialog.Open();
+                }
 
-        // link shaders
-        shaderProgram = glCreateProgram();
-        glAttachShader(shaderProgram, vertexShader);
-        glAttachShader(shaderProgram, fragmentShader);
-        glLinkProgram(shaderProgram);
-        // check for linking errors
+                ImGui::SameLine();
 
-        glDeleteShader(vertexShader);
-        glDeleteShader(fragmentShader);
+                void * texNormal = (void *)(intptr_t)entities[selected_entity]->asset->mat->t_normal;
+                if(ImGui::ImageButton(texNormal, ImVec2(128,128))){
+                    im_file_dialog_type = "asset.mat.tNormal";
+                    im_file_dialog.SetTypeFilters({ ".bmp" });
+                    im_file_dialog.Open();
+                }
+            }
+            if(ImGui::Button("Duplicate")){
+                int id;
+                if(free_entity_stack.size() == 0){
+                    id = id_counter++;
+                } else {
+                    id = free_entity_stack.top();
+                    free_entity_stack.pop();
+                }
+                entities[id] = new Entity();
+                entities[id]->id = id;
+                entities[id]->asset = entities[selected_entity]->asset;
+                entities[id]->transform = entities[selected_entity]->transform * glm::translate(glm::mat4(), glm::vec3(0.1));
+                if(rigidbodies[selected_entity] != nullptr){
+                    rigidbodies[id] = new btRigidBody(
+                        1/rigidbodies[selected_entity]->getInvMass(),
+                        rigidbodies[selected_entity]->getMotionState(),
+                        rigidbodies[selected_entity]->getCollisionShape(),
+                        btVector3(0,0,0)
+                    );
+                    rigidbodies[id]->translate(btVector3(0.1, 0.1, 0.1));
+                    dynamics_world->addRigidBody(rigidbodies[id]);
+                    rigidbodies[id]->setUserIndex(id);
+                }
+                if(camera.state == Camera::TYPE::TRACKBALL){
+                    selected_entity = id;
+                    camera.target = glm::vec3(entities[selected_entity]->transform[3]);
+                    updateCameraView(camera);
+                }
+            }
+            ImGui::SameLine();
+            if(ImGui::Button("Delete")){
+                delete_entity_stack.push(selected_entity);
+                selected_entity = -1;
+            }
+            ImGui::End();
+        }
     }
-    virtual ~GLDebugDrawer()
     {
-        glDeleteVertexArrays(1, &VAO);
-        glDeleteBuffers(1, &VBO);
-        glDeleteProgram(shaderProgram);
+        ImGui::Begin("Global Properties");
+        if (ImGui::CollapsingHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen)) {
+            float distance = glm::length(camera.position - camera.target);
+            if (ImGui::SliderFloat("Distance", &distance, 1.f, 100.f)) {
+                camera.position = camera.target + glm::normalize(camera.position - camera.target)*distance;
+                updateCameraView(camera);
+            }
+        }
+        if (ImGui::CollapsingHeader("Add Entity", ImGuiTreeNodeFlags_DefaultOpen)){
+            static int asset_current = 0;
+
+            if (ImGui::BeginCombo("##asset-combo", assets[asset_current]->name.c_str())){
+                for (int n = 0; n < assets.size(); n++)
+                {
+                    bool is_selected = (asset_current == n); // You can store your selection however you want, outside or inside your objects
+                    if (ImGui::Selectable(assets[n]->name.c_str(), is_selected))
+                        asset_current = n;
+                    if (is_selected)
+                        ImGui::SetItemDefaultFocus();   // You may set the initial focus when opening the combo (scrolling + for keyboard navigation support)
+                }
+                ImGui::EndCombo();
+            }
+
+            if(ImGui::Button("Add Instance")){
+                int id;
+                if(free_entity_stack.size() == 0){
+                    id = id_counter++;
+                } else {
+                    id = free_entity_stack.top();
+                    free_entity_stack.pop();
+                }
+                entities[id] = new Entity();
+                entities[id]->id = id;
+                entities[id]->asset = assets[asset_current];
+                entities[id]->transform = glm::mat4();
+
+                // TODO: Integrate collider with asset loading
+                rigidbodies[id] = new btRigidBody(rigidbody_CI);
+                rigidbodies[id]->setMotionState(new btDefaultMotionState(btTransform(btQuaternion(0,0,0),btVector3(0, 0, 0))));
+                dynamics_world->addRigidBody(rigidbodies[id]);
+                rigidbodies[id]->setUserIndex(id);
+                if(camera.state == Camera::TYPE::TRACKBALL){
+                    selected_entity = id;
+                    camera.target = glm::vec3(entities[selected_entity]->transform[3]);
+                    camera.view = glm::lookAt(camera.position, camera.target, camera.up);
+                }
+            }
+        }
+        
+        ImGui::ColorEdit3("Clear color", (float*)&clear_color); // Edit 3 floats representing a color
+        ImGui::ColorEdit3("Sun color", (float*)&sun_color); // Edit 3 floats representing a color
+        if(ImGui::InputFloat3("Sun direction", (float*)&sun_direction))
+            sun_direction = glm::normalize(sun_direction);
+        if (ImGui::BeginMenuBar())
+        {
+            if (ImGui::BeginMenu("Menu"))
+            {
+                ImGui::EndMenu();
+            }
+            ImGui::EndMenuBar();
+        }
+        ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+        ImGui::End();
+
+        ImGui::Begin("GBuffer");
+        {
+            ImGui::Image((void *)(intptr_t)gb.textures[GBuffer::GBUFFER_TEXTURE_TYPE_DIFFUSE], ImVec2((int)window_width/10, (int)window_height/10), ImVec2(0, 1), ImVec2(1, 0));
+            ImGui::SameLine();
+            ImGui::Image((void *)(intptr_t)gb.textures[GBuffer::GBUFFER_TEXTURE_TYPE_NORMAL], ImVec2((int)window_width/10, (int)window_height/10), ImVec2(0, 1), ImVec2(1, 0));
+            ImGui::SameLine();
+            ImGui::Image((void *)(intptr_t)gb.textures[GBuffer::GBUFFER_TEXTURE_TYPE_POSITION], ImVec2((int)window_width/10, (int)window_height/10), ImVec2(0, 1), ImVec2(1, 0)) ;
+        }
+        ImGui::End();
+        im_file_dialog.Display();
+        if(im_file_dialog.HasSelected())
+        {
+            std::cout << "Selected filename: " << im_file_dialog.GetSelected().string() << std::endl;
+            if(im_file_dialog_type == "asset.mat.tDiffuse"){
+                if(selected_entity != -1)
+                    entities[selected_entity]->asset->mat->t_diffuse = loadImage(im_file_dialog.GetSelected().string());
+            }
+            else if(im_file_dialog_type == "asset.mat.tNormal"){
+                if(selected_entity != -1)
+                    entities[selected_entity]->asset->mat->t_normal = loadImage(im_file_dialog.GetSelected().string());
+            }
+            im_file_dialog.ClearSelected();
+        }
     }
-    void   drawLine(const btVector3& from, const btVector3& to, const btVector3& color)
-    {
-        float vertices[] = {
-            from.getX(), from.getY(), from.getZ(),
-            to.getX(), to.getY(), to.getZ(),
-        };
 
-        glGenVertexArrays(1, &VAO);
-        glGenBuffers(1, &VBO);
-        glBindVertexArray(VAO);
-
-        glBindBuffer(GL_ARRAY_BUFFER, VBO);
-        glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), &vertices, GL_STATIC_DRAW);
-
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
-        glEnableVertexAttribArray(0);
-
-        glBindBuffer(GL_ARRAY_BUFFER, 0);
-        glBindVertexArray(0);
-
-        glUseProgram(shaderProgram);
-        glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "MVP"), 1, GL_FALSE, &MVP[0][0]);
-        glUniform3fv(glGetUniformLocation(shaderProgram, "color"), 1, &color.m_floats[0]);
-
-        glBindVertexArray(VAO);
-        glDrawArrays(GL_LINES, 0, 2);
-    }
-    void    drawContactPoint(const btVector3& PointOnB,const btVector3& normalOnB,btScalar distance,int lifeTime,const btVector3& color){
-        drawSphere(PointOnB, 0.1, color);
-        drawLine(PointOnB, PointOnB+normalOnB.normalized()*0.5, color);
-    }
-    void   reportErrorWarning(const char* warningString)
-    {
-        std::cout << "<------BulletPhysics Debug------>\n" << warningString << "\n";
-    }
-
-    void   draw3dText(const btVector3& location, const char* textString)
-    {
-        std::cout << "<------BulletPhysics Debug------>\n" << textString << "\n";
-    }
-
-    void   setDebugMode(int debugMode)
-    {
-        m_debugMode = debugMode;
-    }
-
-    int    getDebugMode() const
-    {
-        return m_debugMode;
-    }
-    int setMVP(glm::mat4 mvp)
-    {
-        MVP = mvp;
-        return 1;
-    }
-};
-
-
+    // Rendering ImGUI
+    ImGui::Render();
+    auto &io = ImGui::GetIO();
+    glViewport(0, 0, (int)io.DisplaySize.x, (int)io.DisplaySize.y);
+    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+}

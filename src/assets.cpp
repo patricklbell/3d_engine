@@ -3,14 +3,22 @@
 #include <string>
 #include <cstring>
 #include <iostream>
+#include <fstream>
+#include <sstream>
+
+#include <GL/glew.h>
+#include <GLFW/glfw3.h>
+
 #include <glm/glm.hpp>
+
 #include <assimp/Importer.hpp>      // C++ importer interface
 #include <assimp/scene.h>           // Output data structure
 #include <assimp/postprocess.h>     // Post processing flags
+
 #include "texture.hpp"
 #include "assets.hpp"
 
-bool load_assimp(
+bool loadAssimp(
 	std::string path, 
 	std::vector<unsigned short> & indices,
 	std::vector<glm::vec3> & vertices,
@@ -78,7 +86,7 @@ bool load_assimp(
 
 // MTL loader which assumes one material
 // TODO: illum model
-bool load_mtl(Material * mat, const std::string &path){
+bool loadMtl(Material * mat, const std::string &path){
 	// Extract containing directory
 	std::string directory = "";
 	{
@@ -117,43 +125,45 @@ bool load_mtl(Material * mat, const std::string &path){
 				mat->specular[2] = mat->specular[0];
 			}
 		} else if (head == "Tf") {
-			ss >> mat->transFilter[0];
-			if(!(ss >> mat->transFilter[1])){
-				mat->transFilter[1] = mat->transFilter[0];
-				mat->transFilter[2] = mat->transFilter[0];
+			ss >> mat->trans_filter[0];
+			if(!(ss >> mat->trans_filter[1])){
+				mat->trans_filter[1] = mat->trans_filter[0];
+				mat->trans_filter[2] = mat->trans_filter[0];
 			}
 		} else if (head == "d") {
 			ss >> mat->dissolve;
 		} else if (head == "Ns") {
-			ss >> mat->specExp;
+			ss >> mat->spec_exp;
 		} else if (head == "sharpness") {
-			ss >> mat->reflectSharp;
+			ss >> mat->reflect_sharp;
 		} else if (head == "Ni") {
-			ss >> mat->opticDensity;
+			ss >> mat->optic_density;
 		} else if (head == "map_Ka") {
 			// TODO: handle arguments
 			auto index = line.find_last_of(' ');
 			std::string tex_path = line.substr(++index);
-			mat->tAlbedo = load_image(directory+tex_path);
+			mat->t_albedo = loadImage(directory+tex_path);
 		} else if (head == "map_Kd") {
 			// TODO: handle arguments
 			auto index = line.find_last_of(' ');
 			std::string tex_path = line.substr(++index);
-			mat->tDiffuse = load_image(directory+tex_path, true);
+			mat->t_diffuse = loadImage(directory+tex_path, true);
 		} else if (head == "norm" || head == "map_Bump") {
 			// TODO: handle arguments
 			auto index = line.find_last_of(' ');
 			std::string tex_path = line.substr(++index);
-			mat->tNormal = load_image(directory+tex_path);
+			mat->t_normal = loadImage(directory+tex_path);
 		}
 	}
 
 	return true;
 }
 
-void load_asset(ModelAsset * asset, const std::string &objpath, const std::string &mtlpath){
-	if(!load_mtl(asset->mat, mtlpath)){
-		std::cout << "Could not load MTL: " << mtlpath << "\n";
+void loadAsset(ModelAsset * asset, const std::string &objpath, const std::string &mtlpath){
+	if(mtlpath != ""){
+		if(!loadMtl(asset->mat, mtlpath)){
+			std::cout << "Could not load MTL: " << mtlpath << "\n";
+		}
 	}
 
 	// Read our .obj file
@@ -162,8 +172,8 @@ void load_asset(ModelAsset * asset, const std::string &objpath, const std::strin
 	std::vector<glm::vec2> indexed_uvs;
 	std::vector<glm::vec3> indexed_normals;
 	std::vector<glm::vec3> indexed_tangents;
-	bool res = load_assimp(objpath, indices, indexed_vertices, indexed_uvs, indexed_normals, indexed_tangents);
-	asset->drawCount = indices.size();
+	bool res = loadAssimp(objpath, indices, indexed_vertices, indexed_uvs, indexed_normals, indexed_tangents);
+	asset->draw_count = indices.size();
 
 	glGenBuffers(1, &asset->tangents);
 	glGenBuffers(1, &asset->normals);
@@ -202,4 +212,3 @@ void load_asset(ModelAsset * asset, const std::string &objpath, const std::strin
 
 	glBindVertexArray(0); //Unbind the VAO
 }
-

@@ -1,35 +1,34 @@
-#ifndef GRAPHIC_H
-#define GRAPHIC_H
+#ifndef GRAPHIC_HPP
+#define GRAPHIC_HPP
+
+#include <GLFW/glfw3.h>
+#include <glm/glm.hpp>
+
+#include "utilities.hpp"
+#include "globals.hpp"
 
 extern int    window_width;
 extern int    window_height;
 extern bool   window_resized;
-extern Camera camera;
 
-void window_size_callback(GLFWwindow* window, int width, int height){
-    if(width != window_width || height != window_height) window_resized = true;
-    else                                                 window_resized = false;
-
-    window_width  = width;
-    window_height = height;
-}
+void windowSizeCallback(GLFWwindow* window, int width, int height);
 
 typedef struct Camera {
-    enum State { 
+    enum TYPE { 
         TRACKBALL = 0,
         SHOOTER = 1,
     } state;
 
     glm::vec3 const up = glm::vec3(0,1,0);
     glm::vec3 position;
-    glm::vec3 pivot;
-    float distance;
+    glm::vec3 target;
     glm::mat4 view;
     glm::mat4 projection;
 } Camera;
 
-void update_camera_view(Camera &camera);
-void load_default_camera(Camera &camera);
+void createDefaultCamera(Camera &camera);
+void updateCameraView(Camera &camera);
+void updateCameraProjection(Camera &camera);
 
 struct GBuffer {
     enum GBUFFER_TEXTURE_TYPE {
@@ -44,6 +43,14 @@ struct GBuffer {
     GLuint finalTexture;
 } typedef GBuffer;
 
-GBuffer generate_gbuffer(unsigned int windowWidth, unsigned int windowHeight);
+void createGBuffer(GBuffer &gb);
+void bindGbuffer(GBuffer &gb);
+void clearGBuffer(GBuffer &gb);
+
+void drawGeometryGbuffer(Entity *entities[ENTITY_COUNT], const Camera &camera);
+
+void bindDeffered(GBuffer &gb);
+void drawDirectional(const glm::vec3 &camera_position, ModelAsset *quad);
+void drawGbufferToBackbuffer(GBuffer &gb);
 
 #endif

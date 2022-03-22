@@ -1,42 +1,14 @@
 #ifndef UTILITIES_HPP
 #define UTILITIES_HPP
+
 #include <string>
-
 #include <glm/glm.hpp>
-#include <glm/gtc/type_ptr.hpp>
-
-// Include GLEW
-#include <GL/glew.h>
-
-// Include GLFW
 #include <GLFW/glfw3.h>
-#include <vector>
-#ifdef _WINDOWS
-#define GLFW_EXPOSE_NATIVE_WIN32
-#include <GLFW/glfw3native.h>
-#include <ShellScalingApi.h>
-#endif
-
-// Include Bullet
 #include <btBulletDynamicsCommon.h>
+#include "assets.hpp"
 
-const glm::mat4 IDENTITY = glm::mat4();
-void mat4_to_float_array(glm::mat4 i_mat, float o_array[16]);
 void float_array_to_mat4(glm::mat4& o_mat, float i_array[16]);
-void screen_pos_to_world_ray(
-    int mouseX, int mouseY,             // Mouse position, in pixels, from bottom-left corner of the window
-    int screenWidth, int screenHeight,  // Window size, in pixels
-    glm::mat4 ViewMatrix,               // Camera position and orientation
-    glm::mat4 ProjectionMatrix,         // Camera parameters (ratio, field of view, near and far planes)
-    glm::vec3& out_origin,              // Ouput : Origin of the ray. /!\ Starts at the near plane, so if you want the ray to start at the camera's position instead, ignore this.
-    glm::vec3& out_direction            // Ouput : Direction, in world space, of the ray that goes "through" the mouse.
-);
-
-//struct Id {
-//    unsigned int index;
-//    unsigned int version = 0;
-//} typedef Id;
-
+void screenPosToWorldRay(glm::ivec2 mouse_position, glm::mat4 view, glm::mat4 projection, glm::vec3 &out_origin, glm::vec3 &out_direction);
 struct Entity {
     ModelAsset* asset = nullptr;
     glm::mat4 transform = glm::mat4();
@@ -44,6 +16,14 @@ struct Entity {
     unsigned int id;
 } typedef Entity;
 
+
+//
+//  Potentially more advanced implementation of entity storage
+//
+//struct Id {
+//    unsigned int index;
+//    unsigned int version = 0;
+//} typedef Id;
 //struct EntitySlotMap {
 //    Entity entities[ENTITY_COUNT];
 //    std::stack<Id> freeStack;

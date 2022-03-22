@@ -1,145 +1,162 @@
+#include <cstring>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string>
 #include <iostream>
-#include <stdlib.h>
-#include <stdio.h>
 
+// Include GLEW
 #include <GL/glew.h>
 
-#include "utilities.hpp"
-#include "shader.hpp"
+// Include GLFW
+#include <GLFW/glfw3.h>
+#ifdef _WINDOWS
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3native.h>
+#include <ShellScalingApi.h>
+#endif
 
-GLuint loadShader(const char * vertex_fragment_file_path) {
+#include "shader.hpp"
+#include "utilities.hpp"
+#include "graphics.hpp"
+
+namespace shader {
+    GLuint geometry;
+    struct GeometryUniforms geometry_uniforms;
+    GLuint directional;
+    struct DirectionalUniforms directional_uniforms;
+    GLuint point;
+    struct PointUniforms point_uniforms;
+}
+
+using namespace shader;
+
+GLuint loadShader(std::string vertex_fragment_file_path) {
+	const char *path = vertex_fragment_file_path.c_str();
+	printf("Loading shader %s.\n", path);
 	const char *version_macro  = "#version 330 core \n";
 	const char *fragment_macro = "#define COMPILING_FS 1\n";
 	const char *vertex_macro   = "#define COMPILING_VS 1\n";
 	
-	GLuint vertexShaderID = glCreateShader(GL_VERTEX_SHADER);
-	GLuint fragmentShaderID = glCreateShader(GL_FRAGMENT_SHADER);
+	GLuint vertex_shader_id   = glCreateShader(GL_VERTEX_SHADER);
+	GLuint fragment_shader_id = glCreateShader(GL_FRAGMENT_SHADER);
 
 	// Read unified shader code from file
-	FILE *fp = fopen(vertex_fragment_file_path, "r");
+	FILE *fp = fopen(path, "r");
 
 	if (fp == NULL) {
-		printf("Can't open shader %s.\n", vertex_fragment_file_path);
+		printf("Can't open shader %s.\n", path);
 		return 0;
 	}
 	fseek(fp, 0L, SEEK_END);
 	int num_bytes = ftell(fp);
-	 
-	/* reset the file position indicator to 
-	the beginning of the file */
-	fseek(fp, 0L, SEEK_SET);	
-	 
-	char *shader_code = (char*)calloc(num_bytes, sizeof(char));	
+	
+	// @note adds \0 to fread
+	rewind(fp); 
+	char *shader_code = (char*)malloc((num_bytes+1) * sizeof(char));	
 	if(shader_code == NULL)
 		return 0;
 	fread(shader_code, sizeof(char), num_bytes, fp);
 	fclose(fp);
+	shader_code[num_bytes] = 0;
+    
+	GLint result = GL_FALSE;
+	int info_log_length;
 
-	char *fragment_shader_code[] = {(char *)version_macro, (char *)fragment_macro, shader_code};
-	char *vertex_shader_code[]   = {(char *)version_macro, (char *)vertex_macro, shader_code};
+	printf("Compiling and linking shader : %s\n", path);
 
-	GLint Result = GL_FALSE;
-	int InfoLogLength;
+    char *vertex_shader_code[] = {(char*)version_macro, (char*)vertex_macro, shader_code};
 
+	glShaderSource(vertex_shader_id, 3, vertex_shader_code, NULL);
+	glCompileShader(vertex_shader_id);
 
-	// Compile Vertex Shader
-	printf("Compiling shader : %s\n", vertex_file_path);
-	char const * VertexSourcePointer = VertexShaderCode.c_str();
-	glShaderSource(vertexShaderID, 1, &VertexSourcePointer , NULL);
-	glCompileShader(vertexShaderID);
-
-	// Check Vertex Shader
-	glGetShaderiv(vertexShaderID, GL_COMPILE_STATUS, &Result);
-	glGetShaderiv(vertexShaderID, GL_INFO_LOG_LENGTH, &InfoLogLength);
-	if ( InfoLogLength > 0 ){
-		std::vector<char> VertexShaderErrorMessage(InfoLogLength+1);
-		glGetShaderInfoLog(vertexShaderID, InfoLogLength, NULL, &VertexShaderErrorMessage[0]);
-		printf("%s\n", &VertexShaderErrorMessage[0]);
+	// Check vertex shader compilation
+	glGetShaderiv(vertex_shader_id, GL_INFO_LOG_LENGTH, &info_log_length);
+	if ( info_log_length > 0 ){
+		char *vertex_shader_error_messages[info_log_length+1];
+		glGetShaderInfoLog(vertex_shader_id, info_log_length, NULL, vertex_shader_error_messages[0]);
+		printf("%s\n", vertex_shader_error_messages[0]);
 	}
 
+    char *fragment_shader_code[] = {(char*)version_macro, (char*)fragment_macro, shader_code};
 
+	glShaderSource(fragment_shader_id, 3, fragment_shader_code, NULL);
+	glCompileShader(fragment_shader_id);
 
-	// Compile Fragment Shader
-	printf("Compiling shader : %s\n", fragment_file_path);
-	char const * FragmentSourcePointer = FragmentShaderCode.c_str();
-	glShaderSource(fragmentShaderID, 1, &FragmentSourcePointer , NULL);
-	glCompileShader(fragmentShaderID);
-
-	// Check Fragment Shader
-	glGetShaderiv(fragmentShaderID, GL_COMPILE_STATUS, &Result);
-	glGetShaderiv(fragmentShaderID, GL_INFO_LOG_LENGTH, &InfoLogLength);
-	if ( InfoLogLength > 0 ){
-		std::vector<char> FragmentShaderErrorMessage(InfoLogLength+1);
-		glGetShaderInfoLog(fragmentShaderID, InfoLogLength, NULL, &FragmentShaderErrorMessage[0]);
-		printf("%s\n", &FragmentShaderErrorMessage[0]);
+	glGetShaderiv(fragment_shader_id, GL_INFO_LOG_LENGTH, &info_log_length);
+	if ( info_log_length > 0 ){
+		char *fragment_shader_error_messages[info_log_length+1];
+		glGetShaderInfoLog(fragment_shader_id, info_log_length, NULL, fragment_shader_error_messages[0]);
+		printf("%s\n", fragment_shader_error_messages[0]);
 	}
 
+	GLuint program_id = glCreateProgram();
+	glAttachShader(program_id, vertex_shader_id);
+	glAttachShader(program_id, fragment_shader_id);
+	glLinkProgram(program_id);
 
-
-	// Link the program
-	printf("Linking program\n");
-	GLuint ProgramID = glCreateProgram();
-	glAttachShader(ProgramID, vertexShaderID);
-	glAttachShader(ProgramID, fragmentShaderID);
-	glLinkProgram(ProgramID);
-
-	// Check the program
-	glGetProgramiv(ProgramID, GL_LINK_STATUS, &Result);
-	glGetProgramiv(ProgramID, GL_INFO_LOG_LENGTH, &InfoLogLength);
-	if ( InfoLogLength > 0 ){
-		std::vector<char> ProgramErrorMessage(InfoLogLength+1);
-		glGetProgramInfoLog(ProgramID, InfoLogLength, NULL, &ProgramErrorMessage[0]);
-		printf("%s\n", &ProgramErrorMessage[0]);
+	glGetProgramiv(program_id, GL_INFO_LOG_LENGTH, &info_log_length);
+	if ( info_log_length > 0 ){
+		char *program_error_message[info_log_length+1];
+		glGetProgramInfoLog(program_id, info_log_length, NULL, program_error_message[0]);
+		printf("%s\n", program_error_message[0]);
 	}
 
+	glDetachShader(program_id, vertex_shader_id);
+	glDetachShader(program_id, fragment_shader_id);
 	
-	glDetachShader(ProgramID, vertexShaderID);
-	glDetachShader(ProgramID, fragmentShaderID);
-	
-	glDeleteShader(vertexShaderID);
-	glDeleteShader(fragmentShaderID);
+	glDeleteShader(vertex_shader_id);
+	glDeleteShader(fragment_shader_id);
 
-	return ProgramID;
+    free(shader_code);
+
+	return program_id;
 }
 
-GLuint load_geometry_shader(const char *path){
+void loadGeometryShader(std::string path){
 	// Create and compile our GLSL program from the shaders
-	GLuint programID = load_shader(path);
+	GLuint program_id = loadShader(path);
+	geometry = program_id;
 
 	// Grab geom uniforms to modify
-	GLuint u_geom_MVP = glGetUniformLocation(programID, "MVP");
-	GLuint u_geom_model = glGetUniformLocation(programID, "model");
+	geometry_uniforms.mvp   = glGetUniformLocation(program_id, "MVP");
+	geometry_uniforms.model = glGetUniformLocation(program_id, "model");
 
-	glUseProgram(programID);
-	// Fixed locations for textures
-	glUniform1i(glGetUniformLocation(programID, "diffuseMap"), 0);
-	glUniform1i(glGetUniformLocation(programID, "normalMap"),  1);
-}
-GLuint load_dir_light_shader(const char *path){
-	GLuint programID = load_shader(path);
-	GLuint u_dir_screen_size = glGetUniformLocation(directionalProgramID, "screenSize");
-	GLuint u_dir_light_color = glGetUniformLocation(directionalProgramID, "lightColor");
-	GLuint u_dir_light_direction = glGetUniformLocation(directionalProgramID, "lightDirection");
-	GLuint u_dir_camera_position = glGetUniformLocation(directionalProgramID, "cameraPosition");
-
-	glUseProgram(programID);
-	glUniformMatrix4fv(glGetUniformLocation(programID, "MVP"), 1, GL_FALSE, &IDENTITY[0][0]);
-	glUniform1i(glGetUniformLocation(programID, "positionMap"), GBuffer::GBUFFER_TEXTURE_TYPE_POSITION);
-	glUniform1i(glGetUniformLocation(programID, "normalMap"), GBuffer::GBUFFER_TEXTURE_TYPE_NORMAL);
-	glUniform1i(glGetUniformLocation(programID, "diffuseMap"), GBuffer::GBUFFER_TEXTURE_TYPE_DIFFUSE);
-}
-else if(program.first == "pointProgramID"){
-	pointProgramID = load_shader("data/shaders/light_pass.vert", "data/shaders/point_light_pass.frag",false);
-
-	glUseProgram(pointProgramID);
-	glUniformMatrix4fv(glGetUniformLocation(pointProgramID, "MVP"), 1, GL_FALSE, &IDENTITY[0][0]);
-	glUniform1i(glGetUniformLocation(pointProgramID, "positionMap"), GBuffer::GBUFFER_TEXTURE_TYPE_POSITION);
-	glUniform1i(glGetUniformLocation(pointProgramID, "normalMap"), GBuffer::GBUFFER_TEXTURE_TYPE_NORMAL);
-	glUniform1i(glGetUniformLocation(pointProgramID, "diffuseMap"), GBuffer::GBUFFER_TEXTURE_TYPE_DIFFUSE);
+	glUseProgram(program_id);
+	// Set fixed locations for textures
+	glUniform1i(glGetUniformLocation(program_id, "diffuseMap"), 0);
+	glUniform1i(glGetUniformLocation(program_id, "normalMap"),  1);
 }
 
+void loadDirectionalLightShader(std::string path){
+	GLuint program_id = loadShader(path);
+	directional = program_id;
+
+	directional_uniforms.screen_size = glGetUniformLocation(program_id, "screenSize");
+	directional_uniforms.light_color = glGetUniformLocation(program_id, "lightColor");
+	directional_uniforms.light_direction = glGetUniformLocation(program_id, "lightDirection");
+	directional_uniforms.camera_position = glGetUniformLocation(program_id, "cameraPosition");
+
+	glUseProgram(program_id);
+	glUniformMatrix4fv(glGetUniformLocation(program_id, "MVP"), 1, GL_FALSE, &glm::mat4()[0][0]);
+	// Set fixed locations for frame buffer
+	glUniform1i(glGetUniformLocation(program_id, "positionMap"), GBuffer::GBUFFER_TEXTURE_TYPE_POSITION);
+	glUniform1i(glGetUniformLocation(program_id, "normalMap"), GBuffer::GBUFFER_TEXTURE_TYPE_NORMAL);
+	glUniform1i(glGetUniformLocation(program_id, "diffuseMap"), GBuffer::GBUFFER_TEXTURE_TYPE_DIFFUSE);
+}
+void loadPointLightShader(std::string path){
+	GLuint program_id = loadShader(path);
+	point = program_id;
+
+	glUseProgram(program_id);
+	glUniformMatrix4fv(glGetUniformLocation(program_id, "MVP"), 1, GL_FALSE, &glm::mat4()[0][0]);
+	// Set fixed locations for frame buffer
+	glUniform1i(glGetUniformLocation(program_id, "positionMap"), GBuffer::GBUFFER_TEXTURE_TYPE_POSITION);
+	glUniform1i(glGetUniformLocation(program_id, "normalMap"), GBuffer::GBUFFER_TEXTURE_TYPE_NORMAL);
+	glUniform1i(glGetUniformLocation(program_id, "diffuseMap"), GBuffer::GBUFFER_TEXTURE_TYPE_DIFFUSE);
 }
 
-
+void deleteShaderPrograms(){
+    glDeleteProgram(geometry);
+    glDeleteProgram(directional);
+    glDeleteProgram(point);
+}

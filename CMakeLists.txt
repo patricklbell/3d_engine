@@ -58,8 +58,10 @@ set(SOURCES
 	src/shader.cpp
 	src/texture.cpp
 	src/utilities.cpp
-	src/objloader.cpp
-	src/vboindexer.cpp
+	src/controls.cpp
+	src/editor.cpp
+	src/graphics.cpp
+	src/assets.cpp
 
     external/imgui/imgui_demo.cpp
     external/imgui/imgui_draw.cpp
