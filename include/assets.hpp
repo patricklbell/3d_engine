@@ -22,9 +22,9 @@ struct Material {
     float     spec_int         = 10;
     float     reflect_sharp    = 60;
     float     optic_density    = 1.0;
-    GLuint    t_ambient        = GL_FALSE;
-    GLuint    t_diffuse        = GL_FALSE;
-    GLuint    t_normal         = GL_FALSE;
+    GLuint    t_ambient        = 0;
+    GLuint    t_diffuse        = 0;
+    GLuint    t_normal         = 0;
 
 } typedef Material;
 
@@ -32,10 +32,9 @@ extern Material *default_material;
 
 void initDefaultMaterial();
 
-struct Asset {
+struct Mesh {
     std::string name;
-    int        num_meshes;
-    GLuint     program_id;
+    int        num_materials;
     Material **materials;
     GLuint     indices;
     GLuint 	   vertices;
@@ -47,7 +46,7 @@ struct Asset {
     GLenum     draw_type;
     GLint     *draw_start;
     GLint     *draw_count;
-} typedef Asset;
+} typedef Mesh;
 
 bool loadAssimp(
 	std::string path,
@@ -60,7 +59,7 @@ bool loadAssimp(
 	std::vector<glm::vec3> & tangents
 );
 bool loadMtl(std::unordered_map<std::string, Material *> &material_map, const std::string &path);
-bool loadAssetObj(Asset *asset, const std::string &objpath, const std::string &mtlpath);
-bool loadAsset(Asset *asset, const std::string &path);
+bool loadAssetObj(Mesh *asset, const std::string &objpath, const std::string &mtlpath);
+bool loadAsset(Mesh *asset, const std::string &path);
 GLuint loadTextureFromAssimp(aiMaterial *mat, aiTextureType texture_type);
 #endif

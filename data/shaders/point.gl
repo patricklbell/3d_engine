@@ -2,11 +2,9 @@
 
 layout (location = 0) in vec3 position;
 
-uniform mat4 MVP;
-
 void main()
 {
-    gl_Position = MVP * vec4(position, 1.0);
+    gl_Position = vec4(position, 1.0);
 }
 #endif
 
@@ -16,19 +14,19 @@ out vec4 out_color;
 uniform sampler2D positionMap;
 uniform sampler2D diffuseMap;
 uniform sampler2D normalMap;
-uniform sampler2D texcoordMap;
 uniform vec2      screenSize;
+uniform vec3      cameraPosition;
 uniform vec3      lightPosition;
 uniform vec3      lightColor;
-uniform vec3      cameraPosition;
+uniform float     attenuationConstant;
+uniform float     attenuationLinear;
+uniform float     attenuationExp;
 
-#define AMBIENT_INTENSITY    0.1
-#define DIFFUSE_INTENSITY    0.1
-#define SPECULAR_POWER       10
-#define SPECULAR_INTENSITY   0.1
-#define ATTENUATION_CONSTANT 1
-#define ATTENUATION_LINEAR   0.1
-#define ATTENUATION_EXP      0.05
+#define AMBIENT_INTENSITY  0.1
+#define DIFFUSE_INTENSITY  0.8
+#define SPECULAR_EXP       30
+#define SPECULAR_INTENSITY 4
+
 
 vec4 calcPointLight(vec3 position, vec3 normal)
 {
@@ -48,11 +46,11 @@ vec4 calcPointLight(vec3 position, vec3 normal)
         vec3 lightReflect = normalize(reflect(lightDirection, normal));
         float specularFactor = dot(vertexToEye, lightReflect);
         if (specularFactor > 0) {
-            specularFactor = pow(specularFactor, SPECULAR_POWER);
+            specularFactor = pow(specularFactor, SPECULAR_EXP);
             specularColor = vec4(lightColor * SPECULAR_INTENSITY * specularFactor, 1.0f);
         }
     }
-    float attenuation = ATTENUATION_CONSTANT + ATTENUATION_LINEAR * distance + ATTENUATION_EXP * distance * distance;
+    float attenuation = attenuationConstant + attenuationLinear * distance + attenuationExp * distance * distance;
     return (ambientColor + diffuseColor + specularColor) / attenuation;
 }
 

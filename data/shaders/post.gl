@@ -1,52 +1,17 @@
 #ifdef COMPILING_VS
 layout (location = 0) in vec3 position;
 
-uniform mat4 MVP;
-
 void main()
 {
-    gl_Position = MVP * vec4(position, 1.0);
+    gl_Position = vec4(position, 1.0);
 }
 #endif
 
 #ifdef COMPILING_FS
 out vec4 out_color;
 
-uniform sampler2D   positionMap;
-uniform sampler2D   diffuseMap;
-uniform sampler2D   normalMap;
-uniform samplerCube skyboxCube;
+uniform sampler2D   pixelMap;
 uniform vec2        screenSize;
-uniform vec3        lightColor;
-uniform vec3        lightDirection;
-uniform vec3        cameraPosition;
-
-#define AMBIENT_INTENSITY  0.1
-#define DIFFUSE_INTENSITY  0.8
-#define SPECULAR_EXP       30
-#define SPECULAR_INTENSITY 4
-
-vec4 calcDirectionalLight(vec3 position, vec3 normal)
-{
-    vec4 ambientColor = vec4(lightColor, 1.0f) * AMBIENT_INTENSITY;
-    float diffuseFactor = dot(normal, -lightDirection);
-
-    vec4 diffuseColor = vec4(0, 0, 0, 0);
-    vec4 specularColor = vec4(0, 0, 0, 0);
-
-    if (diffuseFactor > 0) {
-        diffuseColor = vec4(lightColor * DIFFUSE_INTENSITY * diffuseFactor, 1.0f);
-        vec3 viewDirection = normalize(cameraPosition - position);
-        vec3 halfwayDirection = normalize(-lightDirection + viewDirection);
-        float specularFactor = dot(normal, halfwayDirection);
-        if (specularFactor > 0) {
-            specularFactor = pow(specularFactor, SPECULAR_EXP);
-            specularColor = vec4(lightColor * SPECULAR_INTENSITY * specularFactor, 1.0f);
-        }
-    }
-
-    return (ambientColor + diffuseColor + specularColor);
-}
 
 vec2 calcTexCoord()
 {
@@ -56,14 +21,16 @@ vec2 calcTexCoord()
 void main()
 {
     vec2 texcoord = calcTexCoord();
-    vec3 position = texture(positionMap, texcoord).xyz;
-    vec3 color = texture(diffuseMap, texcoord).xyz;
-    vec3 normal = normalize(texture(normalMap, texcoord).xyz);
+    vec3 hdr_color = texture(pixelMap, texcoord).xyz;
+   
+    const float gamma = 1.6;
 
-    out_color = vec4(color, 1.0) * calcDirectionalLight(position, normal);
+    // reinhard tone mapping
+    vec3 mapped = hdr_color / (hdr_color + vec3(1.0));
 
-    // Gamma correction
-    const float gamma = 1.5;
-    out_color.rgb = pow(out_color.rgb, vec3(1.0/gamma));
+    // gamma correction 
+    mapped = pow(mapped, vec3(1.0 / gamma));
+  
+    out_color = vec4(mapped, 1.0);
 } 
 #endif

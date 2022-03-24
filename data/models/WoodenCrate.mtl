@@ -12,5 +12,5 @@ d 1.000000
 illum 2
 map_Kd data/textures/WoodenCrateDiffuse.bmp
 map_Ka data/textures/WoodenCrateAO.bmp
-map_Bump -bm 0.400000 data/textures/WoodenCrateNormal.bmp
+map_Bump data/textures/WoodenCrateNormal.bmp
 map_Ns data/textures/WoodenCrateRoughness.png

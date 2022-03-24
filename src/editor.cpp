@@ -131,7 +131,7 @@ bool editTransform(const Camera &camera, float* matrix){
     return change_occured || ImGuizmo::IsUsing();
 }
 
-void drawEditorGui(Camera &camera, Entity *entities[ENTITY_COUNT], std::vector<Asset *> &assets, std::stack<int> &free_entity_stack, std::stack<int> &delete_entity_stack, int &id_counter, btRigidBody *rigidbodies[ENTITY_COUNT], btRigidBody::btRigidBodyConstructionInfo rigidbody_CI, GBuffer &gb){
+void drawEditorGui(Camera &camera, Entity *entities[ENTITY_COUNT], std::vector<Mesh *> &assets, std::stack<int> &free_entity_stack, std::stack<int> &delete_entity_stack, int &id_counter, btRigidBody *rigidbodies[ENTITY_COUNT], btRigidBody::btRigidBodyConstructionInfo rigidbody_CI, GBuffer &gb){
 
     // @->todo Batch debug rendering
     if(draw_bt_debug){
@@ -294,11 +294,12 @@ void drawEditorGui(Camera &camera, Entity *entities[ENTITY_COUNT], std::vector<A
 
         ImGui::Begin("GBuffer");
         {
-            ImGui::Image((void *)(intptr_t)gb.textures[GBuffer::GBUFFER_TEXTURE_TYPE_DIFFUSE], ImVec2((int)window_width/10, (int)window_height/10), ImVec2(0, 1), ImVec2(1, 0));
+            ImGui::Image((void *)(intptr_t)gb.textures[GBuffer::GBUFFER_TEXTURE_TYPE_DIFFUSE], ImVec2((int)window_width/8, (int)window_height/8), ImVec2(0, 1), ImVec2(1, 0));
             ImGui::SameLine();
-            ImGui::Image((void *)(intptr_t)gb.textures[GBuffer::GBUFFER_TEXTURE_TYPE_NORMAL], ImVec2((int)window_width/10, (int)window_height/10), ImVec2(0, 1), ImVec2(1, 0));
+            ImGui::Image((void *)(intptr_t)gb.textures[GBuffer::GBUFFER_TEXTURE_TYPE_NORMAL], ImVec2((int)window_width/8, (int)window_height/8), ImVec2(0, 1), ImVec2(1, 0));
+            ImGui::Image((void *)(intptr_t)gb.textures[GBuffer::GBUFFER_TEXTURE_TYPE_POSITION], ImVec2((int)window_width/8, (int)window_height/8), ImVec2(0, 1), ImVec2(1, 0)) ;
             ImGui::SameLine();
-            ImGui::Image((void *)(intptr_t)gb.textures[GBuffer::GBUFFER_TEXTURE_TYPE_POSITION], ImVec2((int)window_width/10, (int)window_height/10), ImVec2(0, 1), ImVec2(1, 0)) ;
+            ImGui::Image((void *)(intptr_t)&gb.t_final, ImVec2((int)window_width/8, (int)window_height/8), ImVec2(0, 1), ImVec2(1, 0)) ;
         }
         ImGui::End();
         im_file_dialog.Display();

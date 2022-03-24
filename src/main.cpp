@@ -121,16 +121,20 @@ int main() {
     createGBuffer(gbuffer);
 
     // Load shaders
+    loadNullShader("data/shaders/null.gl");
     loadGeometryShader("data/shaders/geometry.gl");
+    loadDirectionalShader("data/shaders/directional.gl");
+    loadPointShader("data/shaders/point.gl");
     loadPostShader("data/shaders/post.gl");
-    loadPointLightShader("data/shaders/point.gl");
 
     // Map for last update time for hotswaping files
     std::filesystem::file_time_type empty_file_time;
     std::map<const std::string, std::pair<shader::TYPE, std::filesystem::file_time_type>> shader_update_times = {
-        {"data/shaders/geometry.gl", {shader::TYPE::GEOMETRY, empty_file_time}},
-        {"data/shaders/post.gl", {shader::TYPE::POST, empty_file_time}},
-        {"data/shaders/point.gl", {shader::TYPE::POINT, empty_file_time}},
+        {"data/shaders/null.gl", {shader::TYPE::NULL_SHADER, empty_file_time}},
+        {"data/shaders/geometry.gl", {shader::TYPE::GEOMETRY_SHADER, empty_file_time}},
+        {"data/shaders/directional.gl", {shader::TYPE::DIRECTIONAL_SHADER, empty_file_time}},
+        {"data/shaders/point.gl", {shader::TYPE::POINT_SHADER, empty_file_time}},
+        {"data/shaders/post.gl", {shader::TYPE::POST_SHADER, empty_file_time}},
     };
     // Fill in with correct file time
     for (auto &pair : shader_update_times) {
@@ -177,13 +181,13 @@ int main() {
 
     //    glBindVertexArray(0);
     //}
-    Asset *quad = new Asset;
+    Mesh *quad = new Mesh;
     loadAsset(quad, "data/models/quad.obj");
-    quad->name = "quad";
-    quad->program_id = shader::post;
-    quad->draw_mode = GL_TRIANGLES;
-    quad->draw_start = 0;
-    quad->draw_type = GL_UNSIGNED_SHORT;
+    Mesh *sphere = new Mesh;
+    loadAsset(sphere, "data/models/sphere.obj");
+
+    // Create point lights
+    std::vector<PointLight> point_lights = {PointLight(glm::vec3(2,0,0), glm::vec3(1,1,1), 0.5, 1, 1, 0.8)};
 
     // Initialize Bullet
     {
@@ -218,9 +222,9 @@ int main() {
     // Load assets
     std::vector<std::string> asset_names = {"cube", "capsule", "WoodenCrate", "lamp"};
     std::vector<std::string> asset_paths = {"data/models/cube.obj", "data/models/capsule.obj", "data/models/WoodenCrate.obj", "data/models/lamp.obj"};
-    std::vector<Asset *> assets;
+    std::vector<Mesh *> assets;
     for (int i = 0; i < asset_paths.size(); ++i) {
-        auto asset = new Asset;
+        auto asset = new Mesh;
         loadAsset(asset, asset_paths[i]);
         asset->name = asset_names[i];
         assets.push_back(asset);
@@ -240,11 +244,6 @@ int main() {
         entities[id]->asset = assets[0];
         entities[id]->transform = glm::translate(glm::mat4(), glm::vec3(0, i*3, 0));
         rigidbodies[id] = new btRigidBody(rigidbody_CI);
-
-        btTransform transform;
-        transform.setFromOpenGLMatrix((float*)&entities[id]->transform[0]);
-
-        rigidbodies[id]->setMotionState(new btDefaultMotionState(transform));
 
         rigidbodies[id]->setMotionState(new btDefaultMotionState(btTransform(btQuaternion(0,0,0),btVector3(0, i*3, 0))));
         dynamics_world->addRigidBody(rigidbodies[id]);
@@ -281,14 +280,20 @@ int main() {
                 if(pair.second.second != std::filesystem::last_write_time(pair.first)){
                     pair.second.second = std::filesystem::last_write_time(pair.first);
                     switch (pair.second.first) {
-                        case shader::TYPE::GEOMETRY:
+                        case shader::TYPE::NULL_SHADER:
+                            loadNullShader(pair.first.c_str());
+                            break;
+                        case shader::TYPE::GEOMETRY_SHADER:
                             loadGeometryShader(pair.first.c_str());
                             break;
-                        case shader::TYPE::POST:
+                        case shader::TYPE::POST_SHADER:
                             loadPostShader(pair.first.c_str());
                             break;
-                        case shader::TYPE::POINT:
-                            loadPointLightShader(pair.first.c_str());
+                        case shader::TYPE::POINT_SHADER:
+                            loadPointShader(pair.first.c_str());
+                            break;
+                        case shader::TYPE::DIRECTIONAL_SHADER:
+                            loadDirectionalShader(pair.first.c_str());
                             break;
                         default:
                             break;
@@ -298,13 +303,12 @@ int main() {
         }
 
 
-        //dynamicsWorld->stepSimulation(true_dt);
-
-        //// Update matrixes of physics objects
+        //dynamics_world->stepSimulation(true_dt);
+        // Update matrixes of physics objects
         //for (auto &rigidbody : rigidbodies) {
-        //	auto object = static_cast<Entity *>(rigidbody->getUserPointer());
-        //	auto pos = glm::vec3(object->transform[3]);
-        //	if(object != selected_object){
+        //	auto entity = entities[rigidbody->getUserIndex()];
+        //	auto pos = glm::vec3(entity->transform[3]);
+        //	if(rigidbody->getUserIndex() != selected_entity){
         //		btTransform trans;
         //		rigidbody->getMotionState()->getWorldTransform(trans);
 
@@ -312,7 +316,7 @@ int main() {
         //		//std::cout << vec.getX() << ", " << vec.getY() << ", "<< vec.getZ() << "\n";
 
         //		// Convert the btTransform into the GLM matrix
-        //		trans.getOpenGLMatrix(glm::value_ptr(object->transform));
+        //		//trans.getOpenGLMatrix(glm::value_ptr(entity->transform));
         //	} else {
         //		std::cout << pos.x << ", " << pos.y << ", "<< pos.z << "\n";
         //		rigidbody->setMotionState(new btDefaultMotionState(btTransform(btQuaternion(0,0,0),btVector3(pos.x, pos.y, pos.z))));
@@ -324,10 +328,13 @@ int main() {
         bindGbuffer(gbuffer);
         drawGeometryGbuffer(entities, camera);
 
-        bindDeffered(gbuffer);
-        drawPost(camera.position, quad);
 
-        drawGbufferToBackbuffer(gbuffer);
+        bindDeffered(gbuffer);
+        //drawPointLights(camera, gbuffer, point_lights, sphere, quad);
+        drawDirectionalLight(camera.position, quad);
+
+        bindPost(gbuffer);
+        //drawPost(quad);
 
         drawEditorGui(camera, entities, assets, free_entity_stack, delete_entity_stack, id_counter, rigidbodies, rigidbody_CI, gbuffer);
 
@@ -347,10 +354,19 @@ int main() {
                 rigidbodies[id] = nullptr;
             }
         }
+
+        static GLenum code;
+        static const GLubyte* string;
+        if(code != GL_NO_ERROR){
+            code = glGetError();
+            string = gluErrorString(code);
+            fprintf(stderr, "OpenGL error: %s\n", string);
+        }
     } // Check if the ESC key was pressed or the window was closed
     while( glfwGetKey(window, GLFW_KEY_ESCAPE ) != GLFW_PRESS && glfwWindowShouldClose(window) == 0 );
 
     // Cleanup VAOs and shader
+    glDeleteFramebuffers(1, &gbuffer.fbo);  
     for(auto &asset : assets){
         glDeleteVertexArrays(1, &asset->vao);
     }

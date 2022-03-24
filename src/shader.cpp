@@ -20,10 +20,18 @@
 #include "graphics.hpp"
 
 namespace shader {
+    GLuint null;
+    struct NullUniforms null_uniforms;
+
     GLuint geometry;
     struct GeometryUniforms geometry_uniforms;
+
     GLuint post;
     struct PostUniforms post_uniforms;
+
+    GLuint directional;
+    struct DirectionalUniforms directional_uniforms;
+
     GLuint point;
     struct PointUniforms point_uniforms;
 }
@@ -44,7 +52,7 @@ GLuint loadShader(std::string vertex_fragment_file_path) {
 	FILE *fp = fopen(path, "r");
 
 	if (fp == NULL) {
-		printf("Can't open shader %s.\n", path);
+		fprintf(stderr, "Can't open shader %s.\n", path);
 		return 0;
 	}
 	fseek(fp, 0L, SEEK_END);
@@ -74,7 +82,7 @@ GLuint loadShader(std::string vertex_fragment_file_path) {
 	if ( info_log_length > 0 ){
 		char *vertex_shader_error_messages[info_log_length+1];
 		glGetShaderInfoLog(vertex_shader_id, info_log_length, NULL, vertex_shader_error_messages[0]);
-		printf("%s\n", vertex_shader_error_messages[0]);
+		fprintf(stderr, "%s\n", vertex_shader_error_messages[0]);
 	}
 
     char *fragment_shader_code[] = {(char*)version_macro, (char*)fragment_macro, shader_code};
@@ -86,7 +94,7 @@ GLuint loadShader(std::string vertex_fragment_file_path) {
 	if ( info_log_length > 0 ){
 		char *fragment_shader_error_messages[info_log_length+1];
 		glGetShaderInfoLog(fragment_shader_id, info_log_length, NULL, fragment_shader_error_messages[0]);
-		printf("%s\n", fragment_shader_error_messages[0]);
+		fprintf(stderr, "%s\n", fragment_shader_error_messages[0]);
 	}
 
 	GLuint program_id = glCreateProgram();
@@ -98,7 +106,7 @@ GLuint loadShader(std::string vertex_fragment_file_path) {
 	if ( info_log_length > 0 ){
 		char *program_error_message[info_log_length+1];
 		glGetProgramInfoLog(program_id, info_log_length, NULL, program_error_message[0]);
-		printf("%s\n", program_error_message[0]);
+		fprintf(stderr, "%s\n", program_error_message[0]);
 	}
 
 	glDetachShader(program_id, vertex_shader_id);
@@ -111,52 +119,72 @@ GLuint loadShader(std::string vertex_fragment_file_path) {
 
 	return program_id;
 }
+void loadNullShader(std::string path){
+	// Create and compile our GLSL program from the shaders
+	null = loadShader(path);
 
+	// Grab uniforms to modify
+	null_uniforms.mvp   = glGetUniformLocation(null, "MVP");
+}
 void loadGeometryShader(std::string path){
 	// Create and compile our GLSL program from the shaders
-	GLuint program_id = loadShader(path);
-	geometry = program_id;
+	geometry = loadShader(path);
 
 	// Grab geom uniforms to modify
-	geometry_uniforms.mvp   = glGetUniformLocation(program_id, "MVP");
-	geometry_uniforms.model = glGetUniformLocation(program_id, "model");
+	geometry_uniforms.mvp   = glGetUniformLocation(geometry, "MVP");
+	geometry_uniforms.model = glGetUniformLocation(geometry, "model");
 
-	glUseProgram(program_id);
+	glUseProgram(geometry);
 	// Set fixed locations for textures
-	glUniform1i(glGetUniformLocation(program_id, "diffuseMap"), 0);
-	glUniform1i(glGetUniformLocation(program_id, "normalMap"),  1);
+	glUniform1i(glGetUniformLocation(geometry, "diffuseMap"), 0);
+	glUniform1i(glGetUniformLocation(geometry, "normalMap"),  1);
 }
 
 void loadPostShader(std::string path){
-	GLuint program_id = loadShader(path);
-	post = program_id;
+	post = loadShader(path);
 
-	post_uniforms.screen_size = glGetUniformLocation(program_id, "screenSize");
-	post_uniforms.light_color = glGetUniformLocation(program_id, "lightColor");
-	post_uniforms.light_direction = glGetUniformLocation(program_id, "lightDirection");
-	post_uniforms.camera_position = glGetUniformLocation(program_id, "cameraPosition");
+	post_uniforms.screen_size = glGetUniformLocation(post, "screenSize");
 
-	glUseProgram(program_id);
-	glUniformMatrix4fv(glGetUniformLocation(program_id, "MVP"), 1, GL_FALSE, &glm::mat4()[0][0]);
-	// Set fixed locations for frame buffer
-	glUniform1i(glGetUniformLocation(program_id, "positionMap"), GBuffer::GBUFFER_TEXTURE_TYPE_POSITION);
-	glUniform1i(glGetUniformLocation(program_id, "normalMap"), GBuffer::GBUFFER_TEXTURE_TYPE_NORMAL);
-	glUniform1i(glGetUniformLocation(program_id, "diffuseMap"), GBuffer::GBUFFER_TEXTURE_TYPE_DIFFUSE);
+	glUseProgram(post);
+	// Set fixed texture locations for frame buffer
+	glUniform1i(glGetUniformLocation(post, "pixelMap"), 2);
 }
-void loadPointLightShader(std::string path){
-	GLuint program_id = loadShader(path);
-	point = program_id;
 
-	glUseProgram(program_id);
-	glUniformMatrix4fv(glGetUniformLocation(program_id, "MVP"), 1, GL_FALSE, &glm::mat4()[0][0]);
-	// Set fixed locations for frame buffer
-	glUniform1i(glGetUniformLocation(program_id, "positionMap"), GBuffer::GBUFFER_TEXTURE_TYPE_POSITION);
-	glUniform1i(glGetUniformLocation(program_id, "normalMap"), GBuffer::GBUFFER_TEXTURE_TYPE_NORMAL);
-	glUniform1i(glGetUniformLocation(program_id, "diffuseMap"), GBuffer::GBUFFER_TEXTURE_TYPE_DIFFUSE);
+void loadDirectionalShader(std::string path){
+	directional = loadShader(path);
+
+	directional_uniforms.screen_size = glGetUniformLocation(directional, "screenSize");
+	directional_uniforms.light_color = glGetUniformLocation(directional, "lightColor");
+	directional_uniforms.light_direction = glGetUniformLocation(directional, "lightDirection");
+	directional_uniforms.camera_position = glGetUniformLocation(directional, "cameraPosition");
+
+	glUseProgram(directional);
+	// Set fixed texture locations for frame buffer
+	glUniform1i(glGetUniformLocation(directional, "positionMap"), GBuffer::GBUFFER_TEXTURE_TYPE_POSITION);
+	glUniform1i(glGetUniformLocation(directional, "normalMap"), GBuffer::GBUFFER_TEXTURE_TYPE_NORMAL);
+	glUniform1i(glGetUniformLocation(directional, "diffuseMap"), GBuffer::GBUFFER_TEXTURE_TYPE_DIFFUSE);
+}
+void loadPointShader(std::string path){
+	point = loadShader(path);
+
+	point_uniforms.screen_size = glGetUniformLocation(point, "screenSize");
+	point_uniforms.light_color = glGetUniformLocation(point, "lightColor");
+	point_uniforms.light_position = glGetUniformLocation(point, "lightPosition");
+	point_uniforms.camera_position = glGetUniformLocation(point, "cameraPosition");
+	point_uniforms.attenuation_constant = glGetUniformLocation(point, "attenuationConstant");
+	point_uniforms.attenuation_exp = glGetUniformLocation(point, "attenuationExp");
+	point_uniforms.attenuation_linear = glGetUniformLocation(point, "attenuationLinear");
+
+	glUseProgram(point);
+	// Set fixed texture locations for frame buffer
+	glUniform1i(glGetUniformLocation(point, "positionMap"), GBuffer::GBUFFER_TEXTURE_TYPE_POSITION);
+	glUniform1i(glGetUniformLocation(point, "normalMap"), GBuffer::GBUFFER_TEXTURE_TYPE_NORMAL);
+	glUniform1i(glGetUniformLocation(point, "diffuseMap"), GBuffer::GBUFFER_TEXTURE_TYPE_DIFFUSE);
 }
 
 void deleteShaderPrograms(){
     glDeleteProgram(geometry);
     glDeleteProgram(post);
     glDeleteProgram(point);
+    glDeleteProgram(directional);
 }

@@ -22,10 +22,20 @@
 #include "shader.hpp"
 #include "graphics.hpp"
 
+Material *default_material;
 void initDefaultMaterial(){
     default_material = new Material;
-    default_material->t_diffuse = loadImage("data/textures/default_diffuse.bmp");
-    default_material->t_normal  = loadImage("data/textures/default_normal.bmp");
+
+	glGenTextures(1, &default_material->t_diffuse);
+	glBindTexture(GL_TEXTURE_2D, default_material->t_diffuse);
+	const unsigned char diff_data[] = {255, 0, 200};
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 1, 1, 0, GL_RGB, GL_UNSIGNED_BYTE, &diff_data[0]);
+
+	glGenTextures(1, &default_material->t_normal);
+	glBindTexture(GL_TEXTURE_2D, default_material->t_normal);
+	const unsigned char norm_data[] = {128, 127, 255};
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 1, 1, 0, GL_RGB, GL_UNSIGNED_BYTE, &norm_data[0]);
+
 }
 
 bool loadAssimp(
@@ -44,7 +54,6 @@ bool loadAssimp(
 	const aiScene* scene = importer.ReadFile(path, aiProcess_CalcTangentSpace | aiProcess_JoinIdenticalVertices | aiProcess_SortByPType | aiProcess_Triangulate);
 	if( !scene) {
 		fprintf( stderr, importer.GetErrorString());
-		getchar();
 		return false;
 	}
 	for (int i = 0; i < scene->mNumMeshes; ++i) {
@@ -187,7 +196,7 @@ bool loadMtl(std::unordered_map<std::string, Material *> &material_map, const st
 	return true;
 }
 
-bool loadAssetObj(Asset * asset, const std::string &objpath, const std::string &mtlpath){
+bool loadAssetObj(Mesh * asset, const std::string &objpath, const std::string &mtlpath){
 	std::unordered_map<std::string, Material *> material_map;
 	if(!loadMtl(material_map, mtlpath)){
 		std::cout << "Could not load MTL: " << mtlpath << "\n";
@@ -204,10 +213,10 @@ bool loadAssetObj(Asset * asset, const std::string &objpath, const std::string &
 	if (!loadAssimp(objpath, mesh_ranges, mesh_materials, indices, indexed_vertices, indexed_uvs, indexed_normals, indexed_tangents)) return false;
 
 	// Fill materials, draw counts and draw starts from ranges
-	asset->num_meshes = mesh_materials.size();
-	asset->draw_count = (GLint*)malloc( asset->num_meshes * sizeof(GLint) );
-	asset->draw_start = (GLint*)malloc( asset->num_meshes * sizeof(GLint) );
-	asset->materials  = (Material**)malloc( asset->num_meshes * sizeof(Material*) );
+	asset->num_materials = mesh_materials.size();
+	asset->draw_count = (GLint*)malloc( asset->num_materials * sizeof(GLint) );
+	asset->draw_start = (GLint*)malloc( asset->num_materials * sizeof(GLint) );
+	asset->materials  = (Material**)malloc( asset->num_materials * sizeof(Material*) );
 	GLint i = 0;
 	for (auto &range : mesh_ranges) {
 		asset->draw_count[i] = range.second - range.first;
@@ -221,7 +230,6 @@ bool loadAssetObj(Asset * asset, const std::string &objpath, const std::string &
 		}
 		i++;
 	}
-	asset->program_id = shader::geometry;
 	asset->draw_mode = GL_TRIANGLES;
 	asset->draw_type = GL_UNSIGNED_SHORT;
 
@@ -265,12 +273,12 @@ bool loadAssetObj(Asset * asset, const std::string &objpath, const std::string &
 	return true;
 }
 
-bool loadAsset(Asset * asset, const std::string &path){
+bool loadAsset(Mesh * asset, const std::string &path){
 	printf("Loading asset %s.\n", path.c_str());
 
 	Assimp::Importer importer;
 
-	const aiScene* scene = importer.ReadFile(path, aiProcess_CalcTangentSpace | aiProcess_JoinIdenticalVertices | aiProcess_SortByPType | aiProcess_Triangulate);
+	const aiScene* scene = importer.ReadFile(path, aiProcess_CalcTangentSpace | aiProcess_JoinIdenticalVertices | aiProcess_SortByPType | aiProcess_Triangulate | aiProcess_GenNormals);
 	if( !scene) {
 		fprintf( stderr, importer.GetErrorString());
 		getchar();
@@ -285,121 +293,120 @@ bool loadAsset(Asset * asset, const std::string &path){
 	glGenVertexArrays(1, &asset->vao);
 
 	// Allocate arrays for each mesh 
-	asset->num_meshes = scene->mNumMeshes;
-	asset->draw_count = (GLint*)malloc( asset->num_meshes * sizeof(GLint) );
-	asset->draw_start = (GLint*)malloc( asset->num_meshes * sizeof(GLint) );
-	asset->materials  = (Material**)malloc( asset->num_meshes * sizeof(Material*) );
+	asset->num_materials = scene->mNumMeshes;
+	asset->draw_count = (GLint*)malloc( asset->num_materials * sizeof(GLint) );
+	asset->draw_start = (GLint*)malloc( asset->num_materials * sizeof(GLint) );
+	asset->materials  = (Material**)malloc( asset->num_materials * sizeof(Material*) );
+	std::cout << "Number of meshes: " << asset->num_materials << ".\n";
 
-	asset->program_id = shader::geometry;
 	asset->draw_mode = GL_TRIANGLES;
 	asset->draw_type = GL_UNSIGNED_SHORT;
 
-
-	// @note could check if none of the properties is null and disable ie no uvs
-	// Calculate size of each buffers
-	int n_vertices, n_uvs, n_tangents, n_normals, n_indices;
+	std::vector<glm::vec3> vertices, normals, tangents;
+	std::vector<glm::vec2> uvs;
+	std::vector<unsigned short> indices;
 	for (int i = 0; i < scene->mNumMeshes; ++i) {
-		if(scene->mMeshes[i]->mTextureCoords[0] != NULL) n_uvs += scene->mMeshes[i]->mNumVertices;
-		if(scene->mMeshes[i]->mTangents != NULL) n_tangents += scene->mMeshes[i]->mNumVertices;
-		if(scene->mMeshes[i]->mNormals != NULL) n_normals += scene->mMeshes[i]->mNumVertices;
-		if(scene->mMeshes[i]->mVertices == NULL) return false;
-		if(scene->mMeshes[i]->mFaces == NULL) return false;
-		n_vertices += scene->mMeshes[i]->mNumVertices;
-		n_indices  += scene->mMeshes[i]->mNumFaces;
-		auto m = scene->mMaterials[scene->mMeshes[i]->mMaterialIndex];
+		const aiMesh* mesh = scene->mMeshes[i]; 
+
+		asset->draw_start[i] = indices.size();
+		std::cout << "From " << asset->draw_start[i] << " To " << asset->draw_start[i]+3*mesh->mNumFaces-1 << "\n";
+		asset->draw_count[i] = 3*mesh->mNumFaces;
+
+		vertices.reserve(mesh->mNumVertices);
+		for(unsigned int i=0; i<mesh->mNumVertices; i++){
+			auto v = mesh->mVertices[i];
+			vertices.push_back(glm::vec3(v.x, v.y, v.z));
+		}
+		if(mesh->mTextureCoords[0] != NULL){
+			uvs.reserve(mesh->mNumVertices);
+			for(unsigned int i=0; i<mesh->mNumVertices; i++){
+				// Assume only 1 set of UV coords; AssImp supports 8 UV sets.
+				auto uvw = mesh->mTextureCoords[0][i];
+				uvs.push_back(glm::vec2(uvw.x, uvw.y));
+			}
+		}
+		if(mesh->mNormals != NULL){
+			normals.reserve(mesh->mNumVertices);
+			for(unsigned int i=0; i<mesh->mNumVertices; i++){
+				auto n = mesh->mNormals[i];
+				normals.push_back(glm::vec3(n.x, n.y, n.z));
+			}
+		}
+
+		if(mesh->mTangents != NULL){
+			tangents.reserve(mesh->mNumVertices);
+			for(unsigned int i=0; i<mesh->mNumVertices; i++){
+				auto t = mesh->mTangents[i];
+				tangents.push_back(glm::vec3(t.x, t.y, t.z));
+			}
+		}
+		indices.reserve(3*mesh->mNumFaces);
+		for (unsigned int i=0; i<mesh->mNumFaces; i++){
+			// Assume the model has only triangles.
+			indices.push_back(mesh->mFaces[i].mIndices[0]);
+			indices.push_back(mesh->mFaces[i].mIndices[1]);
+			indices.push_back(mesh->mFaces[i].mIndices[2]);
+		}
+
+
+		auto ai_mat = scene->mMaterials[scene->mMeshes[i]->mMaterialIndex];
 		asset->materials[i] = new Material;
+		auto mat = asset->materials[i];
 		aiColor3D ambient,diffuse;
-		if(m->Get(AI_MATKEY_COLOR_AMBIENT,ambient) == AI_SUCCESS){
-			asset->materials[i]->ambient[0] = ambient.r;
-			asset->materials[i]->ambient[1] = ambient.g;
-			asset->materials[i]->ambient[2] = ambient.b;
+		if(ai_mat->Get(AI_MATKEY_COLOR_AMBIENT,ambient) == AI_SUCCESS){
+			mat->ambient[0] = ambient.r;
+			mat->ambient[1] = ambient.g;
+			mat->ambient[2] = ambient.b;
 		}
-		asset->materials[i]->t_ambient = loadTextureFromAssimp(m, aiTextureType_AMBIENT);
-		if(m->Get(AI_MATKEY_COLOR_DIFFUSE,diffuse) == AI_SUCCESS){
-			asset->materials[i]->diffuse[0] = diffuse.r;
-			asset->materials[i]->diffuse[1] = diffuse.g;
-			asset->materials[i]->diffuse[2] = diffuse.b;
+		mat->t_ambient = loadTextureFromAssimp(ai_mat, aiTextureType_AMBIENT);
+		if(mat->t_ambient == 0) mat->t_ambient = default_material->t_ambient;
+
+		if(ai_mat->Get(AI_MATKEY_COLOR_DIFFUSE,diffuse) == AI_SUCCESS){
+			mat->diffuse[0] = diffuse.r;
+			mat->diffuse[1] = diffuse.g;
+			mat->diffuse[2] = diffuse.b;
 		}
-		asset->materials[i]->t_diffuse = loadTextureFromAssimp(m, aiTextureType_DIFFUSE);
-		asset->materials[i]->t_normal  = loadTextureFromAssimp(m, aiTextureType_NORMALS);
+		mat->t_diffuse = loadTextureFromAssimp(ai_mat, aiTextureType_DIFFUSE);
+		if(mat->t_diffuse == 0) mat->t_diffuse = default_material->t_diffuse;
+
+		// @note Since mtl files specify normals as bump maps assume all bump maps are really normal
+		mat->t_normal = loadTextureFromAssimp(ai_mat, aiTextureType_NORMALS);
+		if(mat->t_normal == 0) mat->t_normal = loadTextureFromAssimp(ai_mat, aiTextureType_HEIGHT);
+		if(mat->t_normal == 0) mat->t_normal = default_material->t_normal;
 		
 		float spec_exp, spec_int;
-		if(m->Get(AI_MATKEY_SHININESS,spec_exp) == AI_SUCCESS) asset->materials[i]->spec_exp = spec_exp;
-		if(m->Get(AI_MATKEY_SHININESS_STRENGTH,spec_int) == AI_SUCCESS) asset->materials[i]->spec_int = spec_int;
+		if(ai_mat->Get(AI_MATKEY_SHININESS,spec_exp) == AI_SUCCESS) mat->spec_exp = spec_exp;
+		if(ai_mat->Get(AI_MATKEY_SHININESS_STRENGTH,spec_int) == AI_SUCCESS) mat->spec_int = spec_int;
 	}
-	n_vertices *= 3;
-	n_indices  *= 3;
+
 	// bind the VAO
 	glBindVertexArray(asset->vao);
 
-	// Set out enough memory in buffers
+	// Load it into a VBO
 	glBindBuffer(GL_ARRAY_BUFFER, asset->vertices);
-	glBufferData(GL_ARRAY_BUFFER, n_vertices * sizeof(float), NULL, GL_STATIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(glm::vec3), &vertices[0], GL_STATIC_DRAW);
 	glVertexAttribPointer(0, 3, GL_FLOAT, false, 0, 0);
 	glEnableVertexAttribArray(0);
 
 	glBindBuffer(GL_ARRAY_BUFFER, asset->uvs);
-	glBufferData(GL_ARRAY_BUFFER, n_vertices * sizeof(float), NULL, GL_STATIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, uvs.size() * sizeof(glm::vec2), &uvs[0], GL_STATIC_DRAW);
 	glVertexAttribPointer(1, 2, GL_FLOAT, false, 0, 0);
 	glEnableVertexAttribArray(1);
 
 	glBindBuffer(GL_ARRAY_BUFFER, asset->normals);
-	glBufferData(GL_ARRAY_BUFFER, n_vertices * sizeof(float), NULL, GL_STATIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, normals.size() * sizeof(glm::vec3), &normals[0], GL_STATIC_DRAW);
 	glVertexAttribPointer(2, 3, GL_FLOAT, false, 0, 0);
 	glEnableVertexAttribArray(2);
 
 	glBindBuffer(GL_ARRAY_BUFFER, asset->tangents);
-	glBufferData(GL_ARRAY_BUFFER, n_vertices * sizeof(float), NULL, GL_STATIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, tangents.size() * sizeof(glm::vec3), &tangents[0], GL_STATIC_DRAW);
 	glVertexAttribPointer(3, 3, GL_FLOAT, false, 0, 0);
 	glEnableVertexAttribArray(3);
 
 	// Generate a buffer for the indices as well
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, asset->indices);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, n_indices * sizeof(unsigned short), NULL, GL_STATIC_DRAW);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned short), &indices[0], GL_STATIC_DRAW);
 
-	// Actually fill in data
-	int vert_offset = 0, indices_offset = 0;
-	for (int i = 0; i < scene->mNumMeshes; ++i) {
-		const aiMesh* mesh = scene->mMeshes[i]; 
-
-		glBindBuffer(GL_ARRAY_BUFFER, asset->vertices);
-		for(unsigned int i=0; i<mesh->mNumVertices; i++){
-			glBufferSubData(GL_ARRAY_BUFFER, (3*(vert_offset+i))  *sizeof(float), sizeof(float), &mesh->mVertices[i].x);
-			glBufferSubData(GL_ARRAY_BUFFER, (3*(vert_offset+i)+1)*sizeof(float), sizeof(float), &mesh->mVertices[i].y);
-			glBufferSubData(GL_ARRAY_BUFFER, (3*(vert_offset+i)+2)*sizeof(float), sizeof(float), &mesh->mVertices[i].z);
-		}
-		if(mesh->mTextureCoords[0] != NULL){
-			glBindBuffer(GL_ARRAY_BUFFER, asset->uvs);
-			for(unsigned int i=0; i<mesh->mNumVertices; i++){
-				// Assume only 1 set of UV coords; AssImp supports 8 UV sets.
-				glBufferSubData(GL_ARRAY_BUFFER, (2*(vert_offset+i))  *sizeof(float), sizeof(float), &mesh->mTextureCoords[0][i].x);
-				glBufferSubData(GL_ARRAY_BUFFER, (2*(vert_offset+i)+1)*sizeof(float), sizeof(float), &mesh->mTextureCoords[0][i].y);
-			}
-		}
-		if(mesh->mNormals != NULL){
-			glBindBuffer(GL_ARRAY_BUFFER, asset->normals);
-			for(unsigned int i=0; i<mesh->mNumVertices; i++){
-				glBufferSubData(GL_ARRAY_BUFFER, (3*(vert_offset+i))  *sizeof(float), sizeof(float), &mesh->mNormals[i].x);
-				glBufferSubData(GL_ARRAY_BUFFER, (3*(vert_offset+i)+1)*sizeof(float), sizeof(float), &mesh->mNormals[i].y);
-				glBufferSubData(GL_ARRAY_BUFFER, (3*(vert_offset+i)+2)*sizeof(float), sizeof(float), &mesh->mNormals[i].z);
-			}
-		}
-		if(mesh->mTangents != NULL){
-			glBindBuffer(GL_ARRAY_BUFFER, asset->tangents);
-			for(unsigned int i=0; i<mesh->mNumVertices; i++){
-				glBufferSubData(GL_ARRAY_BUFFER, (3*(vert_offset+i))  *sizeof(float), sizeof(float), &mesh->mTangents[i].x);
-				glBufferSubData(GL_ARRAY_BUFFER, (3*(vert_offset+i)+1)*sizeof(float), sizeof(float), &mesh->mTangents[i].y);
-				glBufferSubData(GL_ARRAY_BUFFER, (3*(vert_offset+i)+2)*sizeof(float), sizeof(float), &mesh->mTangents[i].z);
-			}
-		}
-		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, asset->indices);
-		for(unsigned int i=0; i<mesh->mNumFaces; i++){
-			glBufferSubData(GL_ARRAY_BUFFER, (3*(indices_offset+i))*sizeof(unsigned short), 3*sizeof(unsigned short), &mesh->mFaces[i].mIndices[0]);
-		}
-
-		vert_offset    += mesh->mNumVertices;
-		indices_offset += mesh->mNumFaces;
-	}
 	glBindVertexArray(0); //Unbind the VAO
 	
 	// The "scene" pointer will be deleted automatically by "importer"

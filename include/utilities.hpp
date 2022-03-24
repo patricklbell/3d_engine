@@ -10,7 +10,7 @@
 void float_array_to_mat4(glm::mat4& o_mat, float i_array[16]);
 void screenPosToWorldRay(glm::ivec2 mouse_position, glm::mat4 view, glm::mat4 projection, glm::vec3 &out_origin, glm::vec3 &out_direction);
 struct Entity {
-    Asset* asset = nullptr;
+    Mesh* asset = nullptr;
     glm::mat4 transform = glm::mat4();
     btRigidBody* rigidbody = nullptr;
     unsigned int id;
@@ -63,6 +63,6 @@ struct Entity {
 //} typedef EntitySlotMap;
 
 bool load_mtl(Material * mat, const std::string &path);
-void load_asset(Asset * asset, const std::string &objpath, const std::string &mtlpath);
+void load_asset(Mesh * asset, const std::string &objpath, const std::string &mtlpath);
 
 #endif /* ifndef UTILITIES_HPP */

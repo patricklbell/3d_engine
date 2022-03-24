@@ -1,0 +1,18 @@
+#ifdef COMPILING_VS
+layout (location = 0) in vec3 position;
+
+uniform mat4 MVP;
+
+void main()
+{
+    gl_Position = MVP * vec4(position, 1.0);
+}
+#endif
+
+#ifdef COMPILING_FS
+
+void main()
+{
+    gl_FragColor = vec4(1.0);
+} 
+#endif

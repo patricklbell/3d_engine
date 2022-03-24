@@ -13,6 +13,16 @@ extern bool   window_resized;
 
 void windowSizeCallback(GLFWwindow* window, int width, int height);
 
+typedef struct PointLight {
+    glm::vec3 position;
+    glm::vec3 color;
+    float scale, attenuation_linear, attenuation_exp, attenuation_constant;
+    PointLight(glm::vec3 in_position, glm::vec3 in_color, float diffuse_intensity, float constant, float linear, float exp) : position(in_position), color(in_color), attenuation_exp(exp), attenuation_linear(linear), attenuation_constant(constant){
+        float MaxChannel = fmax(fmax(color.x, color.y), color.z);
+        scale = (-linear + sqrtf(linear * linear - 4 * exp * (exp - 256 * MaxChannel * diffuse_intensity))) / (2 * exp);
+    }
+} PointLight;
+
 typedef struct Camera {
     enum TYPE { 
         TRACKBALL = 0,
@@ -39,18 +49,20 @@ struct GBuffer {
     };
     GLuint fbo;
     GLuint textures[GBUFFER_NUM_TEXTURES];
-    GLuint depthTexture;
-    GLuint finalTexture;
+    GLuint t_depth;
+    GLuint t_final;
 } typedef GBuffer;
 
 void createGBuffer(GBuffer &gb);
-void bindGbuffer(GBuffer &gb);
-void clearGBuffer(GBuffer &gb);
+void bindGbuffer(const GBuffer &gb);
+void clearGBuffer(const GBuffer &gb);
 
 void drawGeometryGbuffer(Entity *entities[ENTITY_COUNT], const Camera &camera);
 
-void bindDeffered(GBuffer &gb);
-void drawPost(const glm::vec3 &camera_position, Asset *quad);
-void drawGbufferToBackbuffer(GBuffer &gb);
+void bindDeffered(const GBuffer &gb);
+void drawPointLights(const Camera &camera, const GBuffer &gb, const std::vector<PointLight> &point_lights, Mesh *sphere, Mesh *quad);
+void drawDirectionalLight(const glm::vec3 &camera_position, Mesh *quad);
+void drawPost(Mesh *quad);
+void bindPost(const GBuffer &gb);
 
 #endif
