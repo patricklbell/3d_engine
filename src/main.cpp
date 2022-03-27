@@ -117,24 +117,15 @@ int main() {
     Camera camera;
     createDefaultCamera(camera);
 
-    GBuffer gbuffer;
-    createGBuffer(gbuffer);
-
     // Load shaders
     loadNullShader("data/shaders/null.gl");
-    loadGeometryShader("data/shaders/geometry.gl");
-    loadDirectionalShader("data/shaders/directional.gl");
-    loadPointShader("data/shaders/point.gl");
-    loadPostShader("data/shaders/post.gl");
+    loadUnifiedShader("data/shaders/unified.gl");
 
     // Map for last update time for hotswaping files
     std::filesystem::file_time_type empty_file_time;
     std::map<const std::string, std::pair<shader::TYPE, std::filesystem::file_time_type>> shader_update_times = {
         {"data/shaders/null.gl", {shader::TYPE::NULL_SHADER, empty_file_time}},
-        {"data/shaders/geometry.gl", {shader::TYPE::GEOMETRY_SHADER, empty_file_time}},
-        {"data/shaders/directional.gl", {shader::TYPE::DIRECTIONAL_SHADER, empty_file_time}},
-        {"data/shaders/point.gl", {shader::TYPE::POINT_SHADER, empty_file_time}},
-        {"data/shaders/post.gl", {shader::TYPE::POST_SHADER, empty_file_time}},
+        {"data/shaders/unified.gl", {shader::TYPE::UNIFIED_SHADER, empty_file_time}},
     };
     // Fill in with correct file time
     for (auto &pair : shader_update_times) {
@@ -220,8 +211,8 @@ int main() {
     sun_color = glm::vec3(0.941, 0.933, 0.849);
 
     // Load assets
-    std::vector<std::string> asset_names = {"cube", "capsule", "WoodenCrate", "lamp"};
-    std::vector<std::string> asset_paths = {"data/models/cube.obj", "data/models/capsule.obj", "data/models/WoodenCrate.obj", "data/models/lamp.obj"};
+    std::vector<std::string> asset_names = {"cube", "sphere", "capsule", "WoodenCrate", "gun"};
+    std::vector<std::string> asset_paths = {"data/models/cube.obj", "data/models/sphere.obj", "data/models/capsule.obj", "data/models/WoodenCrate.obj", "data/models/gun-pbribl.fbx"};
     std::vector<Mesh *> assets;
     for (int i = 0; i < asset_paths.size(); ++i) {
         auto asset = new Mesh;
@@ -253,7 +244,7 @@ int main() {
     // TODO: Skymap loading and rendering
     //GLuint tSkybox = load_cubemap({"Skybox1.bmp", "Skybox2.bmp","Skybox3.bmp","Skybox4.bmp","Skybox5.bmp","Skybox6.bmp"});
     
-    loadEditorGui();
+    initEditorGui();
     initEditorControls();
 
     // Update all variables whose delta is checked
@@ -268,7 +259,6 @@ int main() {
 
         if (window_resized){
             updateCameraProjection(camera);
-            createGBuffer(gbuffer);
         }
 
         handleEditorControls(camera, entities, true_dt);
@@ -281,19 +271,11 @@ int main() {
                     pair.second.second = std::filesystem::last_write_time(pair.first);
                     switch (pair.second.first) {
                         case shader::TYPE::NULL_SHADER:
+
                             loadNullShader(pair.first.c_str());
                             break;
-                        case shader::TYPE::GEOMETRY_SHADER:
-                            loadGeometryShader(pair.first.c_str());
-                            break;
-                        case shader::TYPE::POST_SHADER:
-                            loadPostShader(pair.first.c_str());
-                            break;
-                        case shader::TYPE::POINT_SHADER:
-                            loadPointShader(pair.first.c_str());
-                            break;
-                        case shader::TYPE::DIRECTIONAL_SHADER:
-                            loadDirectionalShader(pair.first.c_str());
+                        case shader::TYPE::UNIFIED_SHADER:
+                            loadUnifiedShader(pair.first.c_str());
                             break;
                         default:
                             break;
@@ -323,20 +305,12 @@ int main() {
         //	}
         //}
  
-        clearGBuffer(gbuffer);
 
-        bindGbuffer(gbuffer);
-        drawGeometryGbuffer(entities, camera);
+        bindHdr();
+        clearHdr();
+        drawUnifiedHdr(entities, camera);
 
-
-        bindDeffered(gbuffer);
-        //drawPointLights(camera, gbuffer, point_lights, sphere, quad);
-        drawDirectionalLight(camera.position, quad);
-
-        bindPost(gbuffer);
-        //drawPost(quad);
-
-        drawEditorGui(camera, entities, assets, free_entity_stack, delete_entity_stack, id_counter, rigidbodies, rigidbody_CI, gbuffer);
+        drawEditorGui(camera, entities, assets, free_entity_stack, delete_entity_stack, id_counter, rigidbodies, rigidbody_CI);
 
         // Swap backbuffer with front buffer
         glfwSwapBuffers(window);
@@ -366,7 +340,6 @@ int main() {
     while( glfwGetKey(window, GLFW_KEY_ESCAPE ) != GLFW_PRESS && glfwWindowShouldClose(window) == 0 );
 
     // Cleanup VAOs and shader
-    glDeleteFramebuffers(1, &gbuffer.fbo);  
     for(auto &asset : assets){
         glDeleteVertexArrays(1, &asset->vao);
     }

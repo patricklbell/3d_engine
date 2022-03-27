@@ -8,5 +8,9 @@ Ks 0.000000 0.000000 0.000000
 Tr 1.000000
 illum 1
 Ns 0.000000
-map_Kd data/textures/brick_diffuse.bmp
-map_Bump data/textures/brick_normal.bmp
+#map_Kd data/textures/brick_diffuse.bmp
+#map_Bump data/textures/brick_normal.bmp
+map_Bump data/textures/rustediron2_normal.bmp
+map_Kd data/textures/rustediron2_basecolor.bmp
+map_Pr data/textures/rustediron2_roughness.bmp
+map_Pm data/textures/rustediron2_metallic.bmp

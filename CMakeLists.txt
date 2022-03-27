@@ -29,7 +29,7 @@ include_directories(
 	external/glew-2.1.0/include/
 	external/imgui/include/
 	external/bullet-2.82-r2704/src/
-	external/assimp-3.0.1270/include/
+	external/assimp-5.1.5/include/
 	external/CImg-3.0.3_pre021822/
 	include/
 )

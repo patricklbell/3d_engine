@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <string>
+#include <filesystem>
+
 #define cimg_display 0
 #include "CImg.h"
 using namespace cimg_library;
@@ -10,8 +12,20 @@ using namespace cimg_library;
 
 #include <GLFW/glfw3.h>
 
-GLuint loadImage(std::string imagepath, bool is_srgb=false){
+GLuint create1x1Texture(const unsigned char color[3], GLint internal_format=GL_RGB){
+	GLuint texture_id;
+	glGenTextures(1, &texture_id);
+	glBindTexture(GL_TEXTURE_2D, texture_id);
+	glTexImage2D(GL_TEXTURE_2D, 0, internal_format, 1, 1, 0, GL_RGB, GL_UNSIGNED_BYTE, &color[0]);
+	return texture_id;
+}
+GLuint loadImage(std::string imagepath, GLint internal_format){
 	printf("Loading texture: %s\n", imagepath.c_str());
+	if(!std::filesystem::exists(std::filesystem::path(imagepath))){
+		printf("Failed to load texture %s.\n", imagepath.c_str());
+		return GL_FALSE;
+	} 
+
 	CImg<unsigned char> src(imagepath.c_str());
 	int w = src.width();
 	int h = src.height();
@@ -27,10 +41,7 @@ GLuint loadImage(std::string imagepath, bool is_srgb=false){
 	glBindTexture(GL_TEXTURE_2D, texture_id);
 
 	// Give the image to OpenGL
-	if(is_srgb)
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_SRGB, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, src.data());
-	else
-		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, src.data());
+	glTexImage2D(GL_TEXTURE_2D, 0, internal_format, w, h, 0, GL_RGB, GL_UNSIGNED_BYTE, src.data());
 
 	// Poor filtering, or ...
 	//glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);

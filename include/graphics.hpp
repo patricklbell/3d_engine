@@ -40,29 +40,8 @@ void createDefaultCamera(Camera &camera);
 void updateCameraView(Camera &camera);
 void updateCameraProjection(Camera &camera);
 
-struct GBuffer {
-    enum GBUFFER_TEXTURE_TYPE {
-        GBUFFER_TEXTURE_TYPE_POSITION = 0,
-        GBUFFER_TEXTURE_TYPE_DIFFUSE,
-        GBUFFER_TEXTURE_TYPE_NORMAL,
-        GBUFFER_NUM_TEXTURES,
-    };
-    GLuint fbo;
-    GLuint textures[GBUFFER_NUM_TEXTURES];
-    GLuint t_depth;
-    GLuint t_final;
-} typedef GBuffer;
-
-void createGBuffer(GBuffer &gb);
-void bindGbuffer(const GBuffer &gb);
-void clearGBuffer(const GBuffer &gb);
-
-void drawGeometryGbuffer(Entity *entities[ENTITY_COUNT], const Camera &camera);
-
-void bindDeffered(const GBuffer &gb);
-void drawPointLights(const Camera &camera, const GBuffer &gb, const std::vector<PointLight> &point_lights, Mesh *sphere, Mesh *quad);
-void drawDirectionalLight(const glm::vec3 &camera_position, Mesh *quad);
-void drawPost(Mesh *quad);
-void bindPost(const GBuffer &gb);
+void clearHdr();
+void bindHdr();
+void drawUnifiedHdr(Entity *entities[ENTITY_COUNT], const Camera &camera);
 
 #endif

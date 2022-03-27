@@ -6,7 +6,8 @@
 
 #include <GLFW/glfw3.h>
 
-GLuint loadImage(std::string imagepath, bool is_srgb=false);
+GLuint create1x1Texture(const unsigned char color[3], GLint internal_format=GL_RGB);
+GLuint loadImage(std::string imagepath, GLint internal_format);
 GLuint loadCubemap(std::vector<std::string> filenames);
 
 #endif

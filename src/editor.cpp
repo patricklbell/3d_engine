@@ -33,7 +33,7 @@ namespace editor {
 }
 using namespace editor;
 
-void loadEditorGui(){
+void initEditorGui(){
     // Background
     ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 
@@ -61,9 +61,9 @@ void loadEditorGui(){
 	bt_debug_drawer.setDebugMode(1);
 }
 
-bool editTransform(const Camera &camera, float* matrix){
+bool editTransform(Camera &camera, float* matrix){
     static ImGuizmo::OPERATION current_guizmo_operation(ImGuizmo::TRANSLATE);
-    static ImGuizmo::MODE current_guizmo_mode(ImGuizmo::LOCAL);
+    static ImGuizmo::MODE current_guizmo_mode(ImGuizmo::WORLD);
     static bool use_snap = false;
     static float snap[3] = { 1.f, 1.f, 1.f };
     static float bounds[] = { -0.5f, -0.5f, -0.5f, 0.5f, 0.5f, 0.5f };
@@ -123,15 +123,13 @@ bool editTransform(const Camera &camera, float* matrix){
     }
 
     ImGuiIO& io = ImGui::GetIO();
-    float viewManipulateRight = io.DisplaySize.x;
-    float viewManipulateTop = 0;
     ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
-
     ImGuizmo::Manipulate(&camera.view[0][0], &camera.projection[0][0], current_guizmo_operation, current_guizmo_mode, matrix, NULL, use_snap ? &snap[0] : NULL, bound_sizing ? bounds : NULL, bound_sizing_snap ? bound_snap : NULL);
+
     return change_occured || ImGuizmo::IsUsing();
 }
 
-void drawEditorGui(Camera &camera, Entity *entities[ENTITY_COUNT], std::vector<Mesh *> &assets, std::stack<int> &free_entity_stack, std::stack<int> &delete_entity_stack, int &id_counter, btRigidBody *rigidbodies[ENTITY_COUNT], btRigidBody::btRigidBodyConstructionInfo rigidbody_CI, GBuffer &gb){
+void drawEditorGui(Camera &camera, Entity *entities[ENTITY_COUNT], std::vector<Mesh *> &assets, std::stack<int> &free_entity_stack, std::stack<int> &delete_entity_stack, int &id_counter, btRigidBody *rigidbodies[ENTITY_COUNT], btRigidBody::btRigidBodyConstructionInfo rigidbody_CI){
 
     // @->todo Batch debug rendering
     if(draw_bt_debug){
@@ -290,17 +288,6 @@ void drawEditorGui(Camera &camera, Entity *entities[ENTITY_COUNT], std::vector<M
             ImGui::EndMenuBar();
         }
         ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
-        ImGui::End();
-
-        ImGui::Begin("GBuffer");
-        {
-            ImGui::Image((void *)(intptr_t)gb.textures[GBuffer::GBUFFER_TEXTURE_TYPE_DIFFUSE], ImVec2((int)window_width/8, (int)window_height/8), ImVec2(0, 1), ImVec2(1, 0));
-            ImGui::SameLine();
-            ImGui::Image((void *)(intptr_t)gb.textures[GBuffer::GBUFFER_TEXTURE_TYPE_NORMAL], ImVec2((int)window_width/8, (int)window_height/8), ImVec2(0, 1), ImVec2(1, 0));
-            ImGui::Image((void *)(intptr_t)gb.textures[GBuffer::GBUFFER_TEXTURE_TYPE_POSITION], ImVec2((int)window_width/8, (int)window_height/8), ImVec2(0, 1), ImVec2(1, 0)) ;
-            ImGui::SameLine();
-            ImGui::Image((void *)(intptr_t)&gb.t_final, ImVec2((int)window_width/8, (int)window_height/8), ImVec2(0, 1), ImVec2(1, 0)) ;
-        }
         ImGui::End();
         im_file_dialog.Display();
         if(im_file_dialog.HasSelected())
