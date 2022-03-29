@@ -33,13 +33,14 @@ void initDefaultMaterial();
 struct Mesh {
     std::string name;
     int        num_materials;
+    bool       transparent;
     Material **materials;
     GLuint     indices;
     GLuint 	   vertices;
     GLuint 	   uvs;
     GLuint 	   normals;
     GLuint 	   tangents;
-    GLuint 	   bitangents;
+    //GLuint 	   bitangents;
     GLuint     vao;
     GLenum     draw_mode;
     GLenum     draw_type;

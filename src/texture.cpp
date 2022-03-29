@@ -52,8 +52,11 @@ GLuint loadImage(std::string imagepath, GLint internal_format){
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-	// ... which requires mipmaps. Generate them automatically.
+	//// ... which requires mipmaps. Generate them automatically.
 	glGenerateMipmap(GL_TEXTURE_2D);
+
+	// why?? unbind texture
+	glBindTexture(GL_TEXTURE_2D, 0);
 
 	// Return the ID of the texture we just created
 	return texture_id;

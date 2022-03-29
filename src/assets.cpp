@@ -55,13 +55,13 @@ void initDefaultMaterial(){
     // loading three of the same texture is needless, set them equal if
     // correct values
     unsigned char metallic[] = {0, 0, 0};
-    default_material->t_metallic = create1x1Texture(metallic, GL_RED);
+    default_material->t_metallic = create1x1Texture(metallic, GL_RGB);
 
     unsigned char roughness[] = {0, 0, 0};
-    default_material->t_roughness = create1x1Texture(roughness, GL_RED);
+    default_material->t_roughness = create1x1Texture(roughness, GL_RGB);
 
     unsigned char ambient[] = {1, 0, 0};
-    default_material->t_ambient = create1x1Texture(ambient, GL_RED);
+    default_material->t_ambient = create1x1Texture(ambient, GL_SRGB);
 }
 
 
@@ -308,8 +308,8 @@ void initDefaultMaterial(){
 //	return true;
 //}
 
-bool loadAsset(Mesh * asset, const std::string &path){
-	printf("Loading asset %s.\n", path.c_str());
+bool loadAsset(Mesh * mesh, const std::string &path){
+	printf("--------------------Loading Asset %s--------------------\n", path.c_str());
 
 	Assimp::Importer importer;
 
@@ -320,89 +320,90 @@ bool loadAsset(Mesh * asset, const std::string &path){
 		return false;
 	}
 
-	glGenBuffers(1, &asset->bitangents);
-	glGenBuffers(1, &asset->tangents);
-	glGenBuffers(1, &asset->normals);
-	glGenBuffers(1, &asset->uvs);
-	glGenBuffers(1, &asset->vertices);
-	glGenBuffers(1, &asset->indices);
-	glGenVertexArrays(1, &asset->vao);
+	//glGenBuffers(1, &mesh->bitangents);
+	glGenBuffers(1, &mesh->tangents);
+	glGenBuffers(1, &mesh->normals);
+	glGenBuffers(1, &mesh->uvs);
+	glGenBuffers(1, &mesh->vertices);
+	glGenBuffers(1, &mesh->indices);
+	glGenVertexArrays(1, &mesh->vao);
 
 	// Allocate arrays for each mesh 
-	asset->num_materials = scene->mNumMeshes;
-	asset->draw_count = (GLint*)malloc( asset->num_materials * sizeof(GLint) );
-	asset->draw_start = (GLint*)malloc( asset->num_materials * sizeof(GLint) );
-	asset->materials  = (Material**)malloc( asset->num_materials * sizeof(Material*) );
-	std::cout << "Number of meshes: " << asset->num_materials << ".\n";
+	mesh->num_materials = scene->mNumMeshes;
+	mesh->draw_count = (GLint*)malloc( mesh->num_materials * sizeof(GLint) );
+	mesh->draw_start = (GLint*)malloc( mesh->num_materials * sizeof(GLint) );
+	mesh->materials  = (Material**)malloc( mesh->num_materials * sizeof(Material*) );
+	std::cout << "Number of meshes: " << mesh->num_materials << ".\n";
 
-	asset->draw_mode = GL_TRIANGLES;
-	asset->draw_type = GL_UNSIGNED_SHORT;
+	mesh->draw_mode = GL_TRIANGLES;
+	mesh->draw_type = GL_UNSIGNED_SHORT;
 
-	std::vector<glm::vec3> vertices, normals, tangents, bitangents;
+	std::vector<glm::vec3> vertices, normals, tangents;
+    //std::vector<glm::vec3> bitangents;
 	std::vector<glm::vec2> uvs;
 	std::vector<unsigned short> indices;
 	for (int i = 0; i < scene->mNumMeshes; ++i) {
-		const aiMesh* mesh = scene->mMeshes[i]; 
+		const aiMesh* ai_mesh = scene->mMeshes[i]; 
 
-		asset->draw_start[i] = indices.size();
-		std::cout << "From " << asset->draw_start[i] << " To " << asset->draw_start[i]+3*mesh->mNumFaces-1 << "\n";
-		asset->draw_count[i] = 3*mesh->mNumFaces;
+		mesh->draw_start[i] = indices.size();
+		mesh->draw_count[i] = 3*ai_mesh->mNumFaces;
 
-		vertices.reserve(mesh->mNumVertices);
-		for(unsigned int i=0; i<mesh->mNumVertices; i++){
-			auto v = mesh->mVertices[i];
+        printf("Loading mesh index %d from face %d ---> %d.\n", i, mesh->draw_start[i], mesh->draw_start[i]+3*ai_mesh->mNumFaces-1);
+
+		vertices.reserve(ai_mesh->mNumVertices);
+		for(unsigned int i=0; i<ai_mesh->mNumVertices; i++){
+			auto v = ai_mesh->mVertices[i];
 			vertices.push_back(glm::vec3(v.x, v.y, v.z));
 		}
-		if(mesh->mTextureCoords[0] != NULL){
-			uvs.reserve(mesh->mNumVertices);
-			for(unsigned int i=0; i<mesh->mNumVertices; i++){
+		if(ai_mesh->mTextureCoords[0] != NULL){
+			uvs.reserve(ai_mesh->mNumVertices);
+			for(unsigned int i=0; i<ai_mesh->mNumVertices; i++){
 				// Assume only 1 set of UV coords; AssImp supports 8 UV sets.
-				auto uvw = mesh->mTextureCoords[0][i];
+				auto uvw = ai_mesh->mTextureCoords[0][i];
 				uvs.push_back(glm::vec2(uvw.x, uvw.y));
 			}
 		}
-		if(mesh->mNormals != NULL){
-			normals.reserve(mesh->mNumVertices);
-			for(unsigned int i=0; i<mesh->mNumVertices; i++){
-				auto n = mesh->mNormals[i];
+		if(ai_mesh->mNormals != NULL){
+			normals.reserve(ai_mesh->mNumVertices);
+			for(unsigned int i=0; i<ai_mesh->mNumVertices; i++){
+				auto n = ai_mesh->mNormals[i];
 				normals.push_back(glm::vec3(n.x, n.y, n.z));
 			}
 		}
 
-		if(mesh->mTangents != NULL){
-			tangents.reserve(mesh->mNumVertices);
-			for(unsigned int i=0; i<mesh->mNumVertices; i++){
-				auto t = mesh->mTangents[i];
+		if(ai_mesh->mTangents != NULL){
+			tangents.reserve(ai_mesh->mNumVertices);
+			for(unsigned int i=0; i<ai_mesh->mNumVertices; i++){
+				auto t = ai_mesh->mTangents[i];
 				tangents.push_back(glm::vec3(t.x, t.y, t.z));
 			}
 		}
 		
-		if(mesh->mBitangents != NULL){
-			bitangents.reserve(mesh->mNumVertices);
-			for(unsigned int i=0; i<mesh->mNumVertices; i++){
-				auto bt = mesh->mBitangents[i];
-				bitangents.push_back(glm::vec3(bt.x, bt.y, bt.z));
-			}
-			printf("No bitangents found / generated\n");
-		}
+		//if(mesh->mBitangents != NULL){
+		//	bitangents.reserve(mesh->mNumVertices);
+		//	for(unsigned int i=0; i<mesh->mNumVertices; i++){
+		//		auto bt = mesh->mBitangents[i];
+		//		bitangents.push_back(glm::vec3(bt.x, bt.y, bt.z));
+		//	}
+		//}
 
-		indices.reserve(3*mesh->mNumFaces);
-		for (unsigned int i=0; i<mesh->mNumFaces; i++){
+		indices.reserve(3*ai_mesh->mNumFaces);
+		for (unsigned int i=0; i<ai_mesh->mNumFaces; i++){
 			// Assumes the model has only triangles.
-			indices.push_back(mesh->mFaces[i].mIndices[0]);
-			indices.push_back(mesh->mFaces[i].mIndices[1]);
-			indices.push_back(mesh->mFaces[i].mIndices[2]);
+			indices.push_back(ai_mesh->mFaces[i].mIndices[0]);
+			indices.push_back(ai_mesh->mFaces[i].mIndices[1]);
+			indices.push_back(ai_mesh->mFaces[i].mIndices[2]);
 		}
 
 
         // Load material from assimp, materials are wrong because assimp doesnt
         // support PBR materials
 		auto ai_mat = scene->mMaterials[scene->mMeshes[i]->mMaterialIndex];
-		asset->materials[i] = new Material;
-		auto mat = asset->materials[i];
+		mesh->materials[i] = new Material;
+		auto mat = mesh->materials[i];
 
-		mat->t_ambient = loadTextureFromAssimp(ai_mat, scene, aiTextureType_AMBIENT_OCCLUSION, GL_RED);
-        if(mat->t_ambient == 0) mat->t_ambient = loadTextureFromAssimp(ai_mat, scene, aiTextureType_AMBIENT, GL_RED);
+		mat->t_ambient = loadTextureFromAssimp(ai_mat, scene, aiTextureType_AMBIENT_OCCLUSION, GL_SRGB);
+        if(mat->t_ambient == 0) mat->t_ambient = loadTextureFromAssimp(ai_mat, scene, aiTextureType_AMBIENT, GL_SRGB);
         if(mat->t_ambient == 0){
             aiColor3D ambient;
             if(ai_mat->Get(AI_MATKEY_COLOR_AMBIENT,ambient) == AI_SUCCESS){
@@ -412,7 +413,7 @@ bool loadAsset(Mesh * asset, const std::string &path){
                     (unsigned char)floor(ambient.g*255),
                     (unsigned char)floor(ambient.b*255),
                 };
-                mat->t_ambient = create1x1Texture(data, GL_RED);
+                mat->t_ambient = create1x1Texture(data, GL_SRGB);
             }
         }
 		if(mat->t_ambient == 0) mat->t_ambient = default_material->t_ambient;
@@ -433,7 +434,7 @@ bool loadAsset(Mesh * asset, const std::string &path){
         }
 		if(mat->t_albedo == 0) mat->t_albedo = default_material->t_albedo;
 
-		mat->t_metallic = loadTextureFromAssimp(ai_mat, scene, aiTextureType_METALNESS, GL_RED);
+		mat->t_metallic = loadTextureFromAssimp(ai_mat, scene, aiTextureType_METALNESS, GL_RGB);
         if(mat->t_metallic == 0){
             aiColor3D metallic;
 		    if(ai_mat->Get(AI_MATKEY_METALLIC_FACTOR,metallic) == AI_SUCCESS){
@@ -442,12 +443,12 @@ bool loadAsset(Mesh * asset, const std::string &path){
                     (unsigned char)floor(metallic.g*255),
                     (unsigned char)floor(metallic.b*255),
                 };
-                mat->t_metallic = create1x1Texture(data, GL_RED);
+                mat->t_metallic = create1x1Texture(data, GL_RGB);
             }
         }
 		if(mat->t_metallic == 0) mat->t_metallic = default_material->t_metallic;
 
-		mat->t_roughness = loadTextureFromAssimp(ai_mat, scene, aiTextureType_DIFFUSE_ROUGHNESS, GL_RED);
+		mat->t_roughness = loadTextureFromAssimp(ai_mat, scene, aiTextureType_DIFFUSE_ROUGHNESS, GL_RGB);
         if(mat->t_roughness == 0){
             aiColor3D roughness;
 		    if(ai_mat->Get(AI_MATKEY_ROUGHNESS_FACTOR,roughness) == AI_SUCCESS){
@@ -456,7 +457,7 @@ bool loadAsset(Mesh * asset, const std::string &path){
                     (unsigned char)floor(roughness.g*255),
                     (unsigned char)floor(roughness.b*255),
                 };
-                mat->t_roughness = create1x1Texture(data, GL_RED);
+                mat->t_roughness = create1x1Texture(data, GL_RGB);
             }
         }
 		if(mat->t_roughness == 0) mat->t_roughness = default_material->t_roughness;
@@ -468,35 +469,35 @@ bool loadAsset(Mesh * asset, const std::string &path){
 	}
 
 	// bind the vao for writing vbos
-	glBindVertexArray(asset->vao);
+	glBindVertexArray(mesh->vao);
 
 	// Load the packed vector data into a VBO
-	glBindBuffer(GL_ARRAY_BUFFER, asset->vertices);
+	glBindBuffer(GL_ARRAY_BUFFER, mesh->vertices);
 	glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(glm::vec3), &vertices[0], GL_STATIC_DRAW);
 	glVertexAttribPointer(0, 3, GL_FLOAT, false, 0, 0);
 	glEnableVertexAttribArray(0);
 
-	glBindBuffer(GL_ARRAY_BUFFER, asset->uvs);
+	glBindBuffer(GL_ARRAY_BUFFER, mesh->uvs);
 	glBufferData(GL_ARRAY_BUFFER, uvs.size() * sizeof(glm::vec2), &uvs[0], GL_STATIC_DRAW);
 	glVertexAttribPointer(1, 2, GL_FLOAT, false, 0, 0);
 	glEnableVertexAttribArray(1);
 
-	glBindBuffer(GL_ARRAY_BUFFER, asset->normals);
+	glBindBuffer(GL_ARRAY_BUFFER, mesh->normals);
 	glBufferData(GL_ARRAY_BUFFER, normals.size() * sizeof(glm::vec3), &normals[0], GL_STATIC_DRAW);
 	glVertexAttribPointer(2, 3, GL_FLOAT, false, 0, 0);
 	glEnableVertexAttribArray(2);
 
-	glBindBuffer(GL_ARRAY_BUFFER, asset->tangents);
+	glBindBuffer(GL_ARRAY_BUFFER, mesh->tangents);
 	glBufferData(GL_ARRAY_BUFFER, tangents.size() * sizeof(glm::vec3), &tangents[0], GL_STATIC_DRAW);
 	glVertexAttribPointer(3, 3, GL_FLOAT, false, 0, 0);
 	glEnableVertexAttribArray(3);
 
-	glBindBuffer(GL_ARRAY_BUFFER, asset->bitangents);
-	glBufferData(GL_ARRAY_BUFFER, bitangents.size() * sizeof(glm::vec3), &bitangents[0], GL_STATIC_DRAW);
-	glVertexAttribPointer(3, 3, GL_FLOAT, false, 0, 0);
-	glEnableVertexAttribArray(4);
+	//glBindBuffer(GL_ARRAY_BUFFER, asset->bitangents);
+	//glBufferData(GL_ARRAY_BUFFER, bitangents.size() * sizeof(glm::vec3), &bitangents[0], GL_STATIC_DRAW);
+	//glVertexAttribPointer(3, 3, GL_FLOAT, false, 0, 0);
+	//glEnableVertexAttribArray(4);
 
-	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, asset->indices);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh->indices);
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(unsigned short), &indices[0], GL_STATIC_DRAW);
 
 	glBindVertexArray(0); //Unbind the VAO

@@ -1,28 +1,31 @@
 #ifdef COMPILING_VS
-layout (location = 0) in vec3 position;
+layout (location = 0) in vec3 in_position;
+layout (location = 1) in vec2 in_texcoord;
+
+out vec2 texcoord;
 
 void main()
 {
-    gl_Position = vec4(position, 1.0);
+    texcoord = in_texcoord;
+    gl_Position = vec4(in_position.xyz, 1.0);
 }
 #endif
 
 #ifdef COMPILING_FS
+
+in vec2 texcoord;
+
 out vec4 out_color;
 
-uniform sampler2D   pixelMap;
-uniform vec2        screenSize;
-
-vec2 calcTexCoord()
-{
-   return gl_FragCoord.xy / screenSize;
-} 
+uniform sampler2D   pixel_map;
+uniform sampler2D   bloom_map;
 
 void main()
 {
-    vec2 texcoord = calcTexCoord();
-    vec3 hdr_color = texture(pixelMap, texcoord).xyz;
-   
+    vec3 hdr_color = texture(pixel_map, texcoord).xyz;
+    vec3 bloom_color = texture(bloom_map, texcoord).xyz;
+    hdr_color += bloom_color; // additive blending 
+
     const float gamma = 1.6;
 
     // reinhard tone mapping

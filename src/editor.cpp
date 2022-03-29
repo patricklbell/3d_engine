@@ -23,6 +23,7 @@
 
 #include "globals.hpp"
 #include "graphics.hpp"
+#include "shader.hpp"
 #include "texture.hpp"
 
 namespace editor {
@@ -34,9 +35,6 @@ namespace editor {
 using namespace editor;
 
 void initEditorGui(){
-    // Background
-    ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
-
     // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -234,6 +232,10 @@ void drawEditorGui(Camera &camera, Entity *entities[ENTITY_COUNT], std::vector<M
                 updateCameraView(camera);
             }
         }
+        if (ImGui::Checkbox("Bloom", &shader::unified_bloom)){
+            createHdrFbo();
+            createBloomFbo();
+        }
         if (ImGui::CollapsingHeader("Add Entity", ImGuiTreeNodeFlags_DefaultOpen)){
             static int asset_current = 0;
 
@@ -275,10 +277,13 @@ void drawEditorGui(Camera &camera, Entity *entities[ENTITY_COUNT], std::vector<M
             }
         }
         
-        ImGui::ColorEdit3("Clear color", (float*)&clear_color); // Edit 3 floats representing a color
+        ImGui::ColorEdit4("Clear color", (float*)&clear_color); // Edit 3 floats representing a color
         ImGui::ColorEdit3("Sun color", (float*)&sun_color); // Edit 3 floats representing a color
-        if(ImGui::InputFloat3("Sun direction", (float*)&sun_direction))
+        if(ImGui::InputFloat3("Sun direction", (float*)&sun_direction)){
             sun_direction = glm::normalize(sun_direction);
+            updateCameraView(camera);
+            updateShadowVP(camera);
+        }
         if (ImGui::BeginMenuBar())
         {
             if (ImGui::BeginMenu("Menu"))
@@ -289,6 +294,16 @@ void drawEditorGui(Camera &camera, Entity *entities[ENTITY_COUNT], std::vector<M
         }
         ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
         ImGui::End();
+        {
+            ImGui::Begin("GBuffers");
+            ImGui::Image((void *)(intptr_t)graphics::shadow_buffer, ImVec2((int)1024/8, (int)1024/8), ImVec2(0, 1), ImVec2(1, 0));
+//            ImGui::SameLine();
+//            ImGui::Image((void *)(intptr_t)graphics::hdr_buffers[1], ImVec2((int)window_width/8, (int)window_height/8), ImVec2(0, 1), ImVec2(1, 0));
+//            ImGui::Image((void *)(intptr_t)graphics::bloom_buffers[0], ImVec2((int)window_width/8, (int)window_height/8), ImVec2(0, 1), ImVec2(1, 0));
+//            ImGui::SameLine();
+//            ImGui::Image((void *)(intptr_t)graphics::bloom_buffers[1], ImVec2((int)window_width/8, (int)window_height/8), ImVec2(0, 1), ImVec2(1, 0));
+            ImGui::End();
+        }
         im_file_dialog.Display();
         if(im_file_dialog.HasSelected())
         {

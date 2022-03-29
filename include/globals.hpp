@@ -19,6 +19,7 @@ extern std::string glsl_version;
 extern btDiscreteDynamicsWorld* dynamics_world;
 extern glm::vec3 sun_color;
 extern glm::vec3 sun_direction;
-extern ImVec4 clear_color;
+extern glm::vec4 clear_color;
+extern bool draw_bloom;
 
 #endif

@@ -1,4 +1,3 @@
-
 newmtl material
 Ka 1.000000 1.000000 1.000000
 Kd 1.000000 1.000000 1.000000
@@ -7,6 +6,6 @@ Tr 1.000000
 illum 1
 Ns 0.000000
 map_Bump data/textures/bamboo-wood-semigloss-normal.bmp
-map_Kd data/textures/bamboo-wood-semigloss-basecolor.bmp
+map_Kd data/textures/bamboo-wood-semigloss-albedo.bmp
 map_Pr data/textures/bamboo-wood-semigloss-roughness.bmp
-map_Pm data/textures/bamboo-wood-semigloss-metallic.bmp
+map_Pm data/textures/bamboo-wood-semigloss-metal.bmp

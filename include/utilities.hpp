@@ -13,6 +13,7 @@ struct Entity {
     Mesh* asset = nullptr;
     glm::mat4 transform = glm::mat4();
     btRigidBody* rigidbody = nullptr;
+    bool casts_shadow = true;
     unsigned int id;
 } typedef Entity;
 

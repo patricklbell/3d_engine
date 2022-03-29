@@ -43,7 +43,7 @@ std::string glsl_version;
 btDiscreteDynamicsWorld* dynamics_world;
 glm::vec3 sun_color;
 glm::vec3 sun_direction;
-ImVec4 clear_color;
+glm::vec4 clear_color = glm::vec4(67/255, 85/255, 98/255, 1.0);
 
 int main() {
     // Initialise GLFW
@@ -112,70 +112,42 @@ int main() {
     glfwGetWindowSize(window, &window_width, &window_height);
     glfwSetWindowSizeCallback(window, windowSizeCallback);
 
+    initGraphicsPrimitives();
     initDefaultMaterial();
+    createShadowFbo();
+    if(shader::unified_bloom){
+        createHdrFbo();
+        createBloomFbo();
+    }
+
+    // @note camera instanciation uses sun direction to create shadow view
+    // In future create a shadow object/directional light object which contains
+    // sun_direction sun_color shadow_view ortho_projection/shadow_projection
+    sun_direction = glm::vec3(-0.7071067811865475, -0.7071067811865475, 0);
+    sun_color = 5.0f*glm::vec3(0.941, 0.933, 0.849);
 
     Camera camera;
     createDefaultCamera(camera);
+    updateShadowVP(camera);
 
     // Load shaders
     loadNullShader("data/shaders/null.gl");
     loadUnifiedShader("data/shaders/unified.gl");
+    loadGaussianBlurShader("data/shaders/gaussian_blur.gl");
+    loadPostShader("data/shaders/post.gl");
 
     // Map for last update time for hotswaping files
     std::filesystem::file_time_type empty_file_time;
     std::map<const std::string, std::pair<shader::TYPE, std::filesystem::file_time_type>> shader_update_times = {
         {"data/shaders/null.gl", {shader::TYPE::NULL_SHADER, empty_file_time}},
         {"data/shaders/unified.gl", {shader::TYPE::UNIFIED_SHADER, empty_file_time}},
+        {"data/shaders/gaussian_blur.gl", {shader::TYPE::GAUSSIAN_BLUR_SHADER, empty_file_time}},
+        {"data/shaders/post.gl", {shader::TYPE::POST_SHADER, empty_file_time}},
     };
     // Fill in with correct file time
     for (auto &pair : shader_update_times) {
         if(std::filesystem::exists(pair.first)) pair.second.second = std::filesystem::last_write_time(pair.first);
     }
-
-    // Note screen triangle possibly better
-    // Setup screen quad [-1, -1] -> [1, 1]
-    //GLuint screen_quad_vao;
-	//{
-    //    const unsigned short indices_buffer_data[] = { 4, 3, 1, 2, 4, 1 };
-    //    static const GLfloat vertex_buffer_data[] = { 
-    //        -1.0f,  1.0f, 0.0f,
-    //         1.0f,  1.0f, 0.0f,
-    //        -1.0f, -1.0f, 0.0f,
-    //         1.0f, -1.0f, 0.0f,
-    //    };
-    //    static const GLfloat uv_buffer_data[] = { 
-    //         1.0f,  1.0f,
-    //         0.0f,  1.0f,
-    //         0.0f,  0.0f,
-    //         1.0f,  0.0f,
-    //    };
-    //    GLuint vertexbuffer, indicesbuffer, uvbuffer;
-    //    glGenBuffers(1, &vertexbuffer);
-    //    glGenBuffers(1, &indicesbuffer);
-    //    glGenBuffers(1, &uvbuffer);
-
-    //    glBindVertexArray(screen_quad_vao);
-
-    //    glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer);
-    //    glBufferData(GL_ARRAY_BUFFER, sizeof(vertex_buffer_data), &vertex_buffer_data[0], GL_STATIC_DRAW);
-    //    glVertexAttribPointer(0, 3, GL_FLOAT, false, 0, 0);
-    //    glEnableVertexAttribArray(0);
-
-    //    glBindBuffer(GL_ARRAY_BUFFER, uvbuffer);
-    //    glBufferData(GL_ARRAY_BUFFER, sizeof(uv_buffer_data), &uv_buffer_data[0], GL_STATIC_DRAW);
-    //    glVertexAttribPointer(1, 2, GL_FLOAT, false, 0, 0);
-    //    glEnableVertexAttribArray(1);
-
-    //    // Generate a buffer for the indices as well
-    //    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indicesbuffer);
-    //    glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indices_buffer_data), &indices_buffer_data[0], GL_STATIC_DRAW);
-
-    //    glBindVertexArray(0);
-    //}
-    Mesh *quad = new Mesh;
-    loadAsset(quad, "data/models/quad.obj");
-    Mesh *sphere = new Mesh;
-    loadAsset(sphere, "data/models/sphere.obj");
 
     // Create point lights
     std::vector<PointLight> point_lights = {PointLight(glm::vec3(2,0,0), glm::vec3(1,1,1), 0.5, 1, 1, 0.8)};
@@ -206,13 +178,9 @@ int main() {
         box_collision_shape,    // collision shape of body
         btVector3(0, 0, 0)    // local inertia
     );
-
-    sun_direction = glm::vec3(-0.7071067811865475, -0.7071067811865475, 0);
-    sun_color = glm::vec3(0.941, 0.933, 0.849);
-
     // Load assets
-    std::vector<std::string> asset_names = {"cube", "sphere", "capsule", "WoodenCrate", "gun"};
-    std::vector<std::string> asset_paths = {"data/models/cube.obj", "data/models/sphere.obj", "data/models/capsule.obj", "data/models/WoodenCrate.obj", "data/models/gun-pbribl.fbx"};
+    std::vector<std::string> asset_names = {"cube", "sphere", "capsule", "WoodenCrate"};
+    std::vector<std::string> asset_paths = {"data/models/cube.obj", "data/models/sphere.obj", "data/models/capsule.obj", "data/models/WoodenCrate.obj"};
     std::vector<Mesh *> assets;
     for (int i = 0; i < asset_paths.size(); ++i) {
         auto asset = new Mesh;
@@ -259,6 +227,11 @@ int main() {
 
         if (window_resized){
             updateCameraProjection(camera);
+            updateShadowVP(camera);
+            if(shader::unified_bloom){
+                createHdrFbo();
+                createBloomFbo();
+            }
         }
 
         handleEditorControls(camera, entities, true_dt);
@@ -271,11 +244,16 @@ int main() {
                     pair.second.second = std::filesystem::last_write_time(pair.first);
                     switch (pair.second.first) {
                         case shader::TYPE::NULL_SHADER:
-
                             loadNullShader(pair.first.c_str());
                             break;
                         case shader::TYPE::UNIFIED_SHADER:
                             loadUnifiedShader(pair.first.c_str());
+                            break;
+                        case shader::TYPE::GAUSSIAN_BLUR_SHADER:
+                            loadGaussianBlurShader(pair.first.c_str());
+                            break;
+                        case shader::TYPE::POST_SHADER:
+                            loadPostShader(pair.first.c_str());
                             break;
                         default:
                             break;
@@ -304,11 +282,17 @@ int main() {
         //		rigidbody->setMotionState(new btDefaultMotionState(btTransform(btQuaternion(0,0,0),btVector3(pos.x, pos.y, pos.z))));
         //	}
         //}
- 
+
+        bindDrawShadowMap(entities, camera);
 
         bindHdr();
-        clearHdr();
         drawUnifiedHdr(entities, camera);
+
+        if(shader::unified_bloom){
+            int blur_buffer_index = blurBloomFbo();
+            bindBackbuffer();
+            drawPost(blur_buffer_index);
+        }
 
         drawEditorGui(camera, entities, assets, free_entity_stack, delete_entity_stack, id_counter, rigidbodies, rigidbody_CI);
 
@@ -334,7 +318,7 @@ int main() {
         if(code != GL_NO_ERROR){
             code = glGetError();
             string = gluErrorString(code);
-            fprintf(stderr, "OpenGL error: %s\n", string);
+            fprintf(stderr, "<--------------------OpenGL ERROR-------------------->\n%s\n", string);
         }
     } // Check if the ESC key was pressed or the window was closed
     while( glfwGetKey(window, GLFW_KEY_ESCAPE ) != GLFW_PRESS && glfwWindowShouldClose(window) == 0 );
@@ -342,6 +326,12 @@ int main() {
     // Cleanup VAOs and shader
     for(auto &asset : assets){
         glDeleteVertexArrays(1, &asset->vao);
+        for(int i = 0; i<asset->num_materials; ++i){
+    	    glDeleteTextures(1, &asset->materials[i]->t_albedo);
+    	    glDeleteTextures(1, &asset->materials[i]->t_normal);
+    	    glDeleteTextures(1, &asset->materials[i]->t_metallic);
+    	    glDeleteTextures(1, &asset->materials[i]->t_roughness);
+        }
     }
     deleteShaderPrograms();    
 

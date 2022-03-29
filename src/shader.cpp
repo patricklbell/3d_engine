@@ -23,13 +23,19 @@ namespace shader {
     GLuint null_program;
     struct NullUniforms null_uniforms;
 
-    GLuint unified_program;
-    struct UnifiedUniforms unified_uniforms;
+    GLuint unified_programs[2];
+    struct UnifiedUniforms unified_uniforms[2];
+	bool unified_bloom = false;
+
+	GLuint gaussian_blur_program;
+	struct GaussianBlurUniforms gaussian_blur_uniforms;
+
+	GLuint post_program;
 }
 
 using namespace shader;
 
-GLuint loadShader(std::string vertex_fragment_file_path) {
+GLuint loadShader(std::string vertex_fragment_file_path, std::string macro_prepends="") {
 	const char *path = vertex_fragment_file_path.c_str();
 	printf("Loading shader %s.\n", path);
 	const char *version_macro  = "#version 330 core \n";
@@ -39,7 +45,6 @@ GLuint loadShader(std::string vertex_fragment_file_path) {
 	GLuint vertex_shader_id   = glCreateShader(GL_VERTEX_SHADER);
 	GLuint fragment_shader_id = glCreateShader(GL_FRAGMENT_SHADER);
 
-	// Read unified shader code from file
 	FILE *fp = fopen(path, "r");
 
 	if (fp == NULL) {
@@ -63,9 +68,9 @@ GLuint loadShader(std::string vertex_fragment_file_path) {
 
 	printf("Compiling and linking shader: %s\n", path);
 
-    char *vertex_shader_code[] = {(char*)version_macro, (char*)vertex_macro, shader_code};
+    char *vertex_shader_code[] = {(char*)version_macro, (char*)vertex_macro, (char*)macro_prepends.c_str(), shader_code};
 
-	glShaderSource(vertex_shader_id, 3, vertex_shader_code, NULL);
+	glShaderSource(vertex_shader_id, 4, vertex_shader_code, NULL);
 	glCompileShader(vertex_shader_id);
 
 	glGetShaderiv(vertex_shader_id, GL_INFO_LOG_LENGTH, &info_log_length);
@@ -78,9 +83,9 @@ GLuint loadShader(std::string vertex_fragment_file_path) {
 		return GL_FALSE;
 	}
 
-	char *fragment_shader_code[] = {(char*)version_macro, (char*)fragment_macro, shader_code};
+	char *fragment_shader_code[] = {(char*)version_macro, (char*)fragment_macro, (char*)macro_prepends.c_str(), shader_code};
 
-	glShaderSource(fragment_shader_id, 3, fragment_shader_code, NULL);
+	glShaderSource(fragment_shader_id, 4, fragment_shader_code, NULL);
 	glCompileShader(fragment_shader_id);
 
 	glGetShaderiv(fragment_shader_id, GL_INFO_LOG_LENGTH, &info_log_length);
@@ -115,9 +120,39 @@ GLuint loadShader(std::string vertex_fragment_file_path) {
 	glDeleteShader(vertex_shader_id);
 	glDeleteShader(fragment_shader_id);
 
-	printf("Loaded shader %s.\n", path);
-
 	return program_id;
+}
+void loadPostShader(std::string path){
+	auto tmp = post_program;
+	// Create and compile our GLSL program from the shaders
+	post_program = loadShader(path);
+	if(post_program == GL_FALSE) {
+		printf("Failed to load post shader\n");
+		post_program = tmp;
+		return;
+	}
+
+	glUseProgram(post_program);
+	// Set fixed locations for textures in GL_TEXTUREi
+	glUniform1i(glGetUniformLocation(post_program, "pixel_map"), 0);
+	glUniform1i(glGetUniformLocation(post_program, "bloom_map"),  1);
+}
+void loadGaussianBlurShader(std::string path){
+	auto tmp = gaussian_blur_program;
+	// Create and compile our GLSL program from the shaders
+	gaussian_blur_program = loadShader(path);
+	if(gaussian_blur_program == GL_FALSE) {
+		printf("Failed to load gaussian blur shader\n");
+		gaussian_blur_program = tmp;
+		return;
+	}
+
+	// Grab uniforms to modify
+	gaussian_blur_uniforms.horizontal = glGetUniformLocation(gaussian_blur_program, "horizontal");
+
+	glUseProgram(gaussian_blur_program);
+	// Set fixed locations for textures in GL_TEXTUREi
+	glUniform1i(glGetUniformLocation(gaussian_blur_program, "image"), 0);
 }
 void loadNullShader(std::string path){
 	auto tmp = null_program;
@@ -133,31 +168,37 @@ void loadNullShader(std::string path){
 	null_uniforms.mvp = glGetUniformLocation(null_program, "mvp");
 }
 void loadUnifiedShader(std::string path){
-	// Create and compile our GLSL program from the shaders
-	auto tmp = unified_program;
-	unified_program = loadShader(path);
-	if(unified_program == GL_FALSE) {
-		printf("Failed to load unified shader\n");
-		unified_program = tmp;
-		return;
+	static const std::string macros[] = {"", "#define BLOOM 1\n"};
+	for(int i = 0; i < 2; i++){
+		// Create and compile our GLSL program from the shaders
+		auto tmp = unified_programs[i];
+		unified_programs[i] = loadShader(path, macros[i]);
+		if(unified_programs[i] == GL_FALSE) {
+			unified_programs[i] = tmp;
+			return;
+		}
+		// Grab uniforms to modify during rendering
+		unified_uniforms[i].mvp   = glGetUniformLocation(unified_programs[i], "mvp");
+		unified_uniforms[i].shadow_mvp   = glGetUniformLocation(unified_programs[i], "shadow_mvp");
+		unified_uniforms[i].model = glGetUniformLocation(unified_programs[i], "model");
+		unified_uniforms[i].sun_color = glGetUniformLocation(unified_programs[i], "sun_color");
+		unified_uniforms[i].sun_direction = glGetUniformLocation(unified_programs[i], "sun_direction");
+		unified_uniforms[i].camera_position = glGetUniformLocation(unified_programs[i], "camera_position");
+		
+		glUseProgram(unified_programs[i]);
+		// Set fixed locations for textures in GL_TEXTUREi
+		glUniform1i(glGetUniformLocation(unified_programs[i], "albedo_map"), 0);
+		glUniform1i(glGetUniformLocation(unified_programs[i], "normal_map"),  1);
+		glUniform1i(glGetUniformLocation(unified_programs[i], "metallic_map"),  2);
+		glUniform1i(glGetUniformLocation(unified_programs[i], "roughness_map"),  3);
+		glUniform1i(glGetUniformLocation(unified_programs[i], "ao_map"),  4);
+		glUniform1i(glGetUniformLocation(unified_programs[i], "shadow_map"),  5);
 	}
-
-	// Grab uniforms to modify during rendering
-	unified_uniforms.mvp   = glGetUniformLocation(unified_program, "mvp");
-	unified_uniforms.model = glGetUniformLocation(unified_program, "model");
-	unified_uniforms.sun_color = glGetUniformLocation(unified_program, "sun_color");
-	unified_uniforms.sun_direction = glGetUniformLocation(unified_program, "sun_direction");
-	unified_uniforms.camera_position = glGetUniformLocation(unified_program, "camera_position");
-	
-	glUseProgram(unified_program);
-	// Set fixed locations for textures in GL_TEXTUREi
-	glUniform1i(glGetUniformLocation(unified_program, "albedo_map"), 0);
-	glUniform1i(glGetUniformLocation(unified_program, "normal_map"),  1);
-	glUniform1i(glGetUniformLocation(unified_program, "metallic_map"),  2);
-	glUniform1i(glGetUniformLocation(unified_program, "roughness_map"),  3);
-	glUniform1i(glGetUniformLocation(unified_program, "ao_map"),  4);
 }
 void deleteShaderPrograms(){
     glDeleteProgram(null_program);
-    glDeleteProgram(unified_program);
+    glDeleteProgram(unified_programs[0]);
+    glDeleteProgram(unified_programs[1]);
+    glDeleteProgram(gaussian_blur_program);
+	glDeleteProgram(post_program);
 }

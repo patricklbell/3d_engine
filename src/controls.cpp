@@ -75,6 +75,7 @@ void handleEditorControls(Camera &camera, Entity *entities[ENTITY_COUNT], float 
             if(selected_entity != -1){
                 camera.target = glm::vec3(entities[selected_entity]->transform[3]);
                 updateCameraView(camera);
+                updateShadowVP(camera);
             }
         }
     }
@@ -101,6 +102,7 @@ void handleEditorControls(Camera &camera, Entity *entities[ENTITY_COUNT], float 
                 //camera.position = glm::vec3(entities[selected_entity]->transform[3]) + camera.position - camera.target;
                 camera.target = glm::vec3(entities[selected_entity]->transform[3]);
                 updateCameraView(camera);
+                updateShadowVP(camera);
             } else {
                 selected_entity = -1;
             }
@@ -126,6 +128,7 @@ void handleEditorControls(Camera &camera, Entity *entities[ENTITY_COUNT], float 
             // Update the camera view
             camera.position = camera_position_rotated;
             updateCameraView(camera);
+            updateShadowVP(camera);
         }
         if(!io.WantCaptureMouse && scroll_offset.y != 0){
             float distance = glm::length(camera.position - camera.target);
@@ -133,6 +136,7 @@ void handleEditorControls(Camera &camera, Entity *entities[ENTITY_COUNT], float 
 
             camera.position = camera.target + glm::normalize(camera.position - camera.target)*distance;
             updateCameraView(camera);
+            updateShadowVP(camera);
 
             // Handle scroll event
             scroll_offset.y = 0;
@@ -176,6 +180,7 @@ void handleEditorControls(Camera &camera, Entity *entities[ENTITY_COUNT], float 
 
         camera.target = camera.position + camera_direction_rotated;
         updateCameraView(camera);
+        updateShadowVP(camera);
 
         glfwSetCursorPos(window, (float)window_width/2, (float)window_height/2);
         glfwGetCursorPos(window, &mouse_position.x, &mouse_position.y);
