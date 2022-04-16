@@ -4,66 +4,18 @@
 #include <string>
 #include <glm/glm.hpp>
 #include <GLFW/glfw3.h>
-#include <btBulletDynamicsCommon.h>
 #include "assets.hpp"
+#include "graphics.hpp"
 
-void float_array_to_mat4(glm::mat4& o_mat, float i_array[16]);
+void saveLevel(const EntityManager &entity_manager, const std::vector<Mesh*> assets, std::vector<std::string> asset_paths, std::string level_path);
+glm::mat4x4 createModelMatrix(const glm::vec3 &pos, const glm::quat &rot, const glm::mat3x3 &scl);
 void screenPosToWorldRay(glm::ivec2 mouse_position, glm::mat4 view, glm::mat4 projection, glm::vec3 &out_origin, glm::vec3 &out_direction);
-struct Entity {
-    Mesh* asset = nullptr;
-    glm::mat4 transform = glm::mat4();
-    btRigidBody* rigidbody = nullptr;
-    bool casts_shadow = true;
-    unsigned int id;
-} typedef Entity;
-
-
-//
-//  Potentially more advanced implementation of entity storage
-//
-//struct Id {
-//    unsigned int index;
-//    unsigned int version = 0;
-//} typedef Id;
-//struct EntitySlotMap {
-//    Entity entities[ENTITY_COUNT];
-//    std::stack<Id> freeStack;
-//	unsigned int count;
-//
-//	inline Entity *getEntity(Id id){
-//		if (entities[id.index].id.version == id.version){
-//			return &entities[id.index];
-//		} else {
-//			return nullptr;
-//		}
-//	}
-//	Id getId(){
-//        Id id;
-//        if (freeStack.size() == 0){
-//            count++;
-//            assert (count < ENTITY_COUNT);
-//            id.index = count;
-//        } else {
-//		    id = freeStack.top();
-//            id.version += 1;
-//		    freeStack.pop();
-//        }
-//            
-//        return id;
-//	}
-//	void removeId(Id id){
-//		if (entities[id.index].id.version == id.version){
-//			entities[id.index].id.version += 1;
-//			entities[count + 1].id.version += 1;
-//
-//			// TODO: Better
-//			std::swap(entities[id.index].asset, entities[count+1].asset);
-//			std::swap(entities[id.index].transform, entities[count+1].transform);
-//		}
-//	}
-//} typedef EntitySlotMap;
-
-bool load_mtl(Material * mat, const std::string &path);
-void load_asset(Mesh * asset, const std::string &objpath, const std::string &mtlpath);
+bool rayIntersectsTriangleCull(const glm::vec3 vertices[3], const glm::vec3 &ray_origin, const glm::vec3 &ray_direction, double &t, double &u, double &v);
+bool rayIntersectsTriangle(const glm::vec3 vertices[3], const glm::vec3 &ray_origin, const glm::vec3 &ray_direction, double &t, double &u, double &v);
+bool rayIntersectsTriangleTestCull(const glm::vec3 vertices[3], const glm::vec3 &ray_origin, const glm::vec3 &ray_direction);
+bool rayIntersectsTriangleTest(const glm::vec3 vertices[3], const glm::vec3 &ray_origin, const glm::vec3 &ray_direction);
+bool rayIntersectsMesh(Mesh *mesh, const glm::mat4x4 &transform, const Camera &camera, const glm::vec3 &ray_origin, const glm::vec3 &ray_direction, glm::vec3 &collision_point, glm::vec3 &normal);
+float closestDistanceBetweenLines(const glm::vec3 &l1_origin, const glm::vec3 &l1_direction, const glm::vec3 &l2_origin, const glm::vec3 &l2_direction, float &l1_t, float &l2_t);
+float closestDistanceBetweenLineCircle(const glm::vec3 &line_origin, const glm::vec3 &line_direction, const glm::vec3 &circle_center, const glm::vec3 &circle_normal, float circle_radius, glm::vec3& point);
 
 #endif /* ifndef UTILITIES_HPP */

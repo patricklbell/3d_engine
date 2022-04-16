@@ -25,9 +25,6 @@ GLFWwindow* window;
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
-// Include Bullet
-#include <btBulletDynamicsCommon.h>
-
 #include "globals.hpp"
 #include "shader.hpp"
 #include "texture.hpp"
@@ -36,11 +33,11 @@ GLFWwindow* window;
 #include "controls.hpp"
 #include "editor.hpp"
 #include "assets.hpp"
+#include "entities.hpp"
 
-// Define globals.hpp
-int selected_entity;
+// Defined in globals.hpp
+int selected_entity = -1;
 std::string glsl_version;
-btDiscreteDynamicsWorld* dynamics_world;
 glm::vec3 sun_color;
 glm::vec3 sun_direction;
 glm::vec4 clear_color = glm::vec4(67/255, 85/255, 98/255, 1.0);
@@ -135,6 +132,7 @@ int main() {
     loadUnifiedShader("data/shaders/unified.gl");
     loadGaussianBlurShader("data/shaders/gaussian_blur.gl");
     loadPostShader("data/shaders/post.gl");
+    loadDebugShader("data/shaders/debug.gl");
 
     // Map for last update time for hotswaping files
     std::filesystem::file_time_type empty_file_time;
@@ -143,82 +141,41 @@ int main() {
         {"data/shaders/unified.gl", {shader::TYPE::UNIFIED_SHADER, empty_file_time}},
         {"data/shaders/gaussian_blur.gl", {shader::TYPE::GAUSSIAN_BLUR_SHADER, empty_file_time}},
         {"data/shaders/post.gl", {shader::TYPE::POST_SHADER, empty_file_time}},
+        {"data/shaders/debug.gl", {shader::TYPE::DEBUG_SHADER, empty_file_time}},
     };
     // Fill in with correct file time
     for (auto &pair : shader_update_times) {
         if(std::filesystem::exists(pair.first)) pair.second.second = std::filesystem::last_write_time(pair.first);
     }
 
-    // Create point lights
-    std::vector<PointLight> point_lights = {PointLight(glm::vec3(2,0,0), glm::vec3(1,1,1), 0.5, 1, 1, 0.8)};
-
-    // Initialize Bullet
-    {
-    // Build the broadphase
-    btBroadphaseInterface* broadphase = new btDbvtBroadphase();
-
-    // Set up the collision configuration and dispatcher
-    btDefaultCollisionConfiguration* collision_configuration = new btDefaultCollisionConfiguration();
-    btCollisionDispatcher* dispatcher = new btCollisionDispatcher(collision_configuration);
-
-    // The actual physics solver
-    btSequentialImpulseConstraintSolver* solver = new btSequentialImpulseConstraintSolver;
-
-    // The world
-    dynamics_world = new btDiscreteDynamicsWorld(dispatcher, broadphase, solver, collision_configuration);
-    dynamics_world->setGravity(btVector3(0, -9.81f, 0));
-    }
-
-    // @todo Load collider specific to object
-    btCollisionShape* box_collision_shape = new btBoxShape(btVector3(1.0f, 1.0f, 1.0f));
-    btDefaultMotionState* motionstate = new btDefaultMotionState(btTransform(btQuaternion(0,0,0), btVector3(0,0,0)));
-    btRigidBody::btRigidBodyConstructionInfo rigidbody_CI(
-        0.1,                    // mass, in kg. 0 -> Static object, will never move.
-        motionstate,
-        box_collision_shape,    // collision shape of body
-        btVector3(0, 0, 0)    // local inertia
-    );
     // Load assets
-    std::vector<std::string> asset_names = {"cube", "sphere", "capsule", "WoodenCrate"};
-    std::vector<std::string> asset_paths = {"data/models/cube.obj", "data/models/sphere.obj", "data/models/capsule.obj", "data/models/WoodenCrate.obj"};
+    std::vector<std::string> asset_names = {"cube", "sphere", "WoodenCrate"};
+    std::vector<std::string> asset_paths = {"data/models/cube.obj", "data/models/sphere.obj", "data/models/WoodenCrate.obj"};
     std::vector<Mesh *> assets;
     for (int i = 0; i < asset_paths.size(); ++i) {
         auto asset = new Mesh;
         loadAsset(asset, asset_paths[i]);
-        asset->name = asset_names[i];
+        asset->name = (char *)asset_names[i].c_str();
         assets.push_back(asset);
     }
     
-    // Create instances
-    btRigidBody *rigidbodies[ENTITY_COUNT] = {};
-    Entity      *entities[ENTITY_COUNT]    = {};
-    std::stack<int> free_entity_stack;
-    std::stack<int> delete_entity_stack;
-    int id_counter = 0;
+    EntityManager entity_manager;
 
-    for (int i = 0; i < 1; ++i) {
-        int id = id_counter++;
-        entities[id] = new Entity();
-        entities[id]->id = id;
-        entities[id]->asset = assets[0];
-        entities[id]->transform = glm::translate(glm::mat4(), glm::vec3(0, i*3, 0));
-        rigidbodies[id] = new btRigidBody(rigidbody_CI);
+    // Create instance
+    int id = entity_manager.getFreeId();
+    entity_manager.entities[id] = new MeshEntity(id);
+    MeshEntity* entity = (MeshEntity*)entity_manager.getEntity(id);
+    entity->mesh = assets[0];
+    entity->position = glm::vec3(1.0,0,0);
 
-        rigidbodies[id]->setMotionState(new btDefaultMotionState(btTransform(btQuaternion(0,0,0),btVector3(0, i*3, 0))));
-        dynamics_world->addRigidBody(rigidbodies[id]);
-        rigidbodies[id]->setUserIndex(id);
-    }
-
-    // TODO: Skymap loading and rendering
+    // @todo Skymap loading and rendering
     //GLuint tSkybox = load_cubemap({"Skybox1.bmp", "Skybox2.bmp","Skybox3.bmp","Skybox4.bmp","Skybox5.bmp","Skybox6.bmp"});
     
     initEditorGui();
     initEditorControls();
 
-    // Update all variables whose delta is checked
     double last_time = glfwGetTime();
     double last_filesystem_hotswap_check = last_time;
-    selected_entity = -1;
     do {
         double current_time = glfwGetTime();
         float true_dt = current_time - last_time;
@@ -233,8 +190,6 @@ int main() {
                 createBloomFbo();
             }
         }
-
-        handleEditorControls(camera, entities, true_dt);
 
         // Hotswap shader files
         if(current_time - last_filesystem_hotswap_check >= 1.0){
@@ -255,6 +210,9 @@ int main() {
                         case shader::TYPE::POST_SHADER:
                             loadPostShader(pair.first.c_str());
                             break;
+                        case shader::TYPE::DEBUG_SHADER:
+                            loadDebugShader(pair.first.c_str());
+                            break;
                         default:
                             break;
                     }
@@ -262,57 +220,25 @@ int main() {
             }
         }
 
-
-        //dynamics_world->stepSimulation(true_dt);
-        // Update matrixes of physics objects
-        //for (auto &rigidbody : rigidbodies) {
-        //	auto entity = entities[rigidbody->getUserIndex()];
-        //	auto pos = glm::vec3(entity->transform[3]);
-        //	if(rigidbody->getUserIndex() != selected_entity){
-        //		btTransform trans;
-        //		rigidbody->getMotionState()->getWorldTransform(trans);
-
-        //		auto vec = trans.getOrigin();
-        //		//std::cout << vec.getX() << ", " << vec.getY() << ", "<< vec.getZ() << "\n";
-
-        //		// Convert the btTransform into the GLM matrix
-        //		//trans.getOpenGLMatrix(glm::value_ptr(entity->transform));
-        //	} else {
-        //		std::cout << pos.x << ", " << pos.y << ", "<< pos.z << "\n";
-        //		rigidbody->setMotionState(new btDefaultMotionState(btTransform(btQuaternion(0,0,0),btVector3(pos.x, pos.y, pos.z))));
-        //	}
-        //}
-
-        bindDrawShadowMap(entities, camera);
+        bindDrawShadowMap(entity_manager, camera);
 
         bindHdr();
-        drawUnifiedHdr(entities, camera);
+        drawUnifiedHdr(entity_manager, camera);
 
+        handleEditorControls(camera, entity_manager, true_dt);
         if(shader::unified_bloom){
             int blur_buffer_index = blurBloomFbo();
             bindBackbuffer();
             drawPost(blur_buffer_index);
         }
 
-        drawEditorGui(camera, entities, assets, free_entity_stack, delete_entity_stack, id_counter, rigidbodies, rigidbody_CI);
+        drawEditorGui(camera, entity_manager, assets, asset_paths);
 
         // Swap backbuffer with front buffer
         glfwSwapBuffers(window);
         glfwPollEvents();
 
-        // Delete entities
-        while(delete_entity_stack.size() != 0){
-            int id = delete_entity_stack.top();
-            delete_entity_stack.pop();
-            free_entity_stack.push(id);
-            free (entities[id]);
-            entities[id] = nullptr;
-            if(rigidbodies[id] != nullptr){
-                dynamics_world->removeRigidBody(rigidbodies[id]);
-                rigidbodies[id] = nullptr;
-            }
-        }
-
+        entity_manager.propogateChanges();
         static GLenum code;
         static const GLubyte* string;
         if(code != GL_NO_ERROR){

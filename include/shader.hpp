@@ -10,6 +10,7 @@ void loadNullShader(std::string path);
 void loadUnifiedShader(std::string path);
 void loadGaussianBlurShader(std::string path);
 void loadPostShader(std::string path);
+void loadDebugShader(std::string path);
 void deleteShaderPrograms();
 
 namespace shader {
@@ -18,6 +19,7 @@ namespace shader {
         UNIFIED_SHADER,
         GAUSSIAN_BLUR_SHADER,
         POST_SHADER,
+        DEBUG_SHADER,
         NUM_SHADER_TYPES,
     };
     extern GLuint null_program;
@@ -35,6 +37,11 @@ namespace shader {
     extern struct GaussianBlurUniforms {
         GLuint horizontal;
     } gaussian_blur_uniforms;
+
+    extern GLuint debug_program;
+    extern struct DebugUniforms {
+        GLuint mvp, model, sun_direction, time, flashing, shaded, color, color_flash_to;
+    } debug_uniforms;
 
     extern GLuint post_program;
 }

@@ -8,7 +8,9 @@
 #include <glm/gtc/matrix_transform.hpp>
 
 // Include ImGui
+#include "entities.hpp"
 #include "glm/detail/func_geometric.hpp"
+#include "glm/gtc/quaternion.hpp"
 #include "imgui.h"
 
 #include "controls.hpp"
@@ -21,6 +23,8 @@
 namespace controls {
     glm::vec2 scroll_offset;
     bool scrolled;
+    bool left_mouse_click_press;
+    bool left_mouse_click_release;
 
     glm::dvec2 mouse_position;
     glm::dvec2 delta_mouse_position;
@@ -41,12 +45,17 @@ void initEditorControls(){
     delta_mouse_position = glm::dvec2(0,0);
 }
 
-void handleEditorControls(Camera &camera, Entity *entities[ENTITY_COUNT], float dt) {
+void handleEditorControls(Camera &camera, EntityManager &entity_manager, float dt) {
     // Stores the previous state of input, updated at end of function
     static int space_key_state = GLFW_RELEASE;
     static int d_key_state = GLFW_RELEASE;
     static int mouse_left_state = GLFW_RELEASE;
     static double mouse_left_press_time = glfwGetTime();
+
+    bool camera_movement_active = !editor::transform_active;
+    ImGuiIO& io = ImGui::GetIO();
+    controls::left_mouse_click_press   = !io.WantCaptureMouse && glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS && mouse_left_state == GLFW_RELEASE;
+    controls::left_mouse_click_release = !io.WantCaptureMouse && glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_RELEASE && mouse_left_state == GLFW_PRESS;
 
     // Unlike other inputs, calculate delta but update mouse position immediately
     glm::dvec2 delta_mouse_position = mouse_position;
@@ -54,7 +63,8 @@ void handleEditorControls(Camera &camera, Entity *entities[ENTITY_COUNT], float 
     delta_mouse_position = mouse_position - delta_mouse_position;
 
     if(glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS && d_key_state == GLFW_RELEASE){
-        editor::draw_bt_debug = !editor::draw_bt_debug; 
+        //editor::draw_bt_debug = !editor::draw_bt_debug; 
+        editor::draw_debug_wireframe = !editor::draw_debug_wireframe;
     }
     if(glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS && space_key_state == GLFW_RELEASE){
         if(camera.state == Camera::TYPE::TRACKBALL) {
@@ -73,40 +83,56 @@ void handleEditorControls(Camera &camera, Entity *entities[ENTITY_COUNT], float 
             glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
            
             if(selected_entity != -1){
-                camera.target = glm::vec3(entities[selected_entity]->transform[3]);
-                updateCameraView(camera);
-                updateShadowVP(camera);
+                auto s_m_e = (MeshEntity*)entity_manager.getEntity(selected_entity);
+                if(s_m_e != nullptr && s_m_e->type == EntityType::MESH_ENTITY){
+                    camera.target = s_m_e->position;
+                    updateCameraView(camera);
+                    updateShadowVP(camera);
+                }
             }
         }
     }
 
-    ImGuiIO& io = ImGui::GetIO();
+
     if(camera.state == Camera::TYPE::TRACKBALL){
-        if (!io.WantCaptureMouse && glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_RELEASE && mouse_left_state == GLFW_PRESS && (glfwGetTime() - mouse_left_press_time) < 0.2) {
+        if (left_mouse_click_release && (glfwGetTime() - mouse_left_press_time) < 0.2) {
             glm::vec3 out_origin;
             glm::vec3 out_direction;
             screenPosToWorldRay(mouse_position, camera.view, camera.projection, out_origin, out_direction);
+            
+            selected_entity = -1;
+            float min_collision_distance = std::numeric_limits<float>::max();
+            for(int i = 0; i < ENTITY_COUNT; ++i){
+                auto m_e = (MeshEntity*)entity_manager.getEntity(i);
+                if(m_e == nullptr || !(m_e->type & EntityType::MESH_ENTITY)) continue;
 
-            glm::vec3 out_end = out_origin + out_direction * 1000.0f;
-            glm::vec3 out_end_test = out_origin + out_direction * 2.0f;
-
-            btCollisionWorld::ClosestRayResultCallback RayCallback(btVector3(out_origin.x, out_origin.y, out_origin.z), btVector3(out_end.x, out_end.y, out_end.z));
-            dynamics_world->rayTest(btVector3(out_origin.x, out_origin.y, out_origin.z), btVector3(out_end.x, out_end.y, out_end.z), RayCallback);
-
-            if (RayCallback.hasHit()) {
-                selected_entity = RayCallback.m_collisionObject->getUserIndex();
-                if (entities[selected_entity] == nullptr)
-                    selected_entity = -1;
-                std::cout << "Selected game object " << selected_entity << "\n";
-                // Maintain distance position of old selected entity
-                //camera.position = glm::vec3(entities[selected_entity]->transform[3]) + camera.position - camera.target;
-                camera.target = glm::vec3(entities[selected_entity]->transform[3]);
+                const auto mesh = m_e->mesh;
+                const auto trans = createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
+                for(int j = 0; j < mesh->num_indices; j+=3){
+                    const auto p1 = mesh->vertices[mesh->indices[j]];
+                    const auto p2 = mesh->vertices[mesh->indices[j+1]];
+                    const auto p3 = mesh->vertices[mesh->indices[j+2]];
+                    glm::vec3 triangle[3] = {
+                        glm::vec3(trans * glm::vec4(p1, 1.0)),
+                        glm::vec3(trans * glm::vec4(p2, 1.0)),
+                        glm::vec3(trans * glm::vec4(p3, 1.0))
+                    };
+                    double u, v, t;
+                    if(rayIntersectsTriangle(triangle, out_origin, out_direction, t, u, v)){
+                        auto collision_distance = glm::length((out_origin + out_direction*(float)t) - camera.position);
+                        if(collision_distance < min_collision_distance){
+                            min_collision_distance = collision_distance;
+                            selected_entity = i;
+                        }
+                    }
+                }
+            }
+            if(selected_entity != -1){
+                camera.target = ((MeshEntity*)entity_manager.getEntity(selected_entity))->position;
                 updateCameraView(camera);
                 updateShadowVP(camera);
-            } else {
-                selected_entity = -1;
             }
-        } else if (!io.WantCaptureMouse && glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
+        } else if (!io.WantCaptureMouse && glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS && camera_movement_active) {
             auto camera_right = glm::vec3(glm::transpose(camera.view)[0]);
 
             // Calculate the amount of rotation given the mouse movement.
@@ -116,17 +142,25 @@ void handleEditorControls(Camera &camera, Entity *entities[ENTITY_COUNT], float 
             float y_angle = -delta_mouse_position.y * delta_angle_y;
 
             // @todo Handle camera passing over poles of orbit 
+            auto camera_look = camera.position - camera.target;
+
+            //printf("Camera look: x %f y %f z %f.\n", camera_look.x, camera_look.y, camera_look.z);
+            //printf("Camera right: x %f y %f z %f.\n", camera_right.x, camera_right.y, camera_right.z);
 
             // Rotate the camera around the pivot point on the first axis.
-            auto rotation_x = glm::rotate(glm::mat4x4(1.0f), x_angle, camera.up);
-            auto camera_position_rotated = glm::vec3(rotation_x * glm::vec4(camera.position - camera.target, 1)) + camera.target;
+            //glm::quat rotation_x;
+            //if(glm::abs(glm::dot(camera_look, camera_right)) < 0.0001) rotation_x = glm::angleAxis(x_angle, camera_right);
+            //else                                                       rotation_x = glm::angleAxis(x_angle, camera.up);
+            
+            auto rotation_x = glm::angleAxis(x_angle, camera.up);
+            camera_look = rotation_x * camera_look;
 
             // Rotate the camera around the pivot point on the second axis.
-            auto rotation_y = glm::rotate(glm::mat4x4(1.0f), y_angle, camera_right);
-            camera_position_rotated = glm::vec3(rotation_y * glm::vec4(camera_position_rotated - camera.target, 1)) + camera.target;
+            auto rotation_y = glm::angleAxis(y_angle, camera_right);
+            camera_look = rotation_y * camera_look;
 
             // Update the camera view
-            camera.position = camera_position_rotated;
+            camera.position = camera_look + camera.target;
             updateCameraView(camera);
             updateShadowVP(camera);
         }
@@ -141,7 +175,7 @@ void handleEditorControls(Camera &camera, Entity *entities[ENTITY_COUNT], float 
             // Handle scroll event
             scroll_offset.y = 0;
         }
-    } else if (camera.state == Camera::TYPE::SHOOTER){
+    } else if (camera.state == Camera::TYPE::SHOOTER && camera_movement_active){
         static const float camera_movement_speed = 2.0;
 
         glm::vec3 camera_direction = glm::normalize(camera.target - camera.position);

@@ -4,8 +4,8 @@
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 
-#include "utilities.hpp"
 #include "globals.hpp"
+#include "entities.hpp"
 
 extern int    window_width;
 extern int    window_height;
@@ -13,6 +13,7 @@ extern bool   window_resized;
 
 void windowSizeCallback(GLFWwindow* window, int width, int height);
 
+struct Entity;
 struct PointLight {
     glm::vec3 position;
     glm::vec3 color;
@@ -46,11 +47,11 @@ void drawScreenQuad();
 
 void updateShadowVP(const Camera &camera);
 void createShadowFbo();
-void bindDrawShadowMap(Entity **entities, const Camera &camera);
+void bindDrawShadowMap(const EntityManager &entity_manager, const Camera &camera);
 
 void clearFramebuffer(const glm::vec4 &color);
 void bindHdr();
-void drawUnifiedHdr(Entity *entities[ENTITY_COUNT], const Camera &camera);
+void drawUnifiedHdr(const EntityManager &entity_manager, const Camera &camera);
 
 void bindBackbuffer();
 void drawPost(int bloom_buffer_index);

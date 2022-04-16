@@ -12,11 +12,11 @@
 #include "imgui.h"
 
 #define ENTITY_COUNT 1000
+#define PI           3.14159265359
 
 extern int selected_entity;
 extern GLFWwindow* window;
 extern std::string glsl_version;
-extern btDiscreteDynamicsWorld* dynamics_world;
 extern glm::vec3 sun_color;
 extern glm::vec3 sun_direction;
 extern glm::vec4 clear_color;

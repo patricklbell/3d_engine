@@ -31,21 +31,27 @@ extern Material *default_material;
 void initDefaultMaterial();
 
 struct Mesh {
-    std::string name;
-    int        num_materials;
-    bool       transparent;
-    Material **materials;
-    GLuint     indices;
-    GLuint 	   vertices;
-    GLuint 	   uvs;
-    GLuint 	   normals;
-    GLuint 	   tangents;
-    //GLuint 	   bitangents;
-    GLuint     vao;
-    GLenum     draw_mode;
-    GLenum     draw_type;
-    GLint     *draw_start;
-    GLint     *draw_count;
+    unsigned short *indices;
+    char*           name;
+    int             num_materials = 0;
+    int             num_vertices = 0;
+    int             num_indices = 0;
+    bool            transparent = false;
+    Material      **materials;
+    glm::fvec3*     vertices; 
+    glm::fvec3*     normals;
+    glm::fvec3*     tangents;
+    glm::fvec2*     uvs;
+    GLuint          indices_vbo;
+    GLuint 	        vertices_vbo;
+    GLuint 	        uvs_vbo;
+    GLuint 	        normals_vbo;
+    GLuint 	        tangents_vbo;
+    GLuint          vao;
+    GLenum          draw_mode;
+    GLenum          draw_type;
+    GLint          *draw_start;
+    GLint          *draw_count;
 } typedef Mesh;
 
 //bool loadAssimp(

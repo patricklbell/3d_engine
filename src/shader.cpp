@@ -30,6 +30,9 @@ namespace shader {
 	GLuint gaussian_blur_program;
 	struct GaussianBlurUniforms gaussian_blur_uniforms;
 
+	GLuint debug_program;
+	struct DebugUniforms debug_uniforms;
+
 	GLuint post_program;
 }
 
@@ -137,6 +140,26 @@ void loadPostShader(std::string path){
 	glUniform1i(glGetUniformLocation(post_program, "pixel_map"), 0);
 	glUniform1i(glGetUniformLocation(post_program, "bloom_map"),  1);
 }
+void loadDebugShader(std::string path){
+	auto tmp = debug_program;
+	// Create and compile our GLSL program from the shaders
+	debug_program = loadShader(path);
+	if(debug_program == GL_FALSE) {
+		printf("Failed to load debug shader\n");
+		debug_program = tmp;
+		return;
+	}
+
+	// Grab uniforms to modify
+	debug_uniforms.model = glGetUniformLocation(debug_program, "model");
+	debug_uniforms.mvp = glGetUniformLocation(debug_program, "mvp");
+	debug_uniforms.sun_direction = glGetUniformLocation(debug_program, "sun_direction");
+	debug_uniforms.time = glGetUniformLocation(debug_program, "time");
+	debug_uniforms.flashing = glGetUniformLocation(debug_program, "flashing");
+	debug_uniforms.shaded = glGetUniformLocation(debug_program, "shaded");
+	debug_uniforms.color = glGetUniformLocation(debug_program, "color");
+	debug_uniforms.color_flash_to = glGetUniformLocation(debug_program, "color_flash_to");
+}
 void loadGaussianBlurShader(std::string path){
 	auto tmp = gaussian_blur_program;
 	// Create and compile our GLSL program from the shaders
@@ -197,6 +220,7 @@ void loadUnifiedShader(std::string path){
 }
 void deleteShaderPrograms(){
     glDeleteProgram(null_program);
+    glDeleteProgram(debug_program);
     glDeleteProgram(unified_programs[0]);
     glDeleteProgram(unified_programs[1]);
     glDeleteProgram(gaussian_blur_program);

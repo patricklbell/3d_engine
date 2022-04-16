@@ -1,10 +1,10 @@
 #if COMPILING_VS
 
 layout (location = 0) in vec3 in_vertex;
-layout (location = 1) in vec2 in_texcoord;
-layout (location = 2) in vec3 in_normal;
-layout (location = 3) in vec3 in_tangent;
-layout (location = 4) in vec3 in_bitangent; // @todo make bitangents streamed not calculated in vertex
+layout (location = 1) in vec3 in_normal;
+layout (location = 2) in vec3 in_tangent;
+layout (location = 3) in vec2 in_texcoord;
+//layout (location = 4) in vec3 in_bitangent; // @todo make bitangents streamed not calculated in vertex
 
 out vec3 position;
 out vec2 texcoord;

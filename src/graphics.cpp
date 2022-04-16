@@ -14,6 +14,7 @@
 #include "utilities.hpp"
 #include "globals.hpp"
 #include "shader.hpp"
+#include "entities.hpp"
 
 int    window_width;
 int    window_height;
@@ -99,7 +100,7 @@ void updateShadowVP(const Camera &camera){
     // Round bounds to reduce artifacts when moving camera
     // @note Relies on shadow map being square
     float max_world_units_per_texel = 100*(glm::tan(glm::radians(45.0f)) * (camera.near_plane+camera.far_plane)) / SHADOW_SIZE;
-    printf("World units per texel %f\n", max_world_units_per_texel);
+    //printf("World units per texel %f\n", max_world_units_per_texel);
     min_x = glm::floor(min_x / max_world_units_per_texel) * max_world_units_per_texel;
     max_x = glm::floor(max_x / max_world_units_per_texel) * max_world_units_per_texel;    
     min_y = glm::floor(min_y / max_world_units_per_texel) * max_world_units_per_texel;
@@ -141,7 +142,7 @@ void createShadowFbo(){
 }
 
 // Since shadow buffer wont need to be bound otherwise just combine these operations
-void bindDrawShadowMap(Entity **entities, const Camera &camera){
+void bindDrawShadowMap(const EntityManager &entity_manager, const Camera &camera){
     glBindFramebuffer(GL_FRAMEBUFFER, graphics::shadow_fbo);
     glViewport(0, 0, SHADOW_SIZE, SHADOW_SIZE);
     
@@ -149,7 +150,6 @@ void bindDrawShadowMap(Entity **entities, const Camera &camera){
     // @note face culling wont work with certain techniques i.e. grass
     glDisable(GL_CULL_FACE);
     glCullFace(GL_FRONT);
-    
 
     glUseProgram(shader::null_program);
 
@@ -161,17 +161,16 @@ void bindDrawShadowMap(Entity **entities, const Camera &camera){
     glClear(GL_DEPTH_BUFFER_BIT);
 
     for (int i = 0; i < ENTITY_COUNT; ++i) {
-        auto entity = entities[i];
-        if(entity == nullptr || !entity->casts_shadow)
-            continue;
+        auto m_e = (MeshEntity*)entity_manager.entities[i];
+        if(m_e == nullptr || !(m_e->type & EntityType::MESH_ENTITY) || !m_e->casts_shadow) continue;
 
-        auto mvp = graphics::shadow_vp * entity->transform;
+        auto mvp = graphics::shadow_vp * createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
         glUniformMatrix4fv(shader::null_uniforms.mvp, 1, GL_FALSE, &mvp[0][0]);
 
-        Mesh *asset = entity->asset;
-        for (int j = 0; j < asset->num_materials; ++j) {
-            glBindVertexArray(asset->vao);
-            glDrawElements(asset->draw_mode, asset->draw_count[j], asset->draw_type, (GLvoid*)(sizeof(GLubyte)*asset->draw_start[j]));
+        Mesh *mesh = m_e->mesh;
+        for (int j = 0; j < mesh->num_materials; ++j) {
+            glBindVertexArray(mesh->vao);
+            glDrawElements(mesh->draw_mode, mesh->draw_count[j], mesh->draw_type, (GLvoid*)(sizeof(GLubyte)*mesh->draw_start[j]));
         }
     }
     glCullFace(GL_BACK);
@@ -272,7 +271,7 @@ void drawScreenQuad(){
 // Returns the index of the resulting blur buffer in bloom_buffers
 int blurBloomFbo(){
     bool horizontal = true, first_iteration = true;
-    int amount = 4;
+    int amount = 3;
     glUseProgram(shader::gaussian_blur_program);
     for (unsigned int i = 0; i < amount; i++)
     {
@@ -305,13 +304,12 @@ void clearFramebuffer(const glm::vec4 &color){
     glClearColor(0.0,0.0,0.0,1.0);
 }
 
-void drawUnifiedHdr(Entity *entities[ENTITY_COUNT], const Camera &camera){
+void drawUnifiedHdr(const EntityManager &entity_manager, const Camera &camera){
     glDepthMask(GL_TRUE);
     glEnable(GL_DEPTH_TEST);
 
     // @note face culling wont work with certain techniques i.e. grass
     glEnable(GL_CULL_FACE);
-    glDisable(GL_BLEND);
 
     if(!shader::unified_bloom) glClearColor(clear_color.x, clear_color.y, clear_color.z, clear_color.w);
     else                       glClearColor(0,0,0,1);
@@ -327,21 +325,21 @@ void drawUnifiedHdr(Entity *entities[ENTITY_COUNT], const Camera &camera){
     // @speed already calculated when performing dynamic shadow mapping
     auto vp = camera.projection * camera.view;
     for (int i = 0; i < ENTITY_COUNT; ++i) {
-        auto entity = entities[i];
-        if(entity == nullptr)
+        auto m_e = (MeshEntity*)entity_manager.entities[i];
+        if(m_e == nullptr || !(m_e->type & EntityType::MESH_ENTITY))
             continue;
 
-        Mesh *asset = entity->asset;
-
-        auto shadow_mvp = graphics::shadow_vp * entity->transform;
+        auto trans = createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
+        auto shadow_mvp = graphics::shadow_vp * trans;
         glUniformMatrix4fv(shader::unified_uniforms[shader::unified_bloom].shadow_mvp, 1, GL_FALSE, &shadow_mvp[0][0]);
 
-        auto mvp = vp * entity->transform;
+        auto mvp = vp * trans;
         glUniformMatrix4fv(shader::unified_uniforms[shader::unified_bloom].mvp, 1, GL_FALSE, &mvp[0][0]);
-        glUniformMatrix4fv(shader::unified_uniforms[shader::unified_bloom].model, 1, GL_FALSE, &entity->transform[0][0]);
+        glUniformMatrix4fv(shader::unified_uniforms[shader::unified_bloom].model, 1, GL_FALSE, &trans[0][0]);
 
-        for (int j = 0; j < asset->num_materials; ++j) {
-            auto &mat = asset->materials[j];
+        auto mesh = m_e->mesh;
+        for (int j = 0; j < mesh->num_materials; ++j) {
+            auto &mat = mesh->materials[j];
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, mat->t_albedo);
 
@@ -358,8 +356,8 @@ void drawUnifiedHdr(Entity *entities[ENTITY_COUNT], const Camera &camera){
             glBindTexture(GL_TEXTURE_2D, mat->t_ambient);
 
             // Bind VAO and draw
-            glBindVertexArray(asset->vao);
-            glDrawElements(asset->draw_mode, asset->draw_count[j], asset->draw_type, (GLvoid*)(sizeof(GLubyte)*asset->draw_start[j]));
+            glBindVertexArray(mesh->vao);
+            glDrawElements(mesh->draw_mode, mesh->draw_count[j], mesh->draw_type, (GLvoid*)(sizeof(GLubyte)*mesh->draw_start[j]));
         }
     }
 
@@ -376,6 +374,7 @@ void drawPost(int bloom_buffer_index){
     // Draw screen space quad so clearing is unnecessary
     //glClearColor(clear_color.x, clear_color.y, clear_color.z, clear_color.w);
     //glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glDepthMask(GL_FALSE);
 
     glUseProgram(shader::post_program);
     glActiveTexture(GL_TEXTURE0);
