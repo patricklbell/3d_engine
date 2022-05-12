@@ -149,14 +149,11 @@ int main() {
     }
 
     // Load assets
-    std::vector<std::string> asset_names = {"cube", "sphere", "WoodenCrate"};
-    std::vector<std::string> asset_paths = {"data/models/cube.obj", "data/models/sphere.obj", "data/models/WoodenCrate.obj"};
-    std::vector<Mesh *> assets;
+    const std::vector<std::string> asset_paths = {"data/models/cube.obj", "data/models/sphere.obj", "data/models/WoodenCrate.obj"};
+    std::vector<Asset *> assets;
     for (int i = 0; i < asset_paths.size(); ++i) {
-        auto asset = new Mesh;
-        loadAsset(asset, asset_paths[i]);
-        asset->name = (char *)asset_names[i].c_str();
-        assets.push_back(asset);
+        assets.push_back((Asset *)new MeshAsset(asset_paths[i]));
+        loadAsset(assets.back());
     }
     
     EntityManager entity_manager;
@@ -164,9 +161,9 @@ int main() {
     // Create instance
     int id = entity_manager.getFreeId();
     entity_manager.entities[id] = new MeshEntity(id);
-    MeshEntity* entity = (MeshEntity*)entity_manager.getEntity(id);
-    entity->mesh = assets[0];
-    entity->position = glm::vec3(1.0,0,0);
+    auto m_entity = (MeshEntity*)entity_manager.getEntity(id);
+    m_entity->mesh = &((MeshAsset*)assets[0])->mesh;
+    m_entity->position = glm::vec3(1.0,0.0,0.0);
 
     // @todo Skymap loading and rendering
     //GLuint tSkybox = load_cubemap({"Skybox1.bmp", "Skybox2.bmp","Skybox3.bmp","Skybox4.bmp","Skybox5.bmp","Skybox6.bmp"});
@@ -232,7 +229,7 @@ int main() {
             drawPost(blur_buffer_index);
         }
 
-        drawEditorGui(camera, entity_manager, assets, asset_paths);
+        drawEditorGui(camera, entity_manager, assets);
 
         // Swap backbuffer with front buffer
         glfwSwapBuffers(window);
@@ -249,15 +246,9 @@ int main() {
     } // Check if the ESC key was pressed or the window was closed
     while( glfwGetKey(window, GLFW_KEY_ESCAPE ) != GLFW_PRESS && glfwWindowShouldClose(window) == 0 );
 
-    // Cleanup VAOs and shader
+    // Free assets
     for(auto &asset : assets){
-        glDeleteVertexArrays(1, &asset->vao);
-        for(int i = 0; i<asset->num_materials; ++i){
-    	    glDeleteTextures(1, &asset->materials[i]->t_albedo);
-    	    glDeleteTextures(1, &asset->materials[i]->t_normal);
-    	    glDeleteTextures(1, &asset->materials[i]->t_metallic);
-    	    glDeleteTextures(1, &asset->materials[i]->t_roughness);
-        }
+        delete(asset);
     }
     deleteShaderPrograms();    
 

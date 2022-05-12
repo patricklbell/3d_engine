@@ -5,20 +5,16 @@
 #include <vector>
 #include <unordered_map>
 
+#include <GLFW/glfw3.h>
+
 #include <glm/glm.hpp>
 
 #include <assimp/scene.h> 
-
-#include <GLFW/glfw3.h>
 
 struct Material {
     std::string name;
 // Store constant uniforms in 1x1 textures, it would be good to
 // check if this is performant.
-//    floa        = {1,1,1};
-//    float     albedo[3]              = {1,1,1};
-//    float     roughness              = 0;
-//    float     metallic               = 0;
     GLuint    t_normal               = 0;
     GLuint    t_albedo               = 0;
     GLuint    t_ambient              = 0;
@@ -32,7 +28,6 @@ void initDefaultMaterial();
 
 struct Mesh {
     unsigned short *indices;
-    char*           name;
     int             num_materials = 0;
     int             num_vertices = 0;
     int             num_indices = 0;
@@ -54,6 +49,28 @@ struct Mesh {
     GLint          *draw_count;
 } typedef Mesh;
 
+enum AssetType {
+    ASSET = 0,
+    MESH_ASSET = 1,
+};
+
+struct Asset {
+    AssetType type = AssetType::ASSET;
+    std::string path;
+    Asset(std::string _path) : path(_path){}
+};
+
+bool loadAsset(Asset *asset);
+
+struct MeshAsset : Asset {
+    Mesh mesh;
+    MeshAsset(std::string _path) : Asset(_path){
+        type = (AssetType)(type | AssetType::MESH_ASSET);
+    };
+    ~MeshAsset();
+};
+bool loadMesh(Mesh &mesh, std::string path);
+
 //bool loadAssimp(
 //	std::string path,
 //	std::vector<std::pair<unsigned int, unsigned int>> & mesh_ranges,
@@ -67,6 +84,5 @@ struct Mesh {
 //);
 //bool loadMtl(std::unordered_map<std::string, Material *> &material_map, const std::string &path);
 //bool loadAssetObj(Mesh *asset, const std::string &objpath, const std::string &mtlpath);
-bool loadAsset(Mesh *asset, const std::string &path);
 GLuint loadTextureFromAssimp(aiMaterial *mat, const aiScene *scene, aiTextureType texture_type, GLint internal_format);
 #endif

@@ -308,7 +308,37 @@ void initDefaultMaterial(){
 //	return true;
 //}
 
-bool loadAsset(Mesh * mesh, const std::string &path){
+MeshAsset::~MeshAsset(){
+    glDeleteVertexArrays(1, &mesh.vao);
+    for(int i = 0; i<mesh.num_materials; ++i){
+        glDeleteTextures(1, &mesh.materials[i]->t_albedo);
+        glDeleteTextures(1, &mesh.materials[i]->t_normal);
+        glDeleteTextures(1, &mesh.materials[i]->t_metallic);
+        glDeleteTextures(1, &mesh.materials[i]->t_roughness);
+
+        free(mesh.materials[i]);
+    }
+    free(mesh.indices);
+    free(mesh.vertices);
+    free(mesh.normals);
+    free(mesh.tangents);
+    free(mesh.uvs);
+
+    free(mesh.draw_start);
+    free(mesh.draw_count);
+}
+
+bool loadAsset(Asset *asset){
+    switch (asset->type) {
+        case AssetType::MESH_ASSET:
+            return loadMesh(((MeshAsset*)asset)->mesh, asset->path);
+        case AssetType::ASSET:
+            return true;
+        default:
+            return false;
+    }
+}
+bool loadMesh(Mesh &mesh, std::string path){
 	printf("--------------------Loading Asset %s--------------------\n", path.c_str());
 
 	Assimp::Importer importer;
@@ -320,39 +350,38 @@ bool loadAsset(Mesh * mesh, const std::string &path){
 		return false;
 	}
 
-	//glGenBuffers(1, &mesh->bitangents);
-	glGenBuffers(1, &mesh->tangents_vbo);
-	glGenBuffers(1, &mesh->normals_vbo);
-	glGenBuffers(1, &mesh->uvs_vbo);
-	glGenBuffers(1, &mesh->vertices_vbo);
-	glGenBuffers(1, &mesh->indices_vbo);
-	glGenVertexArrays(1, &mesh->vao);
+	glGenBuffers(1, &mesh.tangents_vbo);
+	glGenBuffers(1, &mesh.normals_vbo);
+	glGenBuffers(1, &mesh.uvs_vbo);
+	glGenBuffers(1, &mesh.vertices_vbo);
+	glGenBuffers(1, &mesh.indices_vbo);
+	glGenVertexArrays(1, &mesh.vao);
 
 	// Allocate arrays for each mesh 
-	mesh->num_materials = scene->mNumMeshes;
-	mesh->draw_count = (GLint*)malloc(mesh->num_materials * sizeof(GLint));
-	mesh->draw_start = (GLint*)malloc(mesh->num_materials * sizeof(GLint));
-	mesh->materials  = (Material**)malloc(mesh->num_materials * sizeof(Material*));
+	mesh.num_materials = scene->mNumMeshes;
+	mesh.draw_count = (GLint*)malloc(mesh.num_materials * sizeof(GLint));
+	mesh.draw_start = (GLint*)malloc(mesh.num_materials * sizeof(GLint));
+	mesh.materials  = (Material**)malloc(mesh.num_materials * sizeof(Material*));
 
-	mesh->draw_mode = GL_TRIANGLES;
-	mesh->draw_type = GL_UNSIGNED_SHORT;
+	mesh.draw_mode = GL_TRIANGLES;
+	mesh.draw_type = GL_UNSIGNED_SHORT;
 
     int indice_offset = 0;
 	for (int i = 0; i < scene->mNumMeshes; ++i) {
 		const aiMesh* ai_mesh = scene->mMeshes[i]; 
 
-		mesh->draw_start[i] = indice_offset;
+		mesh.draw_start[i] = indice_offset;
         indice_offset += 3*ai_mesh->mNumFaces;
-		mesh->draw_count[i] = 3*ai_mesh->mNumFaces;
-        mesh->num_vertices += ai_mesh->mNumVertices;
-        mesh->num_indices += 3*ai_mesh->mNumFaces;
+		mesh.draw_count[i] = 3*ai_mesh->mNumFaces;
+        mesh.num_vertices += ai_mesh->mNumVertices;
+        mesh.num_indices += 3*ai_mesh->mNumFaces;
 
-        printf("Loading mesh index %d from face %d ---> %d.\n", i, mesh->draw_start[i], mesh->draw_start[i]+mesh->draw_count[i]-1);
+        printf("Loading mesh index %d from face %d ---> %d.\n", i, mesh.draw_start[i], mesh.draw_start[i]+mesh.draw_count[i]-1);
 
         // Load material from assimp
 		auto ai_mat = scene->mMaterials[scene->mMeshes[i]->mMaterialIndex];
-		mesh->materials[i] = new Material;
-		auto mat = mesh->materials[i];
+		mesh.materials[i] = new Material;
+		auto mat = mesh.materials[i];
 
         // @speed move default intialisation outside loop
 		mat->t_ambient = loadTextureFromAssimp(ai_mat, scene, aiTextureType_AMBIENT_OCCLUSION, GL_SRGB);
@@ -419,16 +448,16 @@ bool loadAsset(Mesh * mesh, const std::string &path){
 		if(mat->t_normal == 0) mat->t_normal = loadTextureFromAssimp(ai_mat, scene, aiTextureType_HEIGHT, GL_RGB);
 		if(mat->t_normal == 0) mat->t_normal = default_material->t_normal;
 	}
-    mesh->vertices = (glm::fvec3*)malloc(sizeof(glm::fvec3)*mesh->num_vertices);
-    mesh->tangents = (glm::fvec3*)malloc(sizeof(glm::fvec3)*mesh->num_vertices);
-    mesh->normals  = (glm::fvec3*)malloc(sizeof(glm::fvec3)*mesh->num_vertices);
-    mesh->uvs      = (glm::fvec2*)malloc(sizeof(glm::fvec2)*mesh->num_vertices);
-    mesh->indices  = (unsigned short*)malloc(sizeof(unsigned short)*mesh->num_indices);
+    mesh.vertices = (glm::fvec3*)malloc(sizeof(glm::fvec3)*mesh.num_vertices);
+    mesh.tangents = (glm::fvec3*)malloc(sizeof(glm::fvec3)*mesh.num_vertices);
+    mesh.normals  = (glm::fvec3*)malloc(sizeof(glm::fvec3)*mesh.num_vertices);
+    mesh.uvs      = (glm::fvec2*)malloc(sizeof(glm::fvec2)*mesh.num_vertices);
+    mesh.indices  = (unsigned short*)malloc(sizeof(unsigned short)*mesh.num_indices);
     int vertices_offset = 0, indices_offset = 0;
     for (int j = 0; j < scene->mNumMeshes; ++j) {
 		const aiMesh* ai_mesh = scene->mMeshes[j]; 
 		for(unsigned int i=0; i<ai_mesh->mNumVertices; i++){
-            mesh->vertices[vertices_offset + i] = glm::fvec3(
+            mesh.vertices[vertices_offset + i] = glm::fvec3(
                 ai_mesh->mVertices[i].x,
                 ai_mesh->mVertices[i].y,
                 ai_mesh->mVertices[i].z
@@ -436,7 +465,7 @@ bool loadAsset(Mesh * mesh, const std::string &path){
 		}
         if(ai_mesh->mNormals != NULL){
             for(unsigned int i=0; i<ai_mesh->mNumVertices; i++){
-                mesh->normals[vertices_offset + i] = glm::fvec3(
+                mesh.normals[vertices_offset + i] = glm::fvec3(
                     ai_mesh->mNormals[i].x,
                     ai_mesh->mNormals[i].y,
                     ai_mesh->mNormals[i].z
@@ -445,7 +474,7 @@ bool loadAsset(Mesh * mesh, const std::string &path){
 		}
         if(ai_mesh->mTangents != NULL){
             for(unsigned int i=0; i<ai_mesh->mNumVertices; i++){
-                mesh->tangents[vertices_offset + i] = glm::fvec3(
+                mesh.tangents[vertices_offset + i] = glm::fvec3(
                     ai_mesh->mTangents[i].x,
                     ai_mesh->mTangents[i].y,
                     ai_mesh->mTangents[i].z
@@ -454,7 +483,7 @@ bool loadAsset(Mesh * mesh, const std::string &path){
 		}
 		if(ai_mesh->mTextureCoords[0] != NULL){
             for(unsigned int i=0; i<ai_mesh->mNumVertices; i++){
-                mesh->uvs[vertices_offset + i] = glm::fvec2(
+                mesh.uvs[vertices_offset + i] = glm::fvec2(
                     ai_mesh->mTextureCoords[0][i].x,
                     ai_mesh->mTextureCoords[0][i].y
                 );
@@ -463,40 +492,40 @@ bool loadAsset(Mesh * mesh, const std::string &path){
 		
 		for (unsigned int i=0; i<ai_mesh->mNumFaces; i++){
 			// Assumes the model has only triangles.
-			mesh->indices[indices_offset + 3*i] = ai_mesh->mFaces[i].mIndices[0];
-			mesh->indices[indices_offset + 3*i + 1] = ai_mesh->mFaces[i].mIndices[1];
-			mesh->indices[indices_offset + 3*i + 2] = ai_mesh->mFaces[i].mIndices[2];
+			mesh.indices[indices_offset + 3*i] = ai_mesh->mFaces[i].mIndices[0];
+			mesh.indices[indices_offset + 3*i + 1] = ai_mesh->mFaces[i].mIndices[1];
+			mesh.indices[indices_offset + 3*i + 2] = ai_mesh->mFaces[i].mIndices[2];
 		}
         vertices_offset += ai_mesh->mNumVertices;
         indices_offset += ai_mesh->mNumFaces*3;
     }
 
 	// bind the vao for writing vbos
-	glBindVertexArray(mesh->vao);
+	glBindVertexArray(mesh.vao);
 
 	// Load the packed vector data into a VBO
-	glBindBuffer(GL_ARRAY_BUFFER, mesh->vertices_vbo);
-	glBufferData(GL_ARRAY_BUFFER, mesh->num_vertices * sizeof(glm::fvec3), &mesh->vertices[0], GL_STATIC_DRAW);
+	glBindBuffer(GL_ARRAY_BUFFER, mesh.vertices_vbo);
+	glBufferData(GL_ARRAY_BUFFER, mesh.num_vertices * sizeof(glm::fvec3), &mesh.vertices[0], GL_STATIC_DRAW);
 	glVertexAttribPointer(0, 3, GL_FLOAT, false, 0, 0);
 	glEnableVertexAttribArray(0);
 
-    glBindBuffer(GL_ARRAY_BUFFER, mesh->normals_vbo);
-	glBufferData(GL_ARRAY_BUFFER, mesh->num_vertices * sizeof(glm::fvec3), &mesh->normals[0], GL_STATIC_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, mesh.normals_vbo);
+	glBufferData(GL_ARRAY_BUFFER, mesh.num_vertices * sizeof(glm::fvec3), &mesh.normals[0], GL_STATIC_DRAW);
 	glVertexAttribPointer(1, 3, GL_FLOAT, false, 0, 0);
 	glEnableVertexAttribArray(1);
 
-    glBindBuffer(GL_ARRAY_BUFFER, mesh->tangents_vbo);
-	glBufferData(GL_ARRAY_BUFFER, mesh->num_vertices * sizeof(glm::fvec3), &mesh->tangents[0], GL_STATIC_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, mesh.tangents_vbo);
+	glBufferData(GL_ARRAY_BUFFER, mesh.num_vertices * sizeof(glm::fvec3), &mesh.tangents[0], GL_STATIC_DRAW);
 	glVertexAttribPointer(2, 3, GL_FLOAT, false, 0, 0);
 	glEnableVertexAttribArray(2);
 
-	glBindBuffer(GL_ARRAY_BUFFER, mesh->uvs_vbo);
-	glBufferData(GL_ARRAY_BUFFER, mesh->num_vertices * sizeof(glm::fvec2), &mesh->uvs[0], GL_STATIC_DRAW);
+	glBindBuffer(GL_ARRAY_BUFFER, mesh.uvs_vbo);
+	glBufferData(GL_ARRAY_BUFFER, mesh.num_vertices * sizeof(glm::fvec2), &mesh.uvs[0], GL_STATIC_DRAW);
 	glVertexAttribPointer(3, 2, GL_FLOAT, false, 0, 0);
 	glEnableVertexAttribArray(3);
 
-   	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh->indices_vbo);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, mesh->num_indices * sizeof(unsigned short), &mesh->indices[0], GL_STATIC_DRAW);
+   	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh.indices_vbo);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, mesh.num_indices * sizeof(unsigned short), &mesh.indices[0], GL_STATIC_DRAW);
 
 	glBindVertexArray(0); //Unbind the VAO
 	

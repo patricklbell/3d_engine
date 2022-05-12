@@ -14,7 +14,7 @@ enum EntityType {
 struct Entity {
     EntityType type = EntityType::ENTITY;
     unsigned int id;
-    Entity(int _id) : id(_id){
+    Entity(unsigned int _id) : id(_id){
     }
 };
 
@@ -25,7 +25,7 @@ struct MeshEntity : Entity {
     glm::mat3 scale    = glm::mat3(1.0);
     bool casts_shadow = true;
 
-    MeshEntity(int _id) : Entity(_id){
+    MeshEntity(unsigned int _id) : Entity(_id){
         type = (EntityType)(type | EntityType::MESH_ENTITY);
     }
 };
@@ -37,10 +37,18 @@ struct EntityManager {
     int id_counter = 0;
    
     ~EntityManager(){
-        for(int i = 0; i < ENTITY_COUNT; ++i){
-            deleteEntity(i);
+        reset();
+    }
+    inline void reset(){
+        // Delete entities
+        for(int id = 0; id < ENTITY_COUNT; id++){
+            if(entities[id] != nullptr) free (entities[id]);
+            entities[id] = nullptr;
         }
-        propogateChanges();
+
+        free_entity_stack = {};
+        delete_entity_stack = {};
+        id_counter = 0;
     }
     inline Entity *getEntity(int id){
         return entities[id];
@@ -52,6 +60,7 @@ struct EntityManager {
         int id;
         if(free_entity_stack.size() == 0){
             id = id_counter++;
+            assert(id_counter < ENTITY_COUNT);
         } else {
             id = free_entity_stack.top();
             free_entity_stack.pop();

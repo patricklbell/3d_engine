@@ -71,8 +71,8 @@ void initEditorGui(){
     //bt_debug_drawer.init();
     //dynamics_world->setDebugDrawer(&bt_debug_drawer);
 	//bt_debug_drawer.setDebugMode(1);
-    loadAsset(&arrow_mesh, "data/models/arrow.obj");
-    loadAsset(&ring_mesh, "data/models/ring.obj");
+    loadMesh(arrow_mesh, "data/models/arrow.obj");
+    loadMesh(ring_mesh, "data/models/ring.obj");
 }
 
 
@@ -82,9 +82,10 @@ bool editTransform(Camera &camera, glm::vec3 &pos, glm::quat &rot, glm::mat3 &sc
     static glm::vec3 snap = glm::vec3( 1.f, 1.f, 1.f );
     bool change_occured = false;
 
-    if (glfwGetKey(window, GLFW_KEY_T))
+    ImGuiIO& io = ImGui::GetIO();
+    if (!io.WantCaptureKeyboard && glfwGetKey(window, GLFW_KEY_T))
         gizmo_mode = GIZMO_MODE_TRANSLATE;
-    if (glfwGetKey(window, GLFW_KEY_R))
+    if (!io.WantCaptureKeyboard && glfwGetKey(window, GLFW_KEY_R))
         gizmo_mode = GIZMO_MODE_ROTATE;
 
     if (ImGui::RadioButton("Translate", gizmo_mode == GIZMO_MODE_TRANSLATE)){
@@ -235,7 +236,7 @@ bool editorTranslationGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, Came
     
     glm::vec3 axis[3] = {
         rot*glm::vec3(1,0,0), 
-        rot*glm::vec3(0,1,0), 
+        rot*glm::vec3(0,-1,0), 
         rot*glm::vec3(0,0,1)
     };
 
@@ -413,7 +414,7 @@ void drawEditor3DArrow(const glm::vec3 &position, const glm::vec3 &direction, co
     glDisable(GL_BLEND);  
 }
 
-void drawEditorGui(Camera &camera, EntityManager &entity_manager, std::vector<Mesh *> &assets, std::vector<std::string> asset_paths){
+void drawEditorGui(Camera &camera, EntityManager &entity_manager, std::vector<Asset *> &assets){
     // 
     // Visualise entity picker and ray cast
     //
@@ -493,13 +494,13 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, std::vector<Me
                     MeshEntity* m_entity   = (MeshEntity*)entity_manager.getEntity(id);
                     MeshEntity* m_s_entity = (MeshEntity*)entity_manager.getEntity(selected_entity);
 
-                    m_entity->mesh     = m_s_entity->mesh;
-                    m_entity->position = m_s_entity->position;
-                    m_entity->rotation = m_s_entity->rotation;
-                    m_entity->scale    = m_s_entity->scale;
+                    memcpy(m_entity, m_s_entity, sizeof(*m_entity));
+
+                    m_entity->position += glm::vec3(0.1);
+
                     if(camera.state == Camera::TYPE::TRACKBALL){
                         selected_entity = id;
-                        camera.target = m_s_entity->position;
+                        camera.target = m_entity->position;
                         updateCameraView(camera);
                     }
                 } else {
@@ -526,20 +527,27 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, std::vector<Me
         static char level_name[256] = "";
         ImGui::InputText("Level Name", level_name, 256);
         if (ImGui::Button("Save Level")){
-            saveLevel(entity_manager, assets, asset_paths, "data/levels/" + std::string(level_name) + ".level") ;
+            saveLevel(entity_manager, assets, "data/levels/" + std::string(level_name) + ".level");
+        }
+        if (ImGui::Button("Load Level")){
+            im_file_dialog_type = "loadLevel";
+            im_file_dialog.SetTypeFilters({ ".level" });
+            im_file_dialog.Open();
         }
         if (ImGui::Checkbox("Bloom", &shader::unified_bloom)){
             createHdrFbo();
             createBloomFbo();
         }
+
         if (ImGui::CollapsingHeader("Add Entity", ImGuiTreeNodeFlags_DefaultOpen)){
             static int asset_current = 0;
 
-            if (ImGui::BeginCombo("##asset-combo", assets[asset_current]->name)){
+            if (ImGui::BeginCombo("##asset-combo", assets[asset_current]->path.c_str())){
                 for (int n = 0; n < assets.size(); n++)
                 {
                     bool is_selected = (asset_current == n); // You can store your selection however you want, outside or inside your objects
-                    if (ImGui::Selectable(assets[n]->name, is_selected))
+                    if(!(assets[n]->type & AssetType::MESH_ASSET)) continue;
+                    if (ImGui::Selectable(assets[n]->path.c_str(), is_selected))
                         asset_current = n;
                     if (is_selected)
                         ImGui::SetItemDefaultFocus();   // You may set the initial focus when opening the combo (scrolling + for keyboard navigation support)
@@ -551,7 +559,7 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, std::vector<Me
                 int id = entity_manager.getFreeId();
                 entity_manager.entities[id] = new MeshEntity(id);
                 MeshEntity* entity = (MeshEntity*)entity_manager.getEntity(id);
-                entity->mesh = assets[asset_current];
+                entity->mesh = &((MeshAsset*)assets[asset_current])->mesh;
             }
         }
         
@@ -583,6 +591,15 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, std::vector<Me
         if(im_file_dialog.HasSelected())
         {
             printf("Selected filename: %s\n", im_file_dialog.GetSelected().c_str());
+            if(im_file_dialog_type == "loadLevel"){
+                entity_manager.reset();
+                // @fix uses more memory than necessary/accumulates assets because unused assets arent destroyed
+                loadLevel(entity_manager, assets, im_file_dialog.GetSelected()) ;
+                selected_entity = -1;
+            } else {
+                fprintf(stderr, "Unhandled imgui file dialog type %s.\n", im_file_dialog_type.c_str());
+            }
+
             //if(im_file_dialog_type == "asset.mat.tDiffuse"){
             //    if(selected_entity != -1)
             //        entities[selected_entity]->asset->mat->t_diffuse = loadImage(im_file_dialog.GetSelected().string());

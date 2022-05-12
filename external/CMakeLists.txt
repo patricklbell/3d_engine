@@ -59,6 +59,7 @@ target_link_libraries(GLEW_210
 ### ASSIMP ###
 # AssImp already has a CMakeLists.txt so let's use these
 
+set(ASSIMP_NO_EXPORT ON)
 add_subdirectory( assimp-5.1.5 )
 
 ### BULLET ###

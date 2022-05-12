@@ -19,7 +19,7 @@
 
 void initEditorGui();
 
-void drawEditorGui(Camera &camera, EntityManager &entity_manager, std::vector<Mesh *> &assets, std::vector<std::string> asset_paths);
+void drawEditorGui(Camera &camera, EntityManager &entity_manager, std::vector<Asset *> &assets);
 
 bool editorTranslationGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, Camera &camera, const glm::vec3 &snap, bool do_snap);
 bool editorRotationGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, const Camera &camera);

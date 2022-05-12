@@ -2,7 +2,9 @@
 #include <glm/gtc/quaternion.hpp>
 #include <limits>
 #include <vector>
+#include <cstdint>
 #include <unordered_map>
+#include "assets.hpp"
 #include "entities.hpp"
 #include "glm/detail/type_mat.hpp"
 #include "glm/detail/type_vec.hpp"
@@ -13,25 +15,153 @@
 #include "utilities.hpp"
 #include "texture.hpp"
 
-void saveLevel(const EntityManager &entity_manager, const std::vector<Mesh*> assets, std::vector<std::string> asset_paths, std::string level_path){
+void saveLevel(EntityManager &entity_manager, const std::vector<Asset*> assets, std::string level_path){
     FILE *f;
     f=fopen(level_path.c_str(),"wb");
 
     // Construct map between asset pointers and index
-    std::unordered_map<intptr_t, std::string> asset_lookup;
-    int index = 0;
+    std::unordered_map<intptr_t, uint64_t> asset_lookup;
+    uint64_t index = 0;
     for(auto &asset : assets){
-        asset_lookup[(intptr_t)asset] = asset_paths[index];
-        fwrite(asset_paths[index].c_str(), asset_paths[index].size(), 1, f);
+        if(asset->type != AssetType::MESH_ASSET) continue;
+        auto m_a = (MeshAsset*)asset;
+
+        asset_lookup[(intptr_t)&m_a->mesh] = index;
+        fwrite(asset->path.c_str(), asset->path.size(), 1, f);
+
+        // std strings are not null terminated so add it
+        fputc('\0', f);
         ++index;
     }
+    // Write extra null terminator to signal end of asset paths
+    fputc('\0', f);
 
     // Save entities
-    //for(int i = 0; i < ENTITY_COUNT; i++){
+    for(int i = 0; i < ENTITY_COUNT; i++){
+        auto e = entity_manager.getEntity(i);
+        if(e == nullptr) continue;
+        // @todo handle maintaining ids if necessary
 
-    //}
+        fwrite(&e->type, sizeof(EntityType), 1, f);
+        switch (e->type) {
+            case EntityType::MESH_ENTITY:
+                {
+                auto m_e = (MeshEntity*)e;
+                auto mesh = m_e->mesh;
+                auto lookup = asset_lookup[(intptr_t)m_e->mesh];
+                m_e->mesh = (Mesh*)lookup;
+
+                fwrite(m_e, sizeof(MeshEntity), 1, f);
+               
+                // Restore correct pointer
+                m_e->mesh = mesh;
+
+                break;
+                }
+            case EntityType::ENTITY:
+                {
+                fwrite(e, sizeof(Entity), 1, f);
+                break;
+                }
+            default:
+                break;
+                
+        }
+    }
 
     fclose(f);
+}
+
+// Overwrites existing entity indices
+// @todo if needed make loading asign new ids such that connections are maintained
+bool loadLevel(EntityManager &entity_manager, std::vector<Asset*> &assets, std::string level_path){
+    // Create lookup to check if entity is already loaded
+    std::unordered_map<std::string, uint64_t> asset_lookup;
+    uint64_t index = 0;
+    for(auto &asset : assets){
+        asset_lookup[asset->path] = index;
+        index++;
+    }
+
+    FILE *f;
+    f=fopen(level_path.c_str(),"rb");
+
+    if (!f) {
+        fprintf(stderr, "Error in reading level file %s.\n", level_path.c_str());
+        return false;
+    }
+    char c;
+    std::string asset_path;
+
+    uint64_t asset_index = 0;
+    std::unordered_map<uint64_t, uint64_t> file_asset_mapping;
+    while((c = fgetc(f)) != EOF){
+        if(c == '\0'){
+            // Reached end of paths
+            if(asset_path == "") break;
+
+            auto found_asset = asset_lookup.find(asset_path);
+            // Asset not loaded so create mapping to existing new index
+            if(found_asset == asset_lookup.end()){
+                printf("Loading new asset, path is %s.\n", asset_path.c_str());
+
+                // @todo make good system for loading asset ie saving asset type, for now assume mesh asset
+                assets.push_back((Asset*)new MeshAsset(asset_path));
+                loadAsset(assets.back());
+                asset_lookup[asset_path] = assets.size()-1;
+
+                file_asset_mapping[asset_index] = assets.size()-1;
+            } else {
+                printf("Using existing asset, path is %s.\n", asset_path.c_str());
+                printf("%li --> %li\n", asset_index, found_asset->second);
+                file_asset_mapping[asset_index] = found_asset->second;
+            }
+
+            asset_path = "";
+            asset_index++;
+        } else {
+            asset_path += c;
+        }
+    }
+    printf("Assets 1 maps to %li\n", file_asset_mapping[1]);
+
+    while((c = fgetc(f)) != EOF){
+        ungetc(c, f);
+        auto id = entity_manager.getFreeId();
+
+        EntityType type;
+        fread(&type, sizeof(EntityType), 1, f);
+
+        printf("Entity type %d.\n", type);
+        printf("Entity id %d.\n", id);
+
+        switch (type) {
+            case EntityType::MESH_ENTITY:
+                {
+                entity_manager.entities[id] = new MeshEntity(id);
+                auto m_e = (MeshEntity*)entity_manager.entities[id];
+
+                fread(m_e, sizeof(MeshEntity), 1, f);
+
+                // Convert asset index to ptr
+                uint64_t file_asset_index = (uint64_t)m_e->mesh;
+                printf("Asset index is %d.\n", (int)file_asset_index);
+                printf("Which maps to %d.\n", (int)file_asset_mapping[file_asset_index]);
+                m_e->mesh = &( ( (MeshAsset*)assets[file_asset_mapping[file_asset_index]] )->mesh );
+
+                printf("Entity position %f %f %f.\n", m_e->position.x, m_e->position.y, m_e->position.z);
+                }
+                break;
+            case EntityType::ENTITY:
+                {
+                entity_manager.entities[id] = new Entity(id);
+                }
+            default:
+                break;
+        }
+    }
+    fclose(f);
+    return true;
 }
 
 glm::mat4x4 createModelMatrix(const glm::vec3 &pos, const glm::quat &rot, const glm::mat3x3 &scl){

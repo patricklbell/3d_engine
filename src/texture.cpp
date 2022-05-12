@@ -3,6 +3,7 @@
 #include <string.h>
 #include <string>
 #include <filesystem>
+#include <vector>
 
 #define cimg_display 0
 #include "CImg.h"
