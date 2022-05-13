@@ -23,8 +23,9 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, std::vector<As
 
 bool editorTranslationGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, Camera &camera, const glm::vec3 &snap, bool do_snap);
 bool editorRotationGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, const Camera &camera);
+bool editorScalingGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, Camera &camera, const glm::vec3 &snap, bool do_snap);
 bool editTransform(Camera &camera, glm::mat4x4 &transform);
-void drawEditor3DArrow(const glm::vec3 &position, const glm::vec3 &direction, const Camera &camera, const glm::vec4 &color, const glm::vec3 &scale, bool shaded=true);
+void drawEditor3DArrow(const glm::vec3 &position, const glm::vec3 &direction, const Camera &camera, const glm::vec4 &color, const glm::vec3 &scale, bool shaded=true, bool block=false);
 void drawEditor3DRing(const glm::vec3 &position, const glm::vec3 &direction, const Camera &camera, const glm::vec4 &color, const glm::vec3 &scale, bool shaded=true);
 void drawMeshWireframe(Mesh *mesh, const glm::vec3 &pos, const glm::quat &rot, const glm::mat3x3 &scl, const Camera &camera, bool flash);
 //class GLDebugDrawer : public btIDebugDraw {
@@ -142,6 +143,7 @@ namespace editor {
     extern enum GizmoMode {
         GIZMO_MODE_TRANSLATE = 0,
         GIZMO_MODE_ROTATE,
+        GIZMO_MODE_SCALE,
         GIZMO_MODE_NONE,
     } gizmo_mode;
     extern std::string im_file_dialog_type;

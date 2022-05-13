@@ -311,8 +311,7 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Camera &camera){
     // @note face culling wont work with certain techniques i.e. grass
     glEnable(GL_CULL_FACE);
 
-    if(!shader::unified_bloom) glClearColor(clear_color.x, clear_color.y, clear_color.z, clear_color.w);
-    else                       glClearColor(0,0,0,1);
+    glClearColor(0,0,0,1);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glUseProgram(shader::unified_programs[shader::unified_bloom]);
     glUniform3fv(shader::unified_uniforms[shader::unified_bloom].sun_color, 1, &sun_color[0]);
@@ -372,7 +371,6 @@ void bindBackbuffer(){
 
 void drawPost(int bloom_buffer_index){
     // Draw screen space quad so clearing is unnecessary
-    //glClearColor(clear_color.x, clear_color.y, clear_color.z, clear_color.w);
     //glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glDepthMask(GL_FALSE);
 

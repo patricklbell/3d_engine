@@ -42,8 +42,9 @@ namespace editor {
     bool draw_debug_wireframe = true;
     bool transform_active = false;
     GizmoMode gizmo_mode = GIZMO_MODE_NONE;
-    ImGui::FileBrowser im_file_dialog;
+    ImGui::FileBrowser im_file_dialog(ImGuiFileBrowserFlags_EnterNewFilename | ImGuiFileBrowserFlags_NoTitleBar);
     Mesh arrow_mesh;
+    Mesh block_arrow_mesh;
     Mesh ring_mesh;
 }
 using namespace editor;
@@ -72,43 +73,67 @@ void initEditorGui(){
     //dynamics_world->setDebugDrawer(&bt_debug_drawer);
 	//bt_debug_drawer.setDebugMode(1);
     loadMesh(arrow_mesh, "data/models/arrow.obj");
+    loadMesh(block_arrow_mesh, "data/models/block_arrow.obj");
     loadMesh(ring_mesh, "data/models/ring.obj");
 }
 
 
 
 bool editTransform(Camera &camera, glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl){
+    static bool key_t = false, key_r = false, key_s = false, key_n = false;
     static bool use_snap = false;
     static glm::vec3 snap = glm::vec3( 1.f, 1.f, 1.f );
     bool change_occured = false;
 
     ImGuiIO& io = ImGui::GetIO();
-    if (!io.WantCaptureKeyboard && glfwGetKey(window, GLFW_KEY_T))
-        gizmo_mode = GIZMO_MODE_TRANSLATE;
-    if (!io.WantCaptureKeyboard && glfwGetKey(window, GLFW_KEY_R))
-        gizmo_mode = GIZMO_MODE_ROTATE;
+    if (!io.WantCaptureKeyboard && glfwGetKey(window, GLFW_KEY_T) && !key_t)
+        gizmo_mode = gizmo_mode == GIZMO_MODE_TRANSLATE ? GIZMO_MODE_NONE : GIZMO_MODE_TRANSLATE;
+    if (!io.WantCaptureKeyboard && glfwGetKey(window, GLFW_KEY_R) && !key_r)
+        gizmo_mode = gizmo_mode == GIZMO_MODE_ROTATE ? GIZMO_MODE_NONE : GIZMO_MODE_ROTATE;
+    if (!io.WantCaptureKeyboard && glfwGetKey(window, GLFW_KEY_S) && !key_s)
+        gizmo_mode = gizmo_mode == GIZMO_MODE_SCALE ? GIZMO_MODE_NONE : GIZMO_MODE_SCALE;
 
-    if (ImGui::RadioButton("Translate", gizmo_mode == GIZMO_MODE_TRANSLATE)){
+    if (ImGui::RadioButton("##translate", gizmo_mode == GIZMO_MODE_TRANSLATE)){
         if(gizmo_mode == GIZMO_MODE_TRANSLATE) gizmo_mode = GIZMO_MODE_NONE;
         else                                   gizmo_mode = GIZMO_MODE_TRANSLATE;
-    }
+    }  
     ImGui::SameLine();
-    if (ImGui::RadioButton("Rotate", gizmo_mode == GIZMO_MODE_ROTATE)){
-        if(gizmo_mode == GIZMO_MODE_ROTATE) gizmo_mode = GIZMO_MODE_NONE;
-        else                                   gizmo_mode = GIZMO_MODE_ROTATE;
-    }
-    
-    if(ImGui::InputFloat3("Tr (Vector 3)", &pos[0])){
+    ImGui::TextWrapped("Translation (Vector 3)");
+    ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 10);
+    if(ImGui::InputFloat3("##translation", &pos[0])){
         change_occured = true;
     } 
-    if(ImGui::InputFloat4("Rt (Quaternion)", &rot[0])){
+    
+    if (ImGui::RadioButton("##rotate", gizmo_mode == GIZMO_MODE_ROTATE)){
+        if(gizmo_mode == GIZMO_MODE_ROTATE) gizmo_mode = GIZMO_MODE_NONE;
+        else                                gizmo_mode = GIZMO_MODE_ROTATE;
+    }
+    ImGui::SameLine();
+    ImGui::TextWrapped("Rotation (Quaternion)");
+    ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 10);
+    if(ImGui::InputFloat4("##rotation", &rot[0])){
+        change_occured = true;
+    } 
+
+    if (ImGui::RadioButton("##scale", gizmo_mode == GIZMO_MODE_SCALE)){
+        if(gizmo_mode == GIZMO_MODE_SCALE) gizmo_mode = GIZMO_MODE_NONE;
+        else                               gizmo_mode = GIZMO_MODE_SCALE;
+    }
+    ImGui::SameLine();
+    ImGui::TextWrapped("Scale (Vector 3)");
+    ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 10);
+    glm::vec3 scale = glm::vec3(scl[0][0], scl[1][1], scl[2][2]);
+    if(ImGui::InputFloat3("##scale", &scale[0])){
+        scl[0][0] = scale.x;
+        scl[1][1] = scale.y;
+        scl[2][2] = scale.z;
         change_occured = true;
     } 
 
     switch (gizmo_mode)
     {
     case GIZMO_MODE_TRANSLATE:
-        if (ImGui::IsKeyPressed(83))
+        if (!io.WantCaptureKeyboard && glfwGetKey(window, GLFW_KEY_N) && !key_n)
             use_snap = !use_snap;
         ImGui::Checkbox("", &use_snap);
         ImGui::SameLine();
@@ -118,9 +143,22 @@ bool editTransform(Camera &camera, glm::vec3 &pos, glm::quat &rot, glm::mat3 &sc
     case GIZMO_MODE_ROTATE:
         change_occured |= editorRotationGizmo(pos, rot, scl, camera);
         break;
+    case GIZMO_MODE_SCALE:
+        if (!io.WantCaptureKeyboard && glfwGetKey(window, GLFW_KEY_N) && !key_n)
+            use_snap = !use_snap;
+        ImGui::Checkbox("", &use_snap);
+        ImGui::SameLine();
+        ImGui::InputFloat3("Snap", &snap[0]);
+        change_occured |= editorScalingGizmo(pos, rot, scl, camera, snap, use_snap);
+        break;
     default:
         break;
     }
+
+    key_t = glfwGetKey(window, GLFW_KEY_T);
+    key_r = glfwGetKey(window, GLFW_KEY_R);
+    key_s = glfwGetKey(window, GLFW_KEY_S);
+    key_n = glfwGetKey(window, GLFW_KEY_N);
     return change_occured;
 }
 
@@ -310,6 +348,94 @@ bool editorTranslationGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, Came
     return active;
 }
 
+bool editorScalingGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, Camera &camera, const glm::vec3 &snap, bool do_snap){
+    static int selected_arrow = -1;
+    static glm::vec3 selection_offset;
+    
+    glm::vec3 out_origin;
+    glm::vec3 out_direction;
+    screenPosToWorldRay(controls::mouse_position, camera.view, camera.projection, out_origin, out_direction);
+    
+    glm::vec3 axis[3] = {
+        rot*glm::vec3(1,0,0), 
+        rot*glm::vec3(0,-1,0), 
+        rot*glm::vec3(0,0,1)
+    };
+
+    const float distance = glm::length(camera.position - pos);
+    if(glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_RELEASE)
+        selected_arrow = -1;
+    
+    else if(controls::left_mouse_click_press){
+        float depth = std::numeric_limits<float>::max();
+        for (int i = 0; i < 3; ++i) {
+            auto direction = axis[i];
+               
+            // @copied from drawEditor3DArrow
+            // Why?
+            auto dir = direction;
+            dir.y = -dir.y;
+            static const auto block_arrow_direction = glm::vec3(0,-1,0);
+
+            glm::mat4x4 block_arrow_rot;
+            if(dir == -block_arrow_direction) block_arrow_rot = glm::rotate(glm::mat4x4(1.0), (float)PI, glm::vec3(1,0,0));
+            else                        block_arrow_rot = glm::mat4_cast(glm::quat(dir, block_arrow_direction));
+            auto trans = glm::translate(glm::mat4x4(1.0), pos);
+            // Scale up so easier to select
+            glm::mat4x4 transform =  trans * block_arrow_rot * glm::scale(glm::mat4x4(1.0), glm::vec3(0.03*distance));
+
+            glm::vec3 collision_point(0), normal(0);
+            if(rayIntersectsMesh(&block_arrow_mesh, transform, camera, out_origin, out_direction, collision_point, normal)){
+                float test_depth = glm::length(collision_point - camera.position);
+                if(test_depth < depth){
+                    depth = test_depth;
+                    selection_offset = collision_point - pos;
+                    selected_arrow = i;
+                }
+            }
+        }
+    }
+    const bool active = selected_arrow != -1;
+
+    static float direction_offset;
+    if(active){
+        auto direction = axis[selected_arrow];
+        
+        float camera_t, direction_t;
+        closestDistanceBetweenLines(out_origin, out_direction, pos + selection_offset, direction, camera_t, direction_t);
+        
+        glm::fvec3 unrotated_axis(selected_arrow==0, selected_arrow==1, selected_arrow==2);
+        if(controls::left_mouse_click_press)
+            direction_offset = -scl[selected_arrow][selected_arrow]-direction_t;
+        auto scale = -(direction_t + direction_offset + scl[selected_arrow][selected_arrow])*unrotated_axis;
+        if(do_snap){
+            scale.x = glm::round(scale.x / snap.x) * snap.x;
+            scale.y = glm::round(scale.y / snap.y) * snap.y;
+            scale.z = glm::round(scale.z / snap.z) * snap.z;
+        }
+        scl[0][0] += scale.x;
+        scl[1][1] += scale.y;
+        scl[2][2] += scale.z;
+    }
+
+    glDepthMask(GL_TRUE);
+    glClear(GL_DEPTH_BUFFER_BIT);
+    
+    for (int i = 0; i < 3; ++i) {
+        glm::fvec3 color(i==0, i==1, i==2);
+        auto direction = axis[i];
+
+        if(selected_arrow == i)
+            drawEditor3DArrow(pos, direction, camera, glm::vec4(color,1.0), glm::vec3(distance*0.03), false, true);
+        else
+            drawEditor3DArrow(pos, direction, camera, glm::vec4(color,0.5), glm::vec3(distance*0.03), false, true);
+
+    }
+
+    return active;
+}
+
+
 void drawMeshWireframe(Mesh *mesh, const glm::vec3 &pos, const glm::quat &rot, const glm::mat3x3 &scl, const Camera &camera, bool flash = false){
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     glDisable(GL_CULL_FACE);
@@ -371,12 +497,12 @@ void drawEditor3DRing(const glm::vec3 &position, const glm::vec3 &direction, con
     glUniform1f(shader::debug_uniforms.shaded, shaded ? 1.0 : 0.0);
     glUniform1f(shader::debug_uniforms.flashing, 0);
     glBindVertexArray(ring_mesh.vao);
-    glDrawElements(ring_mesh.draw_mode, arrow_mesh.draw_count[0], arrow_mesh.draw_type, (GLvoid*)(sizeof(GLubyte)*arrow_mesh.draw_start[0]));
+    glDrawElements(ring_mesh.draw_mode, ring_mesh.draw_count[0], ring_mesh.draw_type, (GLvoid*)(sizeof(GLubyte)*ring_mesh.draw_start[0]));
 
     glDisable(GL_BLEND);  
 }
 
-void drawEditor3DArrow(const glm::vec3 &position, const glm::vec3 &direction, const Camera &camera, const glm::vec4 &color, const glm::vec3 &scale, bool shaded){
+void drawEditor3DArrow(const glm::vec3 &position, const glm::vec3 &direction, const Camera &camera, const glm::vec4 &color, const glm::vec3 &scale, bool shaded, bool block){
     glDepthMask(GL_TRUE);
     glEnable(GL_DEPTH_TEST);
 
@@ -408,9 +534,14 @@ void drawEditor3DArrow(const glm::vec3 &position, const glm::vec3 &direction, co
     glUniform4fv(shader::debug_uniforms.color, 1, &color[0]);
     glUniform1f(shader::debug_uniforms.shaded, shaded ? 1.0 : 0.0);
     glUniform1f(shader::debug_uniforms.flashing, 0);
-    glBindVertexArray(arrow_mesh.vao);
-    glDrawElements(arrow_mesh.draw_mode, arrow_mesh.draw_count[0], arrow_mesh.draw_type, (GLvoid*)(sizeof(GLubyte)*arrow_mesh.draw_start[0]));
+    if(!block){
+        glBindVertexArray(arrow_mesh.vao);
+        glDrawElements(arrow_mesh.draw_mode, arrow_mesh.draw_count[0], arrow_mesh.draw_type, (GLvoid*)(sizeof(GLubyte)*arrow_mesh.draw_start[0]));
+    } else {
+        glBindVertexArray(block_arrow_mesh.vao);
+        glDrawElements(block_arrow_mesh.draw_mode, block_arrow_mesh.draw_count[0], block_arrow_mesh.draw_type, (GLvoid*)(sizeof(GLubyte)*block_arrow_mesh.draw_start[0]));
 
+    }
     glDisable(GL_BLEND);  
 }
 
@@ -449,9 +580,12 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, std::vector<As
     ImGuizmo::BeginFrame();
     {
         if(selected_entity != -1) {
-            ImGui::Begin("Entity Properties");
-            ImGui::Text("Entity ID: %d", selected_entity);
+            ImGui::SetNextWindowPos(ImVec2(window_width-200,0), ImGuiCond_Once);
+            ImGui::SetNextWindowSize(ImVec2(200,window_height), ImGuiCond_Once);
+            ImGui::SetNextWindowSizeConstraints(ImVec2(100, window_height), ImVec2(window_width / 2.0, window_height));
 
+            ImGui::Begin("Entity Properties", NULL, ImGuiWindowFlags_NoMove);
+            ImGui::Text("Entity ID: %d", selected_entity);
 
             auto entity = (MeshEntity *)entity_manager.getEntity(selected_entity);
             if(selected_entity != -1 && entity != nullptr && entity->type & EntityType::MESH_ENTITY){
@@ -486,7 +620,7 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, std::vector<As
             //        im_file_dialog.Open();
             //    }
             //}
-            if(ImGui::Button("Duplicate")){
+            if(ImGui::Button("Duplicate", ImVec2(ImGui::GetWindowWidth()/2 - 5, 20))){
                 if(entity_manager.getEntity(selected_entity) != nullptr && ((Entity*)entity_manager.getEntity(selected_entity))->type & EntityType::MESH_ENTITY){
                     int id = entity_manager.getFreeId();
                     entity_manager.entities[id] = new MeshEntity(id);
@@ -509,14 +643,18 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, std::vector<As
                 }
             }
             ImGui::SameLine();
-            if(ImGui::Button("Delete")){
+            if(ImGui::Button("Delete", ImVec2(ImGui::GetWindowWidth()/2 - 5, 20))){
                 entity_manager.deleteEntity(selected_entity);
+                selected_entity = -1;
             }
             ImGui::End();
         }
     }
     {
-        ImGui::Begin("Global Properties");
+        ImGui::SetNextWindowPos(ImVec2(0,0));
+        ImGui::SetNextWindowSizeConstraints(ImVec2(100, window_height), ImVec2(window_width / 2.0, window_height));
+
+        ImGui::Begin("Global Properties", NULL, ImGuiWindowFlags_NoMove);
         //if (ImGui::CollapsingHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen)) {
         //    float distance = glm::length(camera.position - camera.target);
         //    if (ImGui::SliderFloat("Distance", &distance, 1.f, 100.f)) {
@@ -525,23 +663,21 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, std::vector<As
         //    }
         //}
         static char level_name[256] = "";
-        ImGui::InputText("Level Name", level_name, 256);
-        if (ImGui::Button("Save Level")){
-            saveLevel(entity_manager, assets, "data/levels/" + std::string(level_name) + ".level");
+        if (ImGui::Button("Save Level", ImVec2(ImGui::GetWindowWidth() / 2-10, 20))){
+            im_file_dialog_type = "saveLevel";
+            im_file_dialog.SetTypeFilters({".level"});
+            im_file_dialog.Open();
         }
-        if (ImGui::Button("Load Level")){
+        ImGui::SameLine();
+        if (ImGui::Button("Load Level", ImVec2(ImGui::GetWindowWidth() / 2-10, 20))){
             im_file_dialog_type = "loadLevel";
             im_file_dialog.SetTypeFilters({ ".level" });
             im_file_dialog.Open();
         }
-        if (ImGui::Checkbox("Bloom", &shader::unified_bloom)){
-            createHdrFbo();
-            createBloomFbo();
-        }
 
         if (ImGui::CollapsingHeader("Add Entity", ImGuiTreeNodeFlags_DefaultOpen)){
             static int asset_current = 0;
-
+            ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 10);
             if (ImGui::BeginCombo("##asset-combo", assets[asset_current]->path.c_str())){
                 for (int n = 0; n < assets.size(); n++)
                 {
@@ -555,30 +691,33 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, std::vector<As
                 ImGui::EndCombo();
             }
 
-            if(ImGui::Button("Add Instance")){
+            if(ImGui::Button("Add Instance", ImVec2(ImGui::GetWindowWidth() - 10, 20))){
                 int id = entity_manager.getFreeId();
                 entity_manager.entities[id] = new MeshEntity(id);
                 MeshEntity* entity = (MeshEntity*)entity_manager.getEntity(id);
                 entity->mesh = &((MeshAsset*)assets[asset_current])->mesh;
             }
         }
-        
-        ImGui::ColorEdit4("Clear color", (float*)&clear_color); // Edit 3 floats representing a color
-        ImGui::ColorEdit3("Sun color", (float*)&sun_color); // Edit 3 floats representing a color
-        if(ImGui::InputFloat3("Sun direction", (float*)&sun_direction)){
-            sun_direction = glm::normalize(sun_direction);
-            updateCameraView(camera);
-            updateShadowVP(camera);
-        }
-        if (ImGui::BeginMenuBar())
-        {
-            if (ImGui::BeginMenu("Menu"))
-            {
-                ImGui::EndMenu();
+
+        if (ImGui::CollapsingHeader("Graphics", ImGuiTreeNodeFlags_DefaultOpen)){
+            if (ImGui::Checkbox("Bloom", &shader::unified_bloom)){
+                createHdrFbo();
+                createBloomFbo();
             }
-            ImGui::EndMenuBar();
+
+            ImGui::Text("Sun Color:");
+            ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 10);
+            ImGui::ColorEdit3("", (float*)&sun_color); // Edit 3 floats representing a color
+            ImGui::Text("Sun Direction:");
+            ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 10);
+            if(ImGui::InputFloat3("", (float*)&sun_direction)){
+                sun_direction = glm::normalize(sun_direction);
+                updateCameraView(camera);
+                updateShadowVP(camera);
+            }
         }
-        ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+        ImGui::SetCursorPosY(window_height - ImGui::GetTextLineHeightWithSpacing()*3);
+        ImGui::TextWrapped("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
         ImGui::End();
         
         //{
@@ -596,6 +735,8 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, std::vector<As
                 // @fix uses more memory than necessary/accumulates assets because unused assets arent destroyed
                 loadLevel(entity_manager, assets, im_file_dialog.GetSelected()) ;
                 selected_entity = -1;
+            } else if(im_file_dialog_type == "saveLevel"){
+                saveLevel(entity_manager, assets, im_file_dialog.GetSelected());
             } else {
                 fprintf(stderr, "Unhandled imgui file dialog type %s.\n", im_file_dialog_type.c_str());
             }

@@ -40,7 +40,6 @@ int selected_entity = -1;
 std::string glsl_version;
 glm::vec3 sun_color;
 glm::vec3 sun_direction;
-glm::vec4 clear_color = glm::vec4(67/255, 85/255, 98/255, 1.0);
 
 int main() {
     // Initialise GLFW
