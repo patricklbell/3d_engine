@@ -20,8 +20,6 @@
 #include "imgui_impl_opengl3.h"
 #include "imfilebrowser.hpp"
 
-//#include <btBulletDynamicsCommon.h>
-
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/matrix_access.hpp>
@@ -46,6 +44,7 @@ namespace editor {
     Mesh arrow_mesh;
     Mesh block_arrow_mesh;
     Mesh ring_mesh;
+    Id sel_e(-1, -1);
 }
 using namespace editor;
 
@@ -77,59 +76,65 @@ void initEditorGui(){
     loadMesh(ring_mesh, "data/models/ring.obj");
 }
 
-
-
-bool editTransform(Camera &camera, glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl){
+bool editTransform(Camera &camera, glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, TransformType type=TransformType::ALL){
     static bool key_t = false, key_r = false, key_s = false, key_n = false;
     static bool use_snap = false;
     static glm::vec3 snap = glm::vec3( 1.f, 1.f, 1.f );
     bool change_occured = false;
 
+    bool do_p = (bool)((unsigned int)type & (unsigned int)TransformType::POS);
+    bool do_r = (bool)((unsigned int)type & (unsigned int)TransformType::ROT);
+    bool do_s = (bool)((unsigned int)type & (unsigned int)TransformType::SCL);
+
     ImGuiIO& io = ImGui::GetIO();
-    if (!io.WantCaptureKeyboard && glfwGetKey(window, GLFW_KEY_T) && !key_t)
+    if (!io.WantCaptureKeyboard && glfwGetKey(window, GLFW_KEY_T) && !key_t && do_p)
         gizmo_mode = gizmo_mode == GIZMO_MODE_TRANSLATE ? GIZMO_MODE_NONE : GIZMO_MODE_TRANSLATE;
-    if (!io.WantCaptureKeyboard && glfwGetKey(window, GLFW_KEY_R) && !key_r)
+    if (!io.WantCaptureKeyboard && glfwGetKey(window, GLFW_KEY_R) && !key_r && do_r)
         gizmo_mode = gizmo_mode == GIZMO_MODE_ROTATE ? GIZMO_MODE_NONE : GIZMO_MODE_ROTATE;
-    if (!io.WantCaptureKeyboard && glfwGetKey(window, GLFW_KEY_S) && !key_s)
+    if (!io.WantCaptureKeyboard && glfwGetKey(window, GLFW_KEY_S) && !key_s && do_s)
         gizmo_mode = gizmo_mode == GIZMO_MODE_SCALE ? GIZMO_MODE_NONE : GIZMO_MODE_SCALE;
 
-    if (ImGui::RadioButton("##translate", gizmo_mode == GIZMO_MODE_TRANSLATE)){
-        if(gizmo_mode == GIZMO_MODE_TRANSLATE) gizmo_mode = GIZMO_MODE_NONE;
-        else                                   gizmo_mode = GIZMO_MODE_TRANSLATE;
-    }  
-    ImGui::SameLine();
-    ImGui::TextWrapped("Translation (Vector 3)");
-    ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 10);
-    if(ImGui::InputFloat3("##translation", &pos[0])){
-        change_occured = true;
-    } 
-    
-    if (ImGui::RadioButton("##rotate", gizmo_mode == GIZMO_MODE_ROTATE)){
-        if(gizmo_mode == GIZMO_MODE_ROTATE) gizmo_mode = GIZMO_MODE_NONE;
-        else                                gizmo_mode = GIZMO_MODE_ROTATE;
+    if(do_p){
+        if (ImGui::RadioButton("##translate", gizmo_mode == GIZMO_MODE_TRANSLATE)){
+            if(gizmo_mode == GIZMO_MODE_TRANSLATE) gizmo_mode = GIZMO_MODE_NONE;
+            else                                   gizmo_mode = GIZMO_MODE_TRANSLATE;
+        }  
+        ImGui::SameLine();
+        ImGui::TextWrapped("Translation (Vector 3)");
+        ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 10);
+        if(ImGui::InputFloat3("##translation", &pos[0])){
+            change_occured = true;
+        } 
     }
-    ImGui::SameLine();
-    ImGui::TextWrapped("Rotation (Quaternion)");
-    ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 10);
-    if(ImGui::InputFloat4("##rotation", &rot[0])){
-        change_occured = true;
-    } 
-
-    if (ImGui::RadioButton("##scale", gizmo_mode == GIZMO_MODE_SCALE)){
-        if(gizmo_mode == GIZMO_MODE_SCALE) gizmo_mode = GIZMO_MODE_NONE;
-        else                               gizmo_mode = GIZMO_MODE_SCALE;
+    if(do_r){
+        if (ImGui::RadioButton("##rotate", gizmo_mode == GIZMO_MODE_ROTATE)){
+            if(gizmo_mode == GIZMO_MODE_ROTATE) gizmo_mode = GIZMO_MODE_NONE;
+            else                                gizmo_mode = GIZMO_MODE_ROTATE;
+        }
+        ImGui::SameLine();
+        ImGui::TextWrapped("Rotation (Quaternion)");
+        ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 10);
+        if(ImGui::InputFloat4("##rotation", &rot[0])){
+            change_occured = true;
+        } 
     }
-    ImGui::SameLine();
-    ImGui::TextWrapped("Scale (Vector 3)");
-    ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 10);
-    glm::vec3 scale = glm::vec3(scl[0][0], scl[1][1], scl[2][2]);
-    if(ImGui::InputFloat3("##scale", &scale[0])){
-        scl[0][0] = scale.x;
-        scl[1][1] = scale.y;
-        scl[2][2] = scale.z;
-        change_occured = true;
-    } 
-
+    if(do_s){
+        if (ImGui::RadioButton("##scale", gizmo_mode == GIZMO_MODE_SCALE)){
+            if(gizmo_mode == GIZMO_MODE_SCALE) gizmo_mode = GIZMO_MODE_NONE;
+            else                               gizmo_mode = GIZMO_MODE_SCALE;
+        }
+        ImGui::SameLine();
+        ImGui::TextWrapped("Scale (Vector 3)");
+        ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 10);
+        glm::vec3 scale = glm::vec3(scl[0][0], scl[1][1], scl[2][2]);
+        if(ImGui::InputFloat3("##scale", &scale[0])){
+            scl[0][0] = scale.x;
+            scl[1][1] = scale.y;
+            scl[2][2] = scale.z;
+            change_occured = true;
+        } 
+    }
+  
     switch (gizmo_mode)
     {
     case GIZMO_MODE_TRANSLATE:
@@ -436,6 +441,32 @@ bool editorScalingGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, Camera &
 }
 
 
+void drawWaterDebug(WaterEntity* w_e, const Camera &camera, bool flash = false){
+    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_DEPTH_TEST);
+    glEnable(GL_LINE_SMOOTH);
+    // Displays in renderdoc texture view but not in application?
+    //glLineWidth(200.0);
+
+    glUseProgram(shader::debug_program);
+    auto mvp = camera.projection * camera.view * createModelMatrix(w_e->position, glm::quat(), w_e->scale);
+    glUniformMatrix4fv(shader::debug_uniforms.mvp, 1, GL_FALSE, &mvp[0][0]);
+    glUniformMatrix4fv(shader::debug_uniforms.model, 1, GL_FALSE, &w_e->position[0]);
+    glUniform4f(shader::debug_uniforms.color, 1.0, 1.0, 1.0, 1.0);
+    glUniform4f(shader::debug_uniforms.color_flash_to, 1.0, 0.0, 1.0, 1.0);
+    glUniform1f(shader::debug_uniforms.time, glfwGetTime());
+    glUniform1f(shader::debug_uniforms.shaded, 0.0);
+    glUniform1f(shader::debug_uniforms.flashing, flash ? 1.0: 0.0);
+
+    glBindVertexArray(graphics::grid.vao);
+    glDrawElements(graphics::grid.draw_mode, graphics::grid.draw_count[0], graphics::grid.draw_type, (GLvoid*)(sizeof(GLubyte)*graphics::grid.draw_start[0]));
+   
+    glEnable(GL_CULL_FACE);
+    glEnable(GL_DEPTH_TEST);
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+}
+
 void drawMeshWireframe(Mesh *mesh, const glm::vec3 &pos, const glm::quat &rot, const glm::mat3x3 &scl, const Camera &camera, bool flash = false){
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     glDisable(GL_CULL_FACE);
@@ -570,29 +601,49 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, std::vector<As
     //if(min_collision_distance != std::numeric_limits<float>::max()){
     //    drawEditor3DArrow(collision_point, normal, camera, glm::vec4(1.0));
     //}
+
+    // @speed
+    if(sel_e.i == -1) gizmo_mode = GIZMO_MODE_NONE;
     
     // Start the Dear ImGui frame;
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
-    ImGuizmo::SetOrthographic(true);
-    ImGuizmo::BeginFrame();
     {
-        if(selected_entity != -1) {
-            ImGui::SetNextWindowPos(ImVec2(window_width-200,0), ImGuiCond_Once);
-            ImGui::SetNextWindowSize(ImVec2(200,window_height), ImGuiCond_Once);
-            ImGui::SetNextWindowSizeConstraints(ImVec2(100, window_height), ImVec2(window_width / 2.0, window_height));
+        if(sel_e.i != -1) {
+            if(window_resized){
+                ImGui::SetNextWindowPos(ImVec2(window_width-200,0));
+                ImGui::SetNextWindowSize(ImVec2(200,window_height));
+                ImGui::SetNextWindowSizeConstraints(ImVec2(100, window_height), ImVec2(window_width / 2.0, window_height));
+            }
 
             ImGui::Begin("Entity Properties", NULL, ImGuiWindowFlags_NoMove);
-            ImGui::Text("Entity ID: %d", selected_entity);
+            ImGui::Text("Entity Index: %d Version: %d", sel_e.i, sel_e.v);
 
-            auto entity = (MeshEntity *)entity_manager.getEntity(selected_entity);
-            if(selected_entity != -1 && entity != nullptr && entity->type & EntityType::MESH_ENTITY){
-                if(editor::draw_debug_wireframe)
-                    drawMeshWireframe(entity->mesh, entity->position, entity->rotation, entity->scale, camera, true);
-
-                editor::transform_active = editTransform(camera, entity->position, entity->rotation, entity->scale);
+            auto s_e = entity_manager.getEntity(sel_e);
+            if(s_e != nullptr){
+                if(s_e->type & EntityType::MESH_ENTITY && ((MeshEntity*)s_e)->mesh != nullptr){
+                    auto m_e = (MeshEntity*)s_e;
+                    if(editor::draw_debug_wireframe)
+                        drawMeshWireframe(m_e->mesh, m_e->position, m_e->rotation, m_e->scale, camera, true);
+                    editor::transform_active = editTransform(camera, m_e->position, m_e->rotation, m_e->scale);
+                } else if(s_e->type & EntityType::WATER_ENTITY) {
+                    auto w_e = (WaterEntity*)s_e;
+                    if(editor::draw_debug_wireframe)
+                        drawWaterDebug(w_e, camera, true);
+                    glm::quat _r = glm::quat();
+                    editor::transform_active = editTransform(camera, w_e->position, _r, w_e->scale, TransformType::POS_SCL);
+                    ImGui::TextWrapped("Shallow Color:");
+                    ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 10);
+                    ImGui::ColorEdit4("##shallow_color", (float*)(&w_e->shallow_color));
+                    ImGui::TextWrapped("Deep Color:");
+                    ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 10);
+                    ImGui::ColorEdit4("##deep_color", (float*)(&w_e->deep_color));
+                    ImGui::TextWrapped("Foam Color:");
+                    ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 10);
+                    ImGui::ColorEdit4("##foam_color", (float*)(&w_e->foam_color));
+                }
             }
 
             //if (ImGui::CollapsingHeader("Material", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -621,31 +672,24 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, std::vector<As
             //    }
             //}
             if(ImGui::Button("Duplicate", ImVec2(ImGui::GetWindowWidth()/2 - 5, 20))){
-                if(entity_manager.getEntity(selected_entity) != nullptr && ((Entity*)entity_manager.getEntity(selected_entity))->type & EntityType::MESH_ENTITY){
-                    int id = entity_manager.getFreeId();
-                    entity_manager.entities[id] = new MeshEntity(id);
-
-                    MeshEntity* m_entity   = (MeshEntity*)entity_manager.getEntity(id);
-                    MeshEntity* m_s_entity = (MeshEntity*)entity_manager.getEntity(selected_entity);
-
-                    memcpy(m_entity, m_s_entity, sizeof(*m_entity));
-
-                    m_entity->position += glm::vec3(0.1);
-
-                    if(camera.state == Camera::TYPE::TRACKBALL){
-                        selected_entity = id;
-                        camera.target = m_entity->position;
-                        updateCameraView(camera);
+                if(s_e != nullptr){
+                    auto e = entity_manager.duplicateEntity(sel_e);
+                    if(e->type & MESH_ENTITY){
+                        ((MeshEntity*)e)->position += glm::vec3(0.1);
+                        if(camera.state == Camera::TYPE::TRACKBALL){
+                            sel_e = e->id;
+                            camera.target = ((MeshEntity*)e)->position;
+                            updateCameraView(camera);
+                        }
                     }
                 } else {
-                    int id = entity_manager.getFreeId();
-                    entity_manager.entities[id] = new Entity(id);
+                    entity_manager.setEntity(entity_manager.getFreeId().i, new Entity());
                 }
             }
             ImGui::SameLine();
             if(ImGui::Button("Delete", ImVec2(ImGui::GetWindowWidth()/2 - 5, 20))){
-                entity_manager.deleteEntity(selected_entity);
-                selected_entity = -1;
+                entity_manager.deleteEntity(sel_e);
+                sel_e = Id(-1, -1);
             }
             ImGui::End();
         }
@@ -692,10 +736,9 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, std::vector<As
             }
 
             if(ImGui::Button("Add Instance", ImVec2(ImGui::GetWindowWidth() - 10, 20))){
-                int id = entity_manager.getFreeId();
-                entity_manager.entities[id] = new MeshEntity(id);
-                MeshEntity* entity = (MeshEntity*)entity_manager.getEntity(id);
-                entity->mesh = &((MeshAsset*)assets[asset_current])->mesh;
+                auto e = new MeshEntity();
+                e->mesh = &((MeshAsset*)assets[asset_current])->mesh;
+                entity_manager.setEntity(entity_manager.getFreeId().i, e);
             }
         }
 
@@ -734,7 +777,7 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, std::vector<As
                 entity_manager.reset();
                 // @fix uses more memory than necessary/accumulates assets because unused assets arent destroyed
                 loadLevel(entity_manager, assets, im_file_dialog.GetSelected()) ;
-                selected_entity = -1;
+                sel_e = Id(-1, -1);
             } else if(im_file_dialog_type == "saveLevel"){
                 saveLevel(entity_manager, assets, im_file_dialog.GetSelected());
             } else {

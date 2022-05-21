@@ -38,30 +38,31 @@ void saveLevel(EntityManager &entity_manager, const std::vector<Asset*> assets, 
 
     // Save entities
     for(int i = 0; i < ENTITY_COUNT; i++){
-        auto e = entity_manager.getEntity(i);
-        if(e == nullptr) continue;
-        // @todo handle maintaining ids if necessary
+        auto e = entity_manager.entities[i];
+        if(e == nullptr || e->type == EntityType::ENTITY) continue;
 
         fwrite(&e->type, sizeof(EntityType), 1, f);
         switch (e->type) {
+            // Write entities which contain no pointers
+            case EntityType::WATER_ENTITY:
+                {
+                    fwrite(e, entitySize(e->type), 1, f);
+                    break;
+                }
+            // Handle resource pointers with path lut
             case EntityType::MESH_ENTITY:
                 {
-                auto m_e = (MeshEntity*)e;
-                auto mesh = m_e->mesh;
-                auto lookup = asset_lookup[(intptr_t)m_e->mesh];
-                m_e->mesh = (Mesh*)lookup;
+                    auto m_e = (MeshEntity*)e;
+                    auto mesh = m_e->mesh;
+                    auto lookup = asset_lookup[(intptr_t)m_e->mesh];
+                    m_e->mesh = (Mesh*)lookup;
 
-                fwrite(m_e, sizeof(MeshEntity), 1, f);
-               
-                // Restore correct pointer
-                m_e->mesh = mesh;
+                    fwrite(m_e, sizeof(MeshEntity), 1, f);
+                   
+                    // Restore correct pointer
+                    m_e->mesh = mesh;
 
-                break;
-                }
-            case EntityType::ENTITY:
-                {
-                fwrite(e, sizeof(Entity), 1, f);
-                break;
+                    break;
                 }
             default:
                 break;
@@ -74,6 +75,8 @@ void saveLevel(EntityManager &entity_manager, const std::vector<Asset*> assets, 
 
 // Overwrites existing entity indices
 // @todo if needed make loading asign new ids such that connections are maintained
+// @todo any entities that store ids must be resolved so that invalid ie wrong versions are NULLID 
+// since we dont maintain version either
 bool loadLevel(EntityManager &entity_manager, std::vector<Asset*> &assets, std::string level_path){
     // Create lookup to check if entity is already loaded
     std::unordered_map<std::string, uint64_t> asset_lookup;
@@ -123,38 +126,39 @@ bool loadLevel(EntityManager &entity_manager, std::vector<Asset*> &assets, std::
             asset_path += c;
         }
     }
-    printf("Assets 1 maps to %li\n", file_asset_mapping[1]);
 
     while((c = fgetc(f)) != EOF){
         ungetc(c, f);
-        auto id = entity_manager.getFreeId();
-
+        // If needed we can write id as well to maintain during saves
         EntityType type;
         fread(&type, sizeof(EntityType), 1, f);
 
         printf("Entity type %d.\n", type);
-        printf("Entity id %d.\n", id);
-
         switch (type) {
+            // Contains no pointers
+            case EntityType::WATER_ENTITY:
+                {
+                    auto e = allocateEntity(NULLID, type);
+                    fread(e, entitySize(type), 1, f);
+                    entity_manager.setEntity(entity_manager.getFreeId().i, e);
+                    break;
+                }
+            // Handle resource pointers with path lut
             case EntityType::MESH_ENTITY:
                 {
-                entity_manager.entities[id] = new MeshEntity(id);
-                auto m_e = (MeshEntity*)entity_manager.entities[id];
+                    auto m_e = (MeshEntity*)allocateEntity(NULLID, type);
+                    fread(m_e, sizeof(MeshEntity), 1, f);
 
-                fread(m_e, sizeof(MeshEntity), 1, f);
+                    // Convert asset index to ptr
+                    uint64_t file_asset_index = (uint64_t)m_e->mesh;
+                    printf("Asset index is %d.\n", (int)file_asset_index);
+                    printf("Which maps to %d.\n", (int)file_asset_mapping[file_asset_index]);
+                    m_e->mesh = &( ( (MeshAsset*)assets[file_asset_mapping[file_asset_index]] )->mesh );
 
-                // Convert asset index to ptr
-                uint64_t file_asset_index = (uint64_t)m_e->mesh;
-                printf("Asset index is %d.\n", (int)file_asset_index);
-                printf("Which maps to %d.\n", (int)file_asset_mapping[file_asset_index]);
-                m_e->mesh = &( ( (MeshAsset*)assets[file_asset_mapping[file_asset_index]] )->mesh );
+                    printf("Entity position %f %f %f.\n", m_e->position.x, m_e->position.y, m_e->position.z);
 
-                printf("Entity position %f %f %f.\n", m_e->position.x, m_e->position.y, m_e->position.z);
-                }
-                break;
-            case EntityType::ENTITY:
-                {
-                entity_manager.entities[id] = new Entity(id);
+                    entity_manager.setEntity(entity_manager.getFreeId().i, m_e);
+                    break;
                 }
             default:
                 break;

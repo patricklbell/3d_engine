@@ -1,12 +1,11 @@
 #if COMPILING_VS
 
 layout (location = 0) in vec3 in_vertex;
-layout (location = 1) in vec2 in_texcoord;
+layout (location = 1) in vec3 in_texcoord;
 
 out vec2 texcoord;
 
 void main(){
-    texcoord = in_texcoord;
     gl_Position = vec4(in_vertex,1.0);
 }
 
@@ -18,6 +17,7 @@ out vec4 out_color;
 in vec2 texcoord;
 
 uniform sampler2D image;
+  
 uniform bool horizontal;
 
 void main(){             

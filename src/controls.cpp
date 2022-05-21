@@ -45,12 +45,17 @@ void initEditorControls(){
     delta_mouse_position = glm::dvec2(0,0);
 }
 
+using namespace editor;
+
 void handleEditorControls(Camera &camera, EntityManager &entity_manager, float dt) {
     // Stores the previous state of input, updated at end of function
     static int space_key_state = GLFW_RELEASE;
     static int d_key_state = GLFW_RELEASE;
     static int mouse_left_state = GLFW_RELEASE;
+    static int ctrl_v_state = GLFW_RELEASE;
     static double mouse_left_press_time = glfwGetTime();
+
+    static Id copy_id = NULLID;
 
     bool camera_movement_active = !editor::transform_active;
     ImGuiIO& io = ImGui::GetIO();
@@ -62,8 +67,27 @@ void handleEditorControls(Camera &camera, EntityManager &entity_manager, float d
     glfwGetCursorPos(window, &mouse_position.x, &mouse_position.y);
     delta_mouse_position = mouse_position - delta_mouse_position;
 
+    glfwGetKey(window, GLFW_KEY_DELETE);
+    if(sel_e.i != -1 && glfwGetKey(window, GLFW_KEY_DELETE) == GLFW_PRESS){
+        entity_manager.deleteEntity(editor::sel_e);
+        sel_e = NULLID;
+    }
+    if(sel_e.i != -1 && glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS){
+        copy_id = sel_e;
+    }
+    if(copy_id.i != -1 && ctrl_v_state == GLFW_RELEASE && glfwGetKey(window, GLFW_KEY_V) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS && entity_manager.getEntity(copy_id) != nullptr){
+        auto e = entity_manager.duplicateEntity(copy_id);
+        copy_id = e->id;
+        if((e->type & MESH_ENTITY)){
+            ((MeshEntity*)e)->position += glm::vec3(0.1);
+            if(camera.state == Camera::TYPE::TRACKBALL){
+                sel_e = e->id;
+                camera.target = ((MeshEntity*)e)->position;
+                updateCameraView(camera);
+            }
+        }
+    }
     if(glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS && d_key_state == GLFW_RELEASE){
-        //editor::draw_bt_debug = !editor::draw_bt_debug; 
         editor::draw_debug_wireframe = !editor::draw_debug_wireframe;
     }
     if(glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS && space_key_state == GLFW_RELEASE){
@@ -76,14 +100,14 @@ void handleEditorControls(Camera &camera, EntityManager &entity_manager, float d
             mouse_position = glm::dvec2(window_width/2, window_height/2);
             delta_mouse_position = glm::dvec2(0,0);
 
-            selected_entity = -1;
+            sel_e = NULLID;
         } else if(camera.state == Camera::TYPE::SHOOTER) {
             camera.state = Camera::TYPE::TRACKBALL;
 
             glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
            
-            if(selected_entity != -1){
-                auto s_m_e = (MeshEntity*)entity_manager.getEntity(selected_entity);
+            if(sel_e.i != -1){
+                auto s_m_e = (MeshEntity*)entity_manager.getEntity(sel_e);
                 if(s_m_e != nullptr && s_m_e->type == EntityType::MESH_ENTITY){
                     camera.target = s_m_e->position;
                     updateCameraView(camera);
@@ -93,18 +117,34 @@ void handleEditorControls(Camera &camera, EntityManager &entity_manager, float d
         }
     }
 
-
     if(camera.state == Camera::TYPE::TRACKBALL){
         if (left_mouse_click_release && (glfwGetTime() - mouse_left_press_time) < 0.2) {
             glm::vec3 out_origin;
             glm::vec3 out_direction;
             screenPosToWorldRay(mouse_position, camera.view, camera.projection, out_origin, out_direction);
             
-            selected_entity = -1;
+            sel_e = NULLID;
             float min_collision_distance = std::numeric_limits<float>::max();
             for(int i = 0; i < ENTITY_COUNT; ++i){
-                auto m_e = (MeshEntity*)entity_manager.getEntity(i);
-                if(m_e == nullptr || !(m_e->type & EntityType::MESH_ENTITY)) continue;
+                auto m_e = (MeshEntity*)entity_manager.entities[i];
+                if(m_e == nullptr) continue;
+                // Collision with bounded plane
+                if(m_e->type & EntityType::WATER_ENTITY){
+                    auto w_e = (WaterEntity*)m_e;
+                    float t;
+                    if(!lineIntersectsPlane(w_e->position, glm::vec3(0,1,0), out_origin, out_direction, t)) continue;
+                    auto p = glm::abs((out_origin + out_direction*t) - w_e->position);
+                    if(p.x <= w_e->scale[0][0] && p.z <= w_e->scale[2][2]) {
+                        auto collision_distance = glm::length((out_origin + out_direction*t) - camera.position);
+                        if(collision_distance < min_collision_distance){
+                            min_collision_distance = collision_distance;
+                            sel_e = w_e->id;
+                            camera.target = w_e->position;
+                        }
+                    }
+                    continue;
+                }
+                if(!(m_e->type & EntityType::MESH_ENTITY) || m_e->mesh == nullptr) continue;
 
                 const auto mesh = m_e->mesh;
                 const auto trans = createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
@@ -122,13 +162,13 @@ void handleEditorControls(Camera &camera, EntityManager &entity_manager, float d
                         auto collision_distance = glm::length((out_origin + out_direction*(float)t) - camera.position);
                         if(collision_distance < min_collision_distance){
                             min_collision_distance = collision_distance;
-                            selected_entity = i;
+                            sel_e = m_e->id;
+                            camera.target = m_e->position;
                         }
                     }
                 }
             }
-            if(selected_entity != -1){
-                camera.target = ((MeshEntity*)entity_manager.getEntity(selected_entity))->position;
+            if(sel_e.i != -1){
                 updateCameraView(camera);
                 updateShadowVP(camera);
             }
@@ -220,6 +260,7 @@ void handleEditorControls(Camera &camera, EntityManager &entity_manager, float d
         glfwGetCursorPos(window, &mouse_position.x, &mouse_position.y);
     }
 
+    ctrl_v_state    = glfwGetKey(window, GLFW_KEY_V) == GLFW_PRESS & glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS;
     space_key_state = glfwGetKey(window, GLFW_KEY_SPACE);
     d_key_state     = glfwGetKey(window, GLFW_KEY_D);
     if(mouse_left_state == GLFW_RELEASE && glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT)) mouse_left_press_time = glfwGetTime();

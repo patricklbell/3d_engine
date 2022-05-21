@@ -18,7 +18,7 @@ uniform mat4 shadow_mvp;
 void main(){
     vec4 vertex = vec4(in_vertex, 1.0);
     gl_Position = mvp * vertex;
-	position = gl_Position.xyz;
+	position = (model * vertex).xyz;
     shadow_coord = shadow_mvp * vertex;
 	texcoord = in_texcoord;
 	vec3 T = normalize(vec3(model * vec4(in_tangent, 0.0)));
@@ -30,6 +30,7 @@ void main(){
 	vec3 B = cross(N, T);
 	// Transpose of perpendicular matrix is inverse
 	TBN = mat3(T, B, N);
+    
 }
 
 #endif
@@ -55,12 +56,8 @@ layout (location = 1) out vec4 out_bloom_color;
 uniform sampler2D normal_map;
 uniform sampler2DShadow shadow_map;
 
-#ifndef PBR
-uniform sampler2D diffuse_map;
-#endif
-
-#ifdef PBR
 uniform sampler2D albedo_map;
+#ifdef PBR
 uniform sampler2D metallic_map;
 uniform sampler2D roughness_map;
 uniform sampler2D ao_map;
@@ -238,20 +235,10 @@ void main() {
     vec3 hdr_color = ambient + brdfSchlickGGX(position, normal, albedo, -sun_direction, sun_color);
 #endif
 
-#ifndef BLOOM
-    const float gamma = 1.6;
-
-    // reinhard tone mapping
-    vec3 mapped = hdr_color / (hdr_color + vec3(1.0));
-    
-    // gamma correction 
-    mapped = pow(mapped, vec3(1.0 / gamma));
-    out_color = vec4(mapped, 1.0);
-#endif
+    out_color = vec4(hdr_color, 1.0);
 
 #ifdef BLOOM
-    // If we are doing bloom write to second buffer and do tone mapping and gamma correction in final pass
-    out_color = vec4(hdr_color, 1.0);
+    // If we are doing bloom write to second buffer
     float brightness = dot(hdr_color, vec3(0.2126, 0.7152, 0.0722));
     if(brightness > 1.0)
         out_bloom_color = vec4(hdr_color, 1.0);

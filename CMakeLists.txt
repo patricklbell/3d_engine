@@ -28,19 +28,19 @@ include_directories(
 	external/glm-0.9.7.1/
 	external/glew-2.1.0/include/
 	external/imgui/include/
-	external/bullet-2.82-r2704/src/
+	#	external/CImg-3.0.3_pre021822/
+	#	external/bullet-2.82-r2704/src/
 	external/assimp-5.1.5/include/
-	external/CImg-3.0.3_pre021822/
+	external/stb/
 	include/
 )
-
 set(ALL_LIBS
 	${OPENGL_LIBRARY}
 	glfw
 	GLEW_210
-	BulletDynamics
-    BulletCollision
-    LinearMath
+	#	BulletDynamics
+	#	BulletCollision
+	#	LinearMath
 	assimp
 )
 
@@ -63,13 +63,13 @@ set(SOURCES
 	src/graphics.cpp
 	src/assets.cpp
 
-    external/imgui/imgui_demo.cpp
+	#	external/imgui/imgui_demo.cpp
     external/imgui/imgui_draw.cpp
     external/imgui/imgui_impl_glfw.cpp
     external/imgui/imgui_impl_opengl3.cpp
     external/imgui/imgui_widgets.cpp
 	external/imgui/imgui_tables.cpp
-	external/imgui/ImGuizmo.cpp
+	#	external/imgui/ImGuizmo.cpp
     external/imgui/imgui.cpp
 )
 

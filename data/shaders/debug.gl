@@ -18,6 +18,8 @@ void main()
 
 in vec3 normal;
 
+out vec4 out_color;
+
 uniform vec3 sun_direction;
 uniform vec4 color;
 uniform vec4 color_flash_to;
@@ -34,9 +36,9 @@ void main()
         color1 = mix(color, color_flash_to, (1.0f+sin(2.0f*PI*time - PI * 0.5f)) / 2.0f);
     }
     if(shaded==1.0f){
-        gl_FragColor = vec4((0.3 + max(0.7*dot(normal, -sun_direction), 0))*color1.rgb, color1.a);
+        out_color = vec4((0.3 + max(0.7*dot(normal, -sun_direction), 0))*color1.rgb, color1.a);
     } else {
-        gl_FragColor = color1;
+        out_color = color1;
     }
 } 
 #endif

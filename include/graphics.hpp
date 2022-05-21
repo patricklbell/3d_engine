@@ -5,7 +5,9 @@
 #include <glm/glm.hpp>
 
 #include "globals.hpp"
-#include "entities.hpp"
+
+class EntityManager;
+struct Mesh;
 
 extern int    window_width;
 extern int    window_height;
@@ -43,7 +45,8 @@ void updateCameraView(Camera &camera);
 void updateCameraProjection(Camera &camera);
 
 void initGraphicsPrimitives();
-void drawScreenQuad();
+void drawQuad();
+void drawPlane();
 
 void updateShadowVP(const Camera &camera);
 void createShadowFbo();
@@ -57,8 +60,8 @@ void bindBackbuffer();
 void drawPost(int bloom_buffer_index);
 
 int blurBloomFbo();
-void createBloomFbo();
-void createHdrFbo();
+void createBloomFbo(bool resize=false);
+void createHdrFbo(bool resize=false);
 namespace graphics {
     extern GLuint bloom_fbos[2];
     extern GLuint bloom_buffers[2];
@@ -67,6 +70,8 @@ namespace graphics {
     extern GLuint shadow_fbo;
     extern GLuint shadow_buffer;
     extern glm::mat4x4 shadow_vp;
+    extern Mesh quad;
+    extern Mesh grid;
 }
     
 #endif

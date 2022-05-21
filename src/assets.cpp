@@ -51,7 +51,7 @@ void initDefaultMaterial(){
     unsigned char normal[] = {128, 127, 255};
     default_material->t_normal = create1x1Texture(normal);
 
-    // Note GL_FALSE may work so texture is set to nothing, either way
+    // @speed GL_FALSE may work so texture is set to nothing, either way
     // loading three of the same texture is needless, set them equal if
     // correct values
     unsigned char metallic[] = {0, 0, 0};
@@ -350,12 +350,7 @@ bool loadMesh(Mesh &mesh, std::string path){
 		return false;
 	}
 
-	glGenBuffers(1, &mesh.tangents_vbo);
-	glGenBuffers(1, &mesh.normals_vbo);
-	glGenBuffers(1, &mesh.uvs_vbo);
-	glGenBuffers(1, &mesh.vertices_vbo);
-	glGenBuffers(1, &mesh.indices_vbo);
-	glGenVertexArrays(1, &mesh.vao);
+
 
 	// Allocate arrays for each mesh 
 	mesh.num_materials = scene->mNumMeshes;
@@ -499,7 +494,13 @@ bool loadMesh(Mesh &mesh, std::string path){
         vertices_offset += ai_mesh->mNumVertices;
         indices_offset += ai_mesh->mNumFaces*3;
     }
+	glGenBuffers(1, &mesh.vertices_vbo);
+	glGenBuffers(1, &mesh.indices_vbo);
+	glGenBuffers(1, &mesh.tangents_vbo);
+	glGenBuffers(1, &mesh.normals_vbo);
+	glGenBuffers(1, &mesh.uvs_vbo);
 
+	glGenVertexArrays(1, &mesh.vao);
 	// bind the vao for writing vbos
 	glBindVertexArray(mesh.vao);
 

@@ -24,17 +24,19 @@ namespace graphics{
     GLuint bloom_buffers[2];
     GLuint hdr_fbo;
     GLuint hdr_buffers[2];
+    GLuint hdr_depth;
     GLuint shadow_fbo;
     GLuint shadow_buffer;
     glm::mat4x4 shadow_vp;
     Mesh quad;
+    Mesh plane;
+    Mesh grid;
 }
 // @hardcoded Cascaded shadow maps are better
 static const int SHADOW_SIZE = 2048;
 
 void windowSizeCallback(GLFWwindow* window, int width, int height){
     if(width != window_width || height != window_height) window_resized = true;
-    else                                                 window_resized = false;
 
     window_width  = width;
     window_height = height;
@@ -180,9 +182,11 @@ void bindDrawShadowMap(const EntityManager &entity_manager, const Camera &camera
     glViewport(0, 0, window_width, window_height);
 }
 
-void createBloomFbo(){
-    glGenFramebuffers(2, graphics::bloom_fbos);
-    glGenTextures(2, graphics::bloom_buffers);
+void createBloomFbo(bool resize){
+    if(!resize){
+        glGenFramebuffers(2, graphics::bloom_fbos);
+        glGenTextures(2, graphics::bloom_buffers);
+    }
     for (unsigned int i = 0; i < 2; i++){
         glBindFramebuffer(GL_FRAMEBUFFER, graphics::bloom_fbos[i]);
         glBindTexture(GL_TEXTURE_2D, graphics::bloom_buffers[i]);
@@ -200,14 +204,18 @@ void createBloomFbo(){
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-void createHdrFbo(){
+void createHdrFbo(bool resize){
     int num_buffers = (int)shader::unified_bloom + 1;
-    glGenFramebuffers(1, &graphics::hdr_fbo);
-    glBindFramebuffer(GL_FRAMEBUFFER, graphics::hdr_fbo);
-    glGenTextures(num_buffers, graphics::hdr_buffers);
+    if(!resize){
+        glGenFramebuffers(1, &graphics::hdr_fbo);
+        glBindFramebuffer(GL_FRAMEBUFFER, graphics::hdr_fbo);
+
+        glGenTextures(num_buffers, graphics::hdr_buffers);
+    }
     for (unsigned int i = 0; i < num_buffers; i++){
         glBindTexture(GL_TEXTURE_2D, graphics::hdr_buffers[i]);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, window_width, window_height, 0, GL_RGBA, GL_FLOAT, NULL);
+        //glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, 4, GL_RGBA16F, window_width, window_height, GL_TRUE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -215,12 +223,19 @@ void createHdrFbo(){
         // attach texture to framebuffer
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0 + i, GL_TEXTURE_2D, graphics::hdr_buffers[i], 0);
     }
-    // create and attach depth buffer (renderbuffer)
-    GLuint rbo_depth;
-    glGenRenderbuffers(1, &rbo_depth);
-    glBindRenderbuffer(GL_RENDERBUFFER, rbo_depth);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT, window_width, window_height);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, rbo_depth);
+    if(!resize){
+        // create and attach depth buffer
+        glGenTextures(1, &graphics::hdr_depth);
+    }
+    glBindTexture(GL_TEXTURE_2D, graphics::hdr_depth);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH24_STENCIL8, window_width, window_height, 0, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8, NULL);
+    //glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, 4, GL_DEPTH24_STENCIL8, window_width, window_height, GL_TRUE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, graphics::hdr_depth, 0);  
+
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE){
         printf("Hdr framebuffer not complete.\n");
     }
@@ -261,11 +276,46 @@ void initGraphicsPrimitives(){
 
     graphics::quad.draw_start[0] = 0; 
     graphics::quad.draw_count[0] = 4;
-}
 
-void drawScreenQuad(){
+    // @hardcoded
+    static const float plane_vertices[] = {
+        // positions     
+        -1.0f, 0.0f,  1.0f,
+        -1.0f, 0.0f, -1.0f,
+         1.0f, 0.0f,  1.0f,
+         1.0f, 0.0f, -1.0f,
+    };
+    glGenVertexArrays(1, &graphics::plane.vao);
+    GLuint plane_vbo;
+    glGenBuffers(1, &plane_vbo);
+
+    glBindVertexArray(graphics::plane.vao);
+    glBindBuffer(GL_ARRAY_BUFFER, plane_vbo);
+
+    glBufferData(GL_ARRAY_BUFFER, sizeof(plane_vertices), &plane_vertices, GL_STATIC_DRAW);
+
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
+
+    glBindVertexArray(0);
+
+	graphics::plane.draw_count = (GLint*)malloc(sizeof(GLint));
+	graphics::plane.draw_start = (GLint*)malloc(sizeof(GLint));
+    graphics::plane.draw_mode = GL_TRIANGLE_STRIP;
+    graphics::plane.draw_type = GL_UNSIGNED_SHORT;
+
+    graphics::plane.draw_start[0] = 0; 
+    graphics::plane.draw_count[0] = 4;
+
+    loadMesh(graphics::grid, "data/models/grid.obj");
+}
+void drawPlane(){
+    glBindVertexArray(graphics::plane.vao);
+    glDrawArrays(graphics::plane.draw_mode, graphics::plane.draw_start[0], graphics::plane.draw_count[0]);
+}
+void drawQuad(){
     glBindVertexArray(graphics::quad.vao);
-    glDrawArrays(graphics::quad.draw_mode, graphics::quad.draw_start[0], graphics::quad.draw_count[0]);
+    glDrawArrays(graphics::quad.draw_mode, graphics::quad.draw_start[0],  graphics::quad.draw_count[0]);
 }
 
 // Returns the index of the resulting blur buffer in bloom_buffers
@@ -282,7 +332,7 @@ int blurBloomFbo(){
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, first_iteration ? graphics::hdr_buffers[1] : graphics::bloom_buffers[!horizontal]); 
 
-        drawScreenQuad();
+        drawQuad();
         horizontal = !horizontal;
         if (first_iteration) first_iteration = false;
     }
@@ -291,11 +341,7 @@ int blurBloomFbo(){
 }
 
 void bindHdr(){
-    if(shader::unified_bloom){
-        glBindFramebuffer(GL_FRAMEBUFFER, graphics::hdr_fbo);
-    } else {
-        glDrawBuffer(GL_COLOR_ATTACHMENT0);
-    }
+    glBindFramebuffer(GL_FRAMEBUFFER, graphics::hdr_fbo);
 }
 
 void clearFramebuffer(const glm::vec4 &color){
@@ -321,12 +367,21 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Camera &camera){
     glActiveTexture(GL_TEXTURE5);
     glBindTexture(GL_TEXTURE_2D, graphics::shadow_buffer);
 
+    // @ In general we could store lists of needed types with the entity_manager
+    std::vector<int> water_ids;
+    bool draw_water = false;
+
     // @speed already calculated when performing dynamic shadow mapping
     auto vp = camera.projection * camera.view;
     for (int i = 0; i < ENTITY_COUNT; ++i) {
         auto m_e = (MeshEntity*)entity_manager.entities[i];
-        if(m_e == nullptr || !(m_e->type & EntityType::MESH_ENTITY))
+        if(m_e == nullptr) continue;
+        if(m_e->type & EntityType::WATER_ENTITY){
+            water_ids.push_back(i); 
+            draw_water = true;
             continue;
+        }
+        if(!(m_e->type & EntityType::MESH_ENTITY) || m_e->mesh == nullptr) continue;
 
         auto trans = createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
         auto shadow_mvp = graphics::shadow_vp * trans;
@@ -360,24 +415,63 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Camera &camera){
         }
     }
 
-    // Reset gl state
-    glDepthMask(GL_FALSE);
-    glDisable(GL_DEPTH_TEST);
+    if(draw_water){
+        glDepthMask(GL_FALSE);
+        glUseProgram(shader::water_programs[shader::unified_bloom]);
+        glUniform3fv(shader::water_uniforms[shader::unified_bloom].sun_color, 1, &sun_color[0]);
+        glUniform3fv(shader::water_uniforms[shader::unified_bloom].sun_direction, 1, &sun_direction[0]);
+        glUniform3fv(shader::water_uniforms[shader::unified_bloom].camera_position, 1, &camera.position[0]);
+        glUniform2f(shader::water_uniforms[shader::unified_bloom].resolution, window_width, window_height);
+
+        // @debug the geometry shader and tesselation in future
+        //glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, graphics::hdr_buffers[0]);
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, graphics::hdr_depth);
+    
+        // @note Sort by depth
+        for(auto &id : water_ids){
+            auto e = (WaterEntity*)entity_manager.entities[id];
+            auto trans = createModelMatrix(e->position, glm::quat(), e->scale);
+            auto shadow_mvp = graphics::shadow_vp * trans;
+            glUniformMatrix4fv(shader::water_uniforms[shader::unified_bloom].shadow_mvp, 1, GL_FALSE, &shadow_mvp[0][0]);
+
+            auto mvp = vp * trans;
+            glUniformMatrix4fv(shader::water_uniforms[shader::unified_bloom].mvp, 1, GL_FALSE, &mvp[0][0]);
+            glUniformMatrix4fv(shader::water_uniforms[shader::unified_bloom].model, 1, GL_FALSE, &trans[0][0]);
+            glUniform1f(shader::water_uniforms[shader::unified_bloom].time, glfwGetTime());
+            glUniform4fv(shader::water_uniforms[shader::unified_bloom].shallow_color, 1, &e->shallow_color[0]);
+            glUniform4fv(shader::water_uniforms[shader::unified_bloom].deep_color, 1, &e->deep_color[0]);
+            glUniform4fv(shader::water_uniforms[shader::unified_bloom].foam_color, 1, &e->foam_color[0]);
+
+            glBindVertexArray(graphics::grid.vao);
+            glDrawElements(graphics::grid.draw_mode, graphics::grid.draw_count[0], graphics::grid.draw_type, (GLvoid*)(sizeof(GLubyte)*graphics::grid.draw_start[0]));
+        }
+        //glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+    }
 }
 
 void bindBackbuffer(){
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-void drawPost(int bloom_buffer_index){
+void drawPost(int bloom_buffer_index=0){
     // Draw screen space quad so clearing is unnecessary
     //glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glDepthMask(GL_FALSE);
+    glDisable(GL_DEPTH_TEST);
 
-    glUseProgram(shader::post_program);
+    glUseProgram(shader::post_program[(int)shader::unified_bloom]);
+
+    glUniform2f(shader::post_uniforms[shader::unified_bloom].resolution, window_width, window_height);
+    
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, graphics::hdr_buffers[0]);
-    glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_2D, graphics::bloom_buffers[bloom_buffer_index]);
-    drawScreenQuad();
+    if(shader::unified_bloom){
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, graphics::bloom_buffers[bloom_buffer_index]);
+    }
+    drawQuad();
 }

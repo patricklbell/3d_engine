@@ -59,17 +59,16 @@ target_link_libraries(GLEW_210
 ### ASSIMP ###
 # AssImp already has a CMakeLists.txt so let's use these
 
-set(ASSIMP_NO_EXPORT ON)
 add_subdirectory( assimp-5.1.5 )
 
 ### BULLET ###
 # Bullet already has a CMakeLists.txt so let's use these
 
-set(BULLET_VERSION 2.82)
-include_directories(
-	bullet-2.82-r2704/src
-)
-add_subdirectory( bullet-2.82-r2704/src/BulletSoftBody )
-add_subdirectory( bullet-2.82-r2704/src/BulletCollision )
-add_subdirectory( bullet-2.82-r2704/src/BulletDynamics )
-add_subdirectory( bullet-2.82-r2704/src/LinearMath )
+#set(BULLET_VERSION 2.82)
+#include_directories(
+#	bullet-2.82-r2704/src
+#)
+#add_subdirectory( bullet-2.82-r2704/src/BulletSoftBody )
+#add_subdirectory( bullet-2.82-r2704/src/BulletCollision )
+#add_subdirectory( bullet-2.82-r2704/src/BulletDynamics )
+#add_subdirectory( bullet-2.82-r2704/src/LinearMath )

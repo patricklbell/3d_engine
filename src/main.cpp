@@ -36,7 +36,6 @@ GLFWwindow* window;
 #include "entities.hpp"
 
 // Defined in globals.hpp
-int selected_entity = -1;
 std::string glsl_version;
 glm::vec3 sun_color;
 glm::vec3 sun_direction;
@@ -58,8 +57,8 @@ int main() {
 
     glsl_version = "";
 #ifdef __APPLE__
-    // GL 3.2 + GLSL 150
-    glsl_version = "#version 150";
+    // GL 4.1 + GLSL 410
+    glsl_version = "#version 410\n";
     glfwWindowHint( // required on Mac OS
         GLFW_OPENGL_FORWARD_COMPAT,
         GL_TRUE
@@ -67,13 +66,13 @@ int main() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
 #elif __linux__
-    // GL 3.2 + GLSL 150
-    glsl_version = "#version 150";
+    // GL 4.3 + GLSL 430
+    glsl_version = "#version 430\n";
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 #elif _WIN32
     // GL 3.0 + GLSL 130
-    glsl_version = "#version 130";
+    glsl_version = "#version 130\n";
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
 #endif
@@ -108,11 +107,13 @@ int main() {
     glfwGetWindowSize(window, &window_width, &window_height);
     glfwSetWindowSizeCallback(window, windowSizeCallback);
 
-    initGraphicsPrimitives();
+    glEnable(GL_MULTISAMPLE);
+
     initDefaultMaterial();
+    initGraphicsPrimitives();
     createShadowFbo();
+    createHdrFbo();
     if(shader::unified_bloom){
-        createHdrFbo();
         createBloomFbo();
     }
 
@@ -129,6 +130,7 @@ int main() {
     // Load shaders
     loadNullShader("data/shaders/null.gl");
     loadUnifiedShader("data/shaders/unified.gl");
+    loadWaterShader("data/shaders/water.gl");
     loadGaussianBlurShader("data/shaders/gaussian_blur.gl");
     loadPostShader("data/shaders/post.gl");
     loadDebugShader("data/shaders/debug.gl");
@@ -138,6 +140,7 @@ int main() {
     std::map<const std::string, std::pair<shader::TYPE, std::filesystem::file_time_type>> shader_update_times = {
         {"data/shaders/null.gl", {shader::TYPE::NULL_SHADER, empty_file_time}},
         {"data/shaders/unified.gl", {shader::TYPE::UNIFIED_SHADER, empty_file_time}},
+        {"data/shaders/water.gl", {shader::TYPE::WATER_SHADER, empty_file_time}},
         {"data/shaders/gaussian_blur.gl", {shader::TYPE::GAUSSIAN_BLUR_SHADER, empty_file_time}},
         {"data/shaders/post.gl", {shader::TYPE::POST_SHADER, empty_file_time}},
         {"data/shaders/debug.gl", {shader::TYPE::DEBUG_SHADER, empty_file_time}},
@@ -158,11 +161,7 @@ int main() {
     EntityManager entity_manager;
 
     // Create instance
-    int id = entity_manager.getFreeId();
-    entity_manager.entities[id] = new MeshEntity(id);
-    auto m_entity = (MeshEntity*)entity_manager.getEntity(id);
-    m_entity->mesh = &((MeshAsset*)assets[0])->mesh;
-    m_entity->position = glm::vec3(1.0,0.0,0.0);
+    entity_manager.setEntity(entity_manager.getFreeId().i, new WaterEntity());
 
     // @todo Skymap loading and rendering
     //GLuint tSkybox = load_cubemap({"Skybox1.bmp", "Skybox2.bmp","Skybox3.bmp","Skybox4.bmp","Skybox5.bmp","Skybox6.bmp"});
@@ -172,6 +171,7 @@ int main() {
 
     double last_time = glfwGetTime();
     double last_filesystem_hotswap_check = last_time;
+    window_resized = true;
     do {
         double current_time = glfwGetTime();
         float true_dt = current_time - last_time;
@@ -181,9 +181,9 @@ int main() {
         if (window_resized){
             updateCameraProjection(camera);
             updateShadowVP(camera);
+            createHdrFbo(true);
             if(shader::unified_bloom){
-                createHdrFbo();
-                createBloomFbo();
+                createBloomFbo(true);
             }
         }
 
@@ -199,6 +199,9 @@ int main() {
                             break;
                         case shader::TYPE::UNIFIED_SHADER:
                             loadUnifiedShader(pair.first.c_str());
+                            break;
+                        case shader::TYPE::WATER_SHADER:
+                            loadWaterShader(pair.first.c_str());
                             break;
                         case shader::TYPE::GAUSSIAN_BLUR_SHADER:
                             loadGaussianBlurShader(pair.first.c_str());
@@ -222,16 +225,20 @@ int main() {
         drawUnifiedHdr(entity_manager, camera);
 
         handleEditorControls(camera, entity_manager, true_dt);
+
+        int blur_buffer_index = 0;
         if(shader::unified_bloom){
-            int blur_buffer_index = blurBloomFbo();
-            bindBackbuffer();
-            drawPost(blur_buffer_index);
+            blur_buffer_index = blurBloomFbo();
         }
+
+        bindBackbuffer();
+        drawPost(blur_buffer_index);
 
         drawEditorGui(camera, entity_manager, assets);
 
         // Swap backbuffer with front buffer
         glfwSwapBuffers(window);
+        window_resized = false;
         glfwPollEvents();
 
         entity_manager.propogateChanges();

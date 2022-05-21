@@ -3,29 +3,114 @@ layout (location = 0) in vec3 in_position;
 layout (location = 1) in vec2 in_texcoord;
 
 out vec2 texcoord;
+out vec2 v_rgbNW;
+out vec2 v_rgbNE;
+out vec2 v_rgbSW;
+out vec2 v_rgbSE;
+out vec2 v_rgbM;
+
+uniform vec2 resolution;
 
 void main()
 {
     texcoord = in_texcoord;
     gl_Position = vec4(in_position.xyz, 1.0);
+
+    //compute the texture coords and send them to fragment 
+	vec2 inverse_vp = 1.0 / resolution.xy;
+    vec2 fragcoord = texcoord * resolution;
+	v_rgbNW = (fragcoord + vec2(-1.0, -1.0)) * inverse_vp;
+	v_rgbNE = (fragcoord + vec2(1.0, -1.0)) * inverse_vp;
+	v_rgbSW = (fragcoord + vec2(-1.0, 1.0)) * inverse_vp;
+	v_rgbSE = (fragcoord + vec2(1.0, 1.0)) * inverse_vp;
+	v_rgbM = vec2(fragcoord * inverse_vp);
 }
 #endif
 
 #ifdef COMPILING_FS
 
 in vec2 texcoord;
-
+in vec2 v_rgbNW;
+in vec2 v_rgbNE;
+in vec2 v_rgbSW;
+in vec2 v_rgbSE;
+in vec2 v_rgbM;
 out vec4 out_color;
 
-uniform sampler2D   pixel_map;
+uniform vec2 resolution;
+uniform sampler2D   screen_map;
+#ifdef BLOOM
 uniform sampler2D   bloom_map;
+#endif
+
+// from: https://github.com/mattdesl/glsl-fxaa/blob/master/fxaa.glsl
+#ifndef FXAA_REDUCE_MIN
+    #define FXAA_REDUCE_MIN   (1.0/ 128.0)
+#endif
+#ifndef FXAA_REDUCE_MUL
+    #define FXAA_REDUCE_MUL   (1.0 / 8.0)
+#endif
+#ifndef FXAA_SPAN_MAX
+    #define FXAA_SPAN_MAX     8.0
+#endif
+
+//optimized version for mobile, where dependent 
+//texture reads can be a bottleneck
+vec4 fxaa(sampler2D tex, vec2 coord) {
+    vec4 color;
+    mediump vec2 inverse_vp = vec2(1.0 / resolution.x, 1.0 / resolution.y);
+    vec3 rgbNW = texture(tex, v_rgbNW).xyz;
+    vec3 rgbNE = texture(tex, v_rgbNE).xyz;
+    vec3 rgbSW = texture(tex, v_rgbSW).xyz;
+    vec3 rgbSE = texture(tex, v_rgbSE).xyz;
+    vec4 tex_col = texture(tex, v_rgbM);
+    vec3 rgbM  = tex_col.xyz;
+    vec3 luma = vec3(0.299, 0.587, 0.114);
+    float lumaNW = dot(rgbNW, luma);
+    float lumaNE = dot(rgbNE, luma);
+    float lumaSW = dot(rgbSW, luma);
+    float lumaSE = dot(rgbSE, luma);
+    float lumaM  = dot(rgbM,  luma);
+    float lumaMin = min(lumaM, min(min(lumaNW, lumaNE), min(lumaSW, lumaSE)));
+    float lumaMax = max(lumaM, max(max(lumaNW, lumaNE), max(lumaSW, lumaSE)));
+    
+    mediump vec2 dir;
+    dir.x = -((lumaNW + lumaNE) - (lumaSW + lumaSE));
+    dir.y =  ((lumaNW + lumaSW) - (lumaNE + lumaSE));
+    
+    float dirReduce = max((lumaNW + lumaNE + lumaSW + lumaSE) *
+                          (0.25 * FXAA_REDUCE_MUL), FXAA_REDUCE_MIN);
+    
+    float rcpDirMin = 1.0 / (min(abs(dir.x), abs(dir.y)) + dirReduce);
+    dir = min(vec2(FXAA_SPAN_MAX, FXAA_SPAN_MAX),
+              max(vec2(-FXAA_SPAN_MAX, -FXAA_SPAN_MAX),
+              dir * rcpDirMin)) * inverse_vp;
+    
+    vec3 rgbA = 0.5 * (
+        texture(tex, coord * inverse_vp + dir * (1.0 / 3.0 - 0.5)).xyz +
+        texture(tex, coord * inverse_vp + dir * (2.0 / 3.0 - 0.5)).xyz);
+    vec3 rgbB = rgbA * 0.5 + 0.25 * (
+        texture(tex, coord * inverse_vp + dir * -0.5).xyz +
+        texture(tex, coord * inverse_vp + dir * 0.5).xyz);
+
+    float lumaB = dot(rgbB, luma);
+    if ((lumaB < lumaMin) || (lumaB > lumaMax))
+        color = vec4(rgbA, tex_col.a);
+    else
+        color = vec4(rgbB, tex_col.a);
+    return color;
+}
 
 void main()
 {
-    vec3 hdr_color = texture(pixel_map, texcoord).xyz;
+    //vec3 hdr_color = texture(screen_map, texcoord).xyz;
+    vec3 hdr_color = fxaa(screen_map, gl_FragCoord.xy).xyz;
+
+#ifdef BLOOM
+    // Don't fxaa bloom since it is blurred
     vec3 bloom_color = texture(bloom_map, texcoord).xyz;
     hdr_color += bloom_color; // additive blending 
-
+#endif
     const float gamma = 1.6;
 
     // reinhard tone mapping

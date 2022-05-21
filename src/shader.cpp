@@ -18,14 +18,19 @@
 #include "shader.hpp"
 #include "utilities.hpp"
 #include "graphics.hpp"
+#include "globals.hpp"
 
 namespace shader {
+	bool unified_bloom = false;
+
     GLuint null_program;
     struct NullUniforms null_uniforms;
 
     GLuint unified_programs[2];
     struct UnifiedUniforms unified_uniforms[2];
-	bool unified_bloom = false;
+
+	GLuint water_programs[2];
+    struct WaterUniforms water_uniforms[2];
 
 	GLuint gaussian_blur_program;
 	struct GaussianBlurUniforms gaussian_blur_uniforms;
@@ -33,15 +38,15 @@ namespace shader {
 	GLuint debug_program;
 	struct DebugUniforms debug_uniforms;
 
-	GLuint post_program;
+	GLuint post_program[2];
+	struct PostUniforms post_uniforms[2];
 }
 
 using namespace shader;
 
-GLuint loadShader(std::string vertex_fragment_file_path, std::string macro_prepends="") {
+GLuint loadShader(std::string vertex_fragment_file_path, std::string macro_prepends="", bool geometry=false) {
 	const char *path = vertex_fragment_file_path.c_str();
 	printf("Loading shader %s.\n", path);
-	const char *version_macro  = "#version 330 core \n";
 	const char *fragment_macro = "#define COMPILING_FS 1\n";
 	const char *vertex_macro   = "#define COMPILING_VS 1\n";
 	
@@ -71,22 +76,23 @@ GLuint loadShader(std::string vertex_fragment_file_path, std::string macro_prepe
 
 	printf("Compiling and linking shader: %s\n", path);
 
-    char *vertex_shader_code[] = {(char*)version_macro, (char*)vertex_macro, (char*)macro_prepends.c_str(), shader_code};
+    char *vertex_shader_code[] = {(char*)glsl_version.c_str(), (char*)vertex_macro, (char*)macro_prepends.c_str(), shader_code};
 
 	glShaderSource(vertex_shader_id, 4, vertex_shader_code, NULL);
 	glCompileShader(vertex_shader_id);
 
 	glGetShaderiv(vertex_shader_id, GL_INFO_LOG_LENGTH, &info_log_length);
 	if ( info_log_length > 0 ){
+		GLuint fragment_shader_id = glCreateShader(GL_FRAGMENT_SHADER);
 		char *vertex_shader_error_message = (char *)malloc(sizeof(char) * (info_log_length+1));
 		glGetShaderInfoLog(vertex_shader_id, info_log_length, NULL, vertex_shader_error_message);
-		fprintf(stderr, "%s\n", vertex_shader_error_message);
+		fprintf(stderr, "Vertex shader:\n%s\n", vertex_shader_error_message);
 		free(vertex_shader_error_message);
     	free(shader_code);
 		return GL_FALSE;
 	}
 
-	char *fragment_shader_code[] = {(char*)version_macro, (char*)fragment_macro, (char*)macro_prepends.c_str(), shader_code};
+	char *fragment_shader_code[] = {(char*)glsl_version.c_str(), (char*)fragment_macro, (char*)macro_prepends.c_str(), shader_code};
 
 	glShaderSource(fragment_shader_id, 4, fragment_shader_code, NULL);
 	glCompileShader(fragment_shader_id);
@@ -95,14 +101,36 @@ GLuint loadShader(std::string vertex_fragment_file_path, std::string macro_prepe
 	if ( info_log_length > 0 ){
 		char *fragment_shader_error_message = (char *)malloc(sizeof(char) * (info_log_length+1));
 		glGetShaderInfoLog(fragment_shader_id, info_log_length, NULL, fragment_shader_error_message);
-		fprintf(stderr, "%s\n", fragment_shader_error_message);
+		fprintf(stderr, "Fragment shader:\n%s\n", fragment_shader_error_message);
 		free(fragment_shader_error_message);
     	free(shader_code);
 		return GL_FALSE;
 	}
 
+	GLuint geometry_shader_id;
+	if(geometry){
+		printf("Compiling additional geometry shader.\n");
+		const char *geometry_macro = "#define COMPILING_GS 1\n";
+		geometry_shader_id = glCreateShader(GL_GEOMETRY_SHADER);
+		char *geometry_shader_code[] = {(char*)glsl_version.c_str(), (char*)geometry_macro, (char*)macro_prepends.c_str(), shader_code};
+
+		glShaderSource(geometry_shader_id, 4, geometry_shader_code, NULL);
+		glCompileShader(geometry_shader_id);
+
+		glGetShaderiv(geometry_shader_id, GL_INFO_LOG_LENGTH, &info_log_length);
+		if ( info_log_length > 0 ){
+			char *geometry_shader_error_message = (char *)malloc(sizeof(char) * (info_log_length+1));
+			glGetShaderInfoLog(geometry_shader_id, info_log_length, NULL, geometry_shader_error_message);
+			fprintf(stderr, "Geometry shader:\n%s\n", geometry_shader_error_message);
+			free(geometry_shader_error_message);
+			free(shader_code);
+			return GL_FALSE;
+		}
+	}
+
 	GLuint program_id = glCreateProgram();
 	glAttachShader(program_id, vertex_shader_id);
+	if(geometry) glAttachShader(program_id, geometry_shader_id);
 	glAttachShader(program_id, fragment_shader_id);
 	glLinkProgram(program_id);
 
@@ -116,29 +144,34 @@ GLuint loadShader(std::string vertex_fragment_file_path, std::string macro_prepe
 		return GL_FALSE;
 	}
 
-
 	glDetachShader(program_id, vertex_shader_id);
+	if(geometry) glDetachShader(program_id, geometry_shader_id);
 	glDetachShader(program_id, fragment_shader_id);
 	
 	glDeleteShader(vertex_shader_id);
+	if(geometry) glDeleteShader(geometry_shader_id);
 	glDeleteShader(fragment_shader_id);
 
 	return program_id;
 }
 void loadPostShader(std::string path){
-	auto tmp = post_program;
-	// Create and compile our GLSL program from the shaders
-	post_program = loadShader(path);
-	if(post_program == GL_FALSE) {
-		printf("Failed to load post shader\n");
-		post_program = tmp;
-		return;
-	}
+	static const std::string macros[] = {"", "#define BLOOM 1\n"};
+	for(int i = 0; i < 2; i++){
+		// Create and compile our GLSL program from the shaders
+		auto tmp = post_program[i];
+		post_program[i] = loadShader(path, macros[i]);
+		if(post_program[i] == GL_FALSE) {
+			printf("Failed to load post shader\n");
+			post_program[i] = tmp;
+			return;
+		}
+		post_uniforms[i].resolution = glGetUniformLocation(post_program[i], "resolution");
 
-	glUseProgram(post_program);
-	// Set fixed locations for textures in GL_TEXTUREi
-	glUniform1i(glGetUniformLocation(post_program, "pixel_map"), 0);
-	glUniform1i(glGetUniformLocation(post_program, "bloom_map"),  1);
+		glUseProgram(post_program[i]);
+		// Set fixed locations for textures in GL_TEXTUREi
+		glUniform1i(glGetUniformLocation(post_program[i], "pixel_map"), 0);
+		glUniform1i(glGetUniformLocation(post_program[i], "bloom_map"),  1);
+	}
 }
 void loadDebugShader(std::string path){
 	auto tmp = debug_program;
@@ -218,11 +251,42 @@ void loadUnifiedShader(std::string path){
 		glUniform1i(glGetUniformLocation(unified_programs[i], "shadow_map"),  5);
 	}
 }
+void loadWaterShader(std::string path){
+	static const std::string macros[] = {"", "#define BLOOM 1\n"};
+	for(int i = 0; i < 2; i++){
+		// Create and compile our GLSL program from the shaders
+		auto tmp = water_programs[i];
+		water_programs[i] = loadShader(path, macros[i]);
+		if(water_programs[i] == GL_FALSE) {
+			water_programs[i] = tmp;
+			return;
+		}
+		// Grab uniforms to modify during rendering
+		water_uniforms[i].mvp   = glGetUniformLocation(water_programs[i], "mvp");
+		water_uniforms[i].shadow_mvp   = glGetUniformLocation(water_programs[i], "shadow_mvp");
+		water_uniforms[i].model = glGetUniformLocation(water_programs[i], "model");
+		water_uniforms[i].sun_color = glGetUniformLocation(water_programs[i], "sun_color");
+		water_uniforms[i].sun_direction = glGetUniformLocation(water_programs[i], "sun_direction");
+		water_uniforms[i].camera_position = glGetUniformLocation(water_programs[i], "camera_position");
+		water_uniforms[i].time = glGetUniformLocation(water_programs[i], "time");
+		water_uniforms[i].shallow_color = glGetUniformLocation(water_programs[i], "shallow_color");
+		water_uniforms[i].deep_color = glGetUniformLocation(water_programs[i], "deep_color");
+		water_uniforms[i].foam_color = glGetUniformLocation(water_programs[i], "foam_color");
+		water_uniforms[i].resolution = glGetUniformLocation(water_programs[i], "resolution");
+		
+		glUseProgram(water_programs[i]);
+		// Set fixed locations for textures in GL_TEXTUREi
+		glUniform1i(glGetUniformLocation(water_programs[i], "shadow_map"),  5);
+		glUniform1i(glGetUniformLocation(water_programs[i], "screen_map"),  0);
+		glUniform1i(glGetUniformLocation(water_programs[i], "depth_map"),  1);
+	}
+}
 void deleteShaderPrograms(){
     glDeleteProgram(null_program);
     glDeleteProgram(debug_program);
     glDeleteProgram(unified_programs[0]);
     glDeleteProgram(unified_programs[1]);
     glDeleteProgram(gaussian_blur_program);
-	glDeleteProgram(post_program);
+	glDeleteProgram(post_program[0]);
+	glDeleteProgram(post_program[1]);
 }

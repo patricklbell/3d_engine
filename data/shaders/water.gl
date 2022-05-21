@@ -1,0 +1,644 @@
+#if COMPILING_VS
+
+layout (location = 0) in vec3 in_vertex;
+layout (location = 3) in vec2 in_texcoord;
+
+out VS_FS {
+  vec3 position;
+  vec2 texcoord;
+  vec4 shadow_coord;
+  vec3 vertex;
+} vs_out;
+
+uniform mat4 model;
+uniform mat4 mvp;
+uniform mat4 shadow_mvp;
+uniform float time;
+
+vec3 gwaves(in vec3 v) {
+    const int wn = 1;
+    const vec2  d[] = {normalize(vec2(0.2, 0.4))};
+    const float a[] = {0.04};
+    const float q[] = {0.7};
+    const float p[] = {0.7};
+    const float w[] = {20.0};
+
+    vec3 res = v;
+    for(int i = 0; i < wn; i++){
+        float c1 = dot(w[i]*d[i], v.xz) + p[i]*time;
+        float c2 = q[i]*a[i];
+        res.x += c2*d[i].x * v.x*cos(c1);
+        res.z += c2*d[i].y * v.z*cos(c1);
+
+        res.y += a[i]*sin(c1);
+    }
+    return res;
+}
+
+void main(){
+    vec3 vertex = gwaves(in_vertex);
+    vec4 v = vec4(vertex, 1.0);
+    gl_Position = mvp * v;
+    vs_out.position = (model * v).xyz;
+    vs_out.shadow_coord = shadow_mvp * v;
+    vs_out.vertex = vertex;
+    vs_out.texcoord = in_texcoord;
+}
+
+#endif
+
+// Essentially a tesselation shader, but as geometry shader, make into tesselation which has lod for performance
+//#if COMPILING_GS
+//
+//#define WAVE_STRENGTH vec2(0.45,  0.45)
+//#define WAVE_FREQ     vec2(14.0, 14.0)
+//#define WAVE_FACTOR   vec2(1.0,  2.0)
+//#define TIME_FACTOR   vec2(1.1,  2.0)
+//
+//#define DIVISIONS     10.0
+//
+//layout (triangles) in;
+//// Note max vertices are unique vertices given by n*(n + 2)
+//layout (triangle_strip, max_vertices = 120) out;
+//
+//in VS_GS
+//{
+//  vec2 texcoord;
+//} vs_in[];
+//
+//out GS_FS
+//{
+//  vec3 position;
+//  vec2 texcoord;
+//  vec4 shadow_coord;
+//  vec3 vertex;
+//} gs_out;
+//
+//
+//uniform float time;
+//uniform mat4 mvp;
+//uniform mat4 shadow_mvp;
+//uniform mat4 model;
+//
+//// https://developer.nvidia.com/gpugems/gpugems/part-i-natural-effects/chapter-1-effective-water-simulation-physical-models
+//void gwaves(inout vec3 v) {
+//  const int n = 1;
+//  const vec2  d[] = {vec2(0.2, 0.5)};
+//  const float a[] = {0.3};
+//  const float q[] = {1.0};
+//  const float p[] = {1.0};
+//  const float w[] = {6.0};
+//  for(int i = 0; i < n; i++){
+//    float c1 = dot(w[i]*d[i], v.xz) + p[i]*time*0.9;
+//    float c2 = q[i]*a[i];
+//    v.x += c2*d[i].x * v.x*cos(c1);
+//    v.z += c2*d[i].y * v.z*cos(c1);
+//
+//    v.y += a[i]*sin(c1);
+//  }
+//}
+//
+//void main() {
+//  vec3 leg2 = gl_in[1].gl_Position.xyz - gl_in[0].gl_Position.xyz;
+//  vec3 leg1 = gl_in[1].gl_Position.xyz - gl_in[2].gl_Position.xyz;
+//  vec3 leg3 = gl_in[2].gl_Position.xyz - gl_in[0].gl_Position.xyz;
+//  vec3 origin;
+//  if(dot(leg2, leg2) > dot(leg1, leg1)){
+//    leg1 = leg3;
+//    origin = gl_in[0].gl_Position.xyz;
+//  } else {
+//    leg2 = leg3;
+//    leg2 *= -1.0;
+//    origin = gl_in[2].gl_Position.xyz;
+//  }
+//  leg1 /= DIVISIONS;
+//  leg2 /= DIVISIONS;
+//
+//
+//  vec4 v;
+//  for(float x = 0.0; x < DIVISIONS; x++){
+//    for(float y = 0.0; y < DIVISIONS - x; y++){
+//      gs_out.vertex = origin + y*leg1 + x*leg2;
+//      gwaves(gs_out.vertex);
+//      v = vec4(gs_out.vertex, 1.0);
+//      gl_Position = mvp * v;
+//      gs_out.position = (model * v).xyz;
+//      gs_out.shadow_coord = shadow_mvp * v;
+//      gs_out.texcoord = vec2(y/DIVISIONS, x/DIVISIONS);
+//      EmitVertex();
+//      gs_out.vertex = origin + y*leg1 + (x+1.0)*leg2;
+//      gwaves(gs_out.vertex);
+//      v = vec4(gs_out.vertex, 1.0);
+//      gl_Position = mvp * v;
+//      gs_out.position = (model * v).xyz;
+//      gs_out.shadow_coord = shadow_mvp * v;
+//      gs_out.texcoord = vec2(y/DIVISIONS, (x+1.0)/DIVISIONS);
+//      EmitVertex();
+//    }
+//    gs_out.vertex = origin + (DIVISIONS - x)*leg1 + x*leg2;
+//    gwaves(gs_out.vertex);
+//    v = vec4(gs_out.vertex, 1.0);
+//    gl_Position = mvp * v;
+//    gs_out.position = (model * v).xyz;
+//    gs_out.shadow_coord = shadow_mvp * v;
+//    gs_out.texcoord = vec2((DIVISIONS-x)/DIVISIONS, x/DIVISIONS);
+//    EmitVertex();
+//    EndPrimitive();
+//  }
+//}  
+//
+//#endif
+
+#if COMPILING_FS
+
+#define PI              3.14159265358979312
+#define EDGE_SCALE      1.252
+#define NEAR            0.1
+#define FAR             100.0
+#define SPEED           0.5
+#define BEER_LAW_FACTOR 12.0
+
+in VS_FS
+{
+    vec3 position;
+    vec2 texcoord;
+    vec4 shadow_coord;
+    vec3 vertex;
+} vs_in;
+
+layout (location = 0) out vec4 out_color;
+
+#ifdef BLOOM
+layout (location = 1) out vec4 out_bloom_color; 
+#endif
+
+uniform sampler2DShadow shadow_map;
+uniform vec3      sun_direction;
+uniform vec3      sun_color;
+uniform vec3      camera_position;
+
+uniform sampler2D screen_map;
+uniform sampler2D depth_map;
+uniform vec2 resolution;
+
+uniform vec4 shallow_color;
+uniform vec4 deep_color;
+uniform vec4 foam_color;
+
+uniform float time;
+
+// ---- Simplex Noise ----
+#define  NORMALIZE_GRADIENTS
+#undef  USE_CIRCLE
+#define COLLAPSE_SORTNET
+
+float permute(float x0,vec3 p) { 
+    float x1 = mod(x0 * p.y, p.x);
+    return floor(  mod( (x1 + p.z) *x0, p.x ));
+}
+vec2 permute(vec2 x0,vec3 p) { 
+    vec2 x1 = mod(x0 * p.y, p.x);
+    return floor(  mod( (x1 + p.z) *x0, p.x ));
+}
+vec3 permute(vec3 x0,vec3 p) { 
+    vec3 x1 = mod(x0 * p.y, p.x);
+    return floor(  mod( (x1 + p.z) *x0, p.x ));
+}
+vec4 permute(vec4 x0,vec3 p) { 
+    vec4 x1 = mod(x0 * p.y, p.x);
+    return floor(  mod( (x1 + p.z) *x0, p.x ));
+}
+
+// Example constant with a 289 element permutation
+const vec4 pParam = vec4( 17.0*17.0, 34.0, 1.0, 7.0);
+
+float taylorInvSqrt(float r)
+{ 
+    return ( 0.83666002653408 + 0.7*0.85373472095314 - 0.85373472095314 * r );
+}
+
+float simplexNoise2(vec2 v)
+{
+    const vec2 C = vec2(0.211324865405187134, // (3.0-sqrt(3.0))/6.;
+                      0.366025403784438597); // 0.5*(sqrt(3.0)-1.);
+    const vec3 D = vec3( 0., 0.5, 2.0) * PI;
+// First corner
+    vec2 i  = floor(v + dot(v, C.yy) );
+    vec2 x0 = v -   i + dot(i, C.xx);
+
+// Other corners
+    vec2 i1  =  (x0.x > x0.y) ? vec2(1.,0.) : vec2(0.,1.) ;
+
+   //  x0 = x0 - 0. + 0. * C
+    vec2 x1 = x0 - i1 + 1. * C.xx ;
+    vec2 x2 = x0 - 1. + 2. * C.xx ;
+
+
+// Permutations
+    i = mod(i, pParam.x);
+    vec3 p = permute( permute( 
+             i.y + vec3(0., i1.y, 1. ), pParam.xyz)
+           + i.x + vec3(0., i1.x, 1. ), pParam.xyz);
+
+#ifndef USE_CIRCLE
+// ( N points uniformly over a line, mapped onto a diamond.)
+    vec3 x = fract(p / pParam.w) ;
+    vec3 h = 0.5 - abs(x) ;
+
+    vec3 sx = vec3(lessThan(x,D.xxx)) *2. -1.;
+    vec3 sh = vec3(lessThan(h,D.xxx));
+
+    vec3 a0 = x + sx*sh;
+    vec2 p0 = vec2(a0.x,h.x);
+    vec2 p1 = vec2(a0.y,h.y);
+    vec2 p2 = vec2(a0.z,h.z);
+
+#ifdef NORMALISE_GRADIENTS
+    p0 *= taylorInvSqrt(dot(p0,p0));
+    p1 *= taylorInvSqrt(dot(p1,p1));
+    p2 *= taylorInvSqrt(dot(p2,p2));
+#endif
+
+    vec3 g = 2.0 * vec3( dot(p0, x0), dot(p1, x1), dot(p2, x2) );
+#else 
+// N points around a unit circle.
+    vec3 phi = D.z * mod(p,pParam.w) /pParam.w ;
+    vec4 a0 = sin(phi.xxyy+D.xyxy);
+    vec2 a1 = sin(phi.zz  +D.xy);
+    vec3 g = vec3( dot(a0.xy, x0), dot(a0.zw, x1), dot(a1.xy, x2) );
+#endif
+// mix
+    vec3 m = max(0.5 - vec3(dot(x0,x0), dot(x1,x1), dot(x2,x2)), 0.);
+    m = m*m ;
+    return (1.66666* 70.*dot(m*m, g) + 1.0)/2.0;
+}
+// https://github.com/ashima/webgl-noise/blob/master/src/psrdnoise2D.glsl
+// Modulo 289, optimizes to code without divisions
+vec3 mod289(vec3 x) {
+  return x - floor(x * (1.0 / 289.0)) * 289.0;
+}
+// Permutation polynomial (ring size 289 = 17*17)
+vec3 permute(vec3 x) {
+  return mod289(((x*34.0)+10.0)*x);
+}
+float mod289(float x) {
+  return x - floor(x * (1.0 / 289.0)) * 289.0;
+}
+// Permutation polynomial (ring size 289 = 17*17)
+float permute(float x) {
+  return mod289(((x*34.0)+10.0)*x);
+}
+// Hashed 2-D gradients with an extra rotation.
+// (The constant 0.0243902439 is 1/41)
+vec2 rgrad2(vec2 p, float rot) {
+#if 0
+// Map from a line to a diamond such that a shift maps to a rotation.
+  float u = permute(permute(p.x) + p.y) * 0.0243902439 + rot; // Rotate by shift
+  u = 4.0 * fract(u) - 2.0;
+  // (This vector could be normalized, exactly or approximately.)
+  return vec2(abs(u)-1.0, abs(abs(u+1.0)-2.0)-1.0);
+#else
+// For more isotropic gradients, sin/cos can be used instead.
+  float u = permute(permute(p.x) + p.y) * 0.0243902439 + rot; // Rotate by shift
+  u = fract(u) * 6.28318530718; // 2*pi
+  return vec2(cos(u), sin(u));
+#endif
+}
+//
+// 2-D non-tiling simplex noise with rotating gradients and analytical derivative.
+// The first component of the 3-element return vector is the noise value,
+// and the second and third components are the x and y partial derivatives.
+//
+vec3 srdnoise(vec2 pos) {
+  // Offset y slightly to hide some rare artifacts
+  pos.y += 0.001;
+  // Skew to hexagonal grid
+  vec2 uv = vec2(pos.x + pos.y*0.5, pos.y);
+  
+  vec2 i0 = floor(uv);
+  vec2 f0 = fract(uv);
+  // Traversal order
+  vec2 i1 = (f0.x > f0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+
+  // Unskewed grid points in (x,y) space
+  vec2 p0 = vec2(i0.x - i0.y * 0.5, i0.y);
+  vec2 p1 = vec2(p0.x + i1.x - i1.y * 0.5, p0.y + i1.y);
+  vec2 p2 = vec2(p0.x + 0.5, p0.y + 1.0);
+
+  // Integer grid point indices in (u,v) space
+  i1 = i0 + i1;
+  vec2 i2 = i0 + vec2(1.0, 1.0);
+
+  // Vectors in unskewed (x,y) coordinates from
+  // each of the simplex corners to the evaluation point
+  vec2 d0 = pos - p0;
+  vec2 d1 = pos - p1;
+  vec2 d2 = pos - p2;
+
+  vec3 x = vec3(p0.x, p1.x, p2.x);
+  vec3 y = vec3(p0.y, p1.y, p2.y);
+  vec3 iuw = x + 0.5 * y;
+  vec3 ivw = y;
+  
+  // Avoid precision issues in permutation
+  iuw = mod289(iuw);
+  ivw = mod289(ivw);
+
+  // Create gradients from indices
+  vec2 g0 = rgrad2(vec2(iuw.x, ivw.x), 0.0);
+  vec2 g1 = rgrad2(vec2(iuw.y, ivw.y), 0.0);
+  vec2 g2 = rgrad2(vec2(iuw.z, ivw.z), 0.0);
+
+  // Gradients dot vectors to corresponding corners
+  // (The derivatives of this are simply the gradients)
+  vec3 w = vec3(dot(g0, d0), dot(g1, d1), dot(g2, d2));
+  
+  // Radial weights from corners
+  // 0.8 is the square of 2/sqrt(5), the distance from
+  // a grid point to the nearest simplex boundary
+  vec3 t = 0.8 - vec3(dot(d0, d0), dot(d1, d1), dot(d2, d2));
+
+  // Partial derivatives for analytical gradient computation
+  vec3 dtdx = -2.0 * vec3(d0.x, d1.x, d2.x);
+  vec3 dtdy = -2.0 * vec3(d0.y, d1.y, d2.y);
+
+  // Set influence of each surflet to zero outside radius sqrt(0.8)
+  if (t.x < 0.0) {
+    dtdx.x = 0.0;
+    dtdy.x = 0.0;
+	t.x = 0.0;
+  }
+  if (t.y < 0.0) {
+    dtdx.y = 0.0;
+    dtdy.y = 0.0;
+	t.y = 0.0;
+  }
+  if (t.z < 0.0) {
+    dtdx.z = 0.0;
+    dtdy.z = 0.0;
+	t.z = 0.0;
+  }
+
+  // Fourth power of t (and third power for derivative)
+  vec3 t2 = t * t;
+  vec3 t4 = t2 * t2;
+  vec3 t3 = t2 * t;
+  
+  // Final noise value is:
+  // sum of ((radial weights) times (gradient dot vector from corner))
+  float n = dot(t4, w);
+  
+  // Final analytical derivative (gradient of a sum of scalar products)
+  vec2 dt0 = vec2(dtdx.x, dtdy.x) * 4.0 * t3.x;
+  vec2 dn0 = t4.x * g0 + dt0 * w.x;
+  vec2 dt1 = vec2(dtdx.y, dtdy.y) * 4.0 * t3.y;
+  vec2 dn1 = t4.y * g1 + dt1 * w.y;
+  vec2 dt2 = vec2(dtdx.z, dtdy.z) * 4.0 * t3.z;
+  vec2 dn2 = t4.z * g2 + dt2 * w.z;
+
+  return (11.0*vec3(n, dn0 + dn1 + dn2) + 1.0) / 2.0;
+}
+float layeredSimplexNoise2(vec2 v, int octaves, float period, float persistance, float lacunarity){
+   float res = 0;
+   float p = 1.0;
+   float avg = 0.0;
+   for(int i = 0; i < octaves; i++){
+      res += p*simplexNoise2(v*(80/period));
+      p *= persistance;
+      period /= lacunarity;
+      avg += p;
+   }
+   return res / avg;
+}
+vec3 layeredNormalSimplexNoise2(vec2 v, int octaves, float period, float persistance, float lacunarity){
+   vec3 res = vec3(0.0);
+   float p = 1.0;
+   float avg = 0.0;
+   for(int i = 0; i < octaves; i++){
+      res += p*srdnoise(v*(80/period));
+      p *= persistance;
+      period /= lacunarity;
+      avg += p;
+   }
+   return res / avg;
+}
+// -------------------
+
+vec2 poisson_disk[16] = vec2[]( 
+   vec2( -0.94201624, -0.39906216 ), 
+   vec2( 0.94558609, -0.76890725 ), 
+   vec2( -0.094184101, -0.92938870 ), 
+   vec2( 0.34495938, 0.29387760 ), 
+   vec2( -0.91588581, 0.45771432 ), 
+   vec2( -0.81544232, -0.87912464 ), 
+   vec2( -0.38277543, 0.27676845 ), 
+   vec2( 0.97484398, 0.75648379 ), 
+   vec2( 0.44323325, -0.97511554 ), 
+   vec2( 0.53742981, -0.47373420 ), 
+   vec2( -0.26496911, -0.41893023 ), 
+   vec2( 0.79197514, 0.19090188 ), 
+   vec2( -0.24188840, 0.99706507 ), 
+   vec2( -0.81409955, 0.91437590 ), 
+   vec2( 0.19984126, 0.78641367 ), 
+   vec2( 0.14383161, -0.14100790 ) 
+);
+float shadowness(float NdotL){
+    // Variable bias disabled because peter panning was terrible
+	float bias = 0.005*tan(acos(NdotL));
+	bias = clamp(bias, 0, 0.01);
+
+    if(vs_in.shadow_coord.z > 1.0)
+        return 1.0;
+
+    vec3 shadow_coord_depth = vec3(vs_in.shadow_coord.xyz / vs_in.shadow_coord.w);
+    shadow_coord_depth = (shadow_coord_depth - vec3(0,0,bias))*0.5 + 0.5;
+    //shadow_coord_depth = shadow_coord_depth*0.5 + 0.5;
+
+    float shadowness = 0;
+    for(int i = 0; i < 4; i++){
+        shadowness += 0.25*texture(shadow_map, shadow_coord_depth + vec3(poisson_disk[i]/700.0, 0.0));
+    }
+    return shadowness;
+	// For spot lights, use either one of these lines instead.
+	// if ( texture( shadowMap, (ShadowCoord.xy/ShadowCoord.w) ).z  <  (ShadowCoord.z-bias)/ShadowCoord.w )
+	// if ( textureProj( shadowMap, ShadowCoord.xyw ).z  <  (ShadowCoord.z-bias)/ShadowCoord.w )
+}
+
+// Takes normal, halfway vector between view angle and light angle
+// Parameter a -> alpha describing roughness usually aplha = roughness^2
+float distributionGGX(vec3 N, vec3 H, float roughness)
+{
+    float nom    = roughness*roughness*roughness*roughness;
+    float NdotH  = max(dot(N, H), 0.0);
+    float NdotH2 = NdotH*NdotH;
+	
+    float denom  = (NdotH2 * (nom - 1.0) + 1.0);
+    denom        = PI * denom * denom;
+	
+    return nom / denom;
+}
+// Takes multiplier between 0 -> 1 with 0 being complete microfacet shadowing 
+// and roughness
+float geometrySchlickGGX(float NdotV, float roughness)
+{
+    float r = (roughness + 1.0);
+    float k = (r*r) / 8.0;
+
+    float num   = NdotV;
+    float denom = NdotV * (1.0 - k) + k;
+
+    return num / denom;
+}
+// Takes normal, camera view direction, light direction vector, surface roughness
+float geometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
+{
+    float NdotV = max(dot(N, V), 0.0);
+    float NdotL = max(dot(N, L), 0.0);
+    float ggx2  = geometrySchlickGGX(NdotV, roughness);
+    float ggx1  = geometrySchlickGGX(NdotL, roughness);
+	
+    return ggx1 * ggx2;
+}
+vec3 fresnelSchlick(float cosTheta, vec3 F0)
+{
+    return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+// @note Radiance scaled color
+vec3 brdfSchlickGGX(vec3 position, vec3 normal, vec3 albedo, vec3 light_dir, vec3 light_col){
+    vec3 view_dir = normalize(camera_position - position);
+    vec3 halfway_dir = normalize(view_dir + light_dir);
+    vec3 radiance    = light_col; 
+    float roughness  = 0.1; 
+
+    vec3 F0 = vec3(0.04);
+
+    vec3 F  = fresnelSchlick(max(dot(halfway_dir, view_dir), 0.0), F0);
+    float NDF = distributionGGX(normal, halfway_dir, roughness);       
+    float G   = geometrySmith(normal, view_dir, light_dir, roughness);       
+
+    // Actually calculate Cook-Torrance brdf integral for one light direction
+    vec3 numerator    = NDF * G * F;
+    float denominator = 4.0 * max(dot(normal, view_dir), 0.0) * max(dot(normal, light_dir), 0.0)  + 0.0001;
+    vec3 specular     = numerator / denominator;
+
+    // Calculate relative diffuse and specular contributions such that total
+    // energy is 1
+    vec3 kS = F;
+    vec3 kD = vec3(1.0) - kS;
+
+
+    float NdotL = max(dot(normal, light_dir), 0.0);
+    return (kD * albedo / PI + specular) * radiance * NdotL * shadowness(NdotL);
+}
+
+float rim(float depth){
+	depth = 2.0*depth - 1.0;
+	return NEAR*FAR / (FAR + depth*(NEAR - FAR));
+}
+
+float calcDepthFade(float scene_depth, float screen_depth){
+	//scene_depth = scene_depth * 2.0 - 1.0;
+	//scene_depth = (-(2.0*FAR*NEAR)/(FAR - NEAR)) / (scene_depth - (FAR + NEAR) / (FAR - NEAR));
+	//scene_depth = scene_depth + height;
+
+  return scene_depth;
+  return clamp(exp((scene_depth - screen_depth)*BEER_LAW_FACTOR)*0.1, 0.0, 1.0);
+
+	// application of beers law
+	scene_depth = exp(-scene_depth * BEER_LAW_FACTOR);
+	
+	float depth_fade = (scene_depth - screen_depth) / (-0.026);
+	
+	depth_fade = clamp(depth_fade, -2.0, 2.0);
+	return depth_fade;
+}
+
+float noise(vec2 v){
+   return layeredSimplexNoise2(v, 2, 80.0, 0.5, 4.0);
+}
+vec3 normalNoise(vec2 v){
+   return layeredNormalSimplexNoise2(v, 3, 80.0, 0.8, 5.0);
+}
+float depthToDist(float d){
+  float z = 2.0*d - 1.0;
+  return 2.0*NEAR*FAR/(FAR + NEAR - z*(FAR - NEAR));
+}
+
+vec3 dgwaves(in vec3 v) {
+  const int wn = 1;
+  const vec2  d[] = {normalize(vec2(0.2, 0.4))};
+  const float a[] = {0.01};
+  const float q[] = {0.7};
+  const float p[] = {0.7};
+  const float w[] = {20.0};
+
+  vec3 n = vec3(0.0, 1.0, 0.0);
+  for(int i = 0; i < wn; i++){
+    float wa = w[i]*a[i];
+    float cs = w[i]*dot(d[i], v.xz) + p[i]*time;
+    float s = sin(cs);
+    float c = cos(cs);
+
+    n.x -= d[i].x*wa*c;
+    n.z -= d[i].y*wa*c;
+    n.y -= q[i]*wa*s;
+
+  }
+  return n;
+}
+void main(){
+  float t = time * SPEED;
+  vec2 screencoord = gl_FragCoord.xy / resolution.xy;
+
+  vec3 n1 = normalNoise(30.0*vs_in.texcoord + t);
+
+  float screen_d = texture(depth_map, screencoord).x;
+  float scene_d  = gl_FragCoord.z;
+
+  float screen_z = depthToDist(screen_d);
+  float scene_z = depthToDist(scene_d);
+  float dif = screen_z - scene_z;
+
+  float foam_dif = 1.0 - clamp((screen_z - scene_z) / 0.004, 0.0, 1.0);
+
+  float rad = exp(-dif*BEER_LAW_FACTOR);
+
+  vec4 mat = 0.6*mix(deep_color, shallow_color, 3.0*rad + 2.0*noise(vs_in.texcoord + t*0.12));
+  mat.g += 0.09*noise(0.5*vs_in.vertex.xz - t*0.12 + 0.3);
+
+  vec4 alpha = texture(screen_map, screencoord);
+  vec4 col = mix(mat, alpha, min(rad*0.7 + 0.08, 0.8));
+
+  col = mix(col, foam_color, foam_dif + foam_dif*simplexNoise2(18.0*vs_in.texcoord + (-1.0+screen_z - scene_z)*t*0.1 + t));
+
+  vec3 albedo = col.xyz;
+  vec3 normal = dgwaves(vs_in.vertex);
+  normal += 0.07*normalize(vec3(n1.yz, -1.0));
+  normal = normalize(normal);
+
+  //float fin = 0.0;
+	//if (sum > 0.0 && sum < 0.4) fin = 0.1;
+	//if (sum > 0.4 && sum < 0.8) fin = 0.0;
+	//if (sum > 0.8) fin = 1.0;
+	//
+	//vec3 albedo = vec3(fin) + mix(alpha.rgb, col.rgb, gradientcolor.a);
+  //albedo *= 2.0;
+
+  // Maybe full brdf is unnecessary? test performance
+  vec3 ambient = vec3(0.03) * albedo;
+  vec3 hdr_color = ambient + brdfSchlickGGX(vs_in.position, normal, albedo, -sun_direction, sun_color);
+  
+  out_color = vec4(hdr_color, 1.0);
+
+#ifdef BLOOM
+    // If we are doing bloom write to second buffer
+    float brightness = dot(hdr_color, vec3(0.2126, 0.7152, 0.0722));
+    if(brightness > 1.0)
+        out_bloom_color = vec4(hdr_color, 1.0);
+    else
+        out_bloom_color = vec4(0.0, 0.0, 0.0, 1.0);
+#endif
+
+}
+
+#endif
