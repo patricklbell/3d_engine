@@ -467,6 +467,31 @@ void drawWaterDebug(WaterEntity* w_e, const Camera &camera, bool flash = false){
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 }
 
+void drawMeshCube(const glm::vec3 &pos, const glm::quat &rot, const glm::mat3x3 &scl, const Camera &camera){
+    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_DEPTH_TEST);
+    glEnable(GL_LINE_SMOOTH);
+    // Displays in renderdoc texture view but not in application?
+    //glLineWidth(200.0);
+
+    glUseProgram(shader::debug_program);
+    auto mvp = camera.projection * camera.view * createModelMatrix(pos, rot, scl);
+    glUniformMatrix4fv(shader::debug_uniforms.mvp, 1, GL_FALSE, &mvp[0][0]);
+    glUniformMatrix4fv(shader::debug_uniforms.model, 1, GL_FALSE, &pos[0]);
+    glUniform4f(shader::debug_uniforms.color, 1.0, 1.0, 1.0, 1.0);
+    glUniform4f(shader::debug_uniforms.color_flash_to, 1.0, 0.0, 1.0, 1.0);
+    glUniform1f(shader::debug_uniforms.time, glfwGetTime());
+    glUniform1f(shader::debug_uniforms.shaded, 0.0);
+    glUniform1f(shader::debug_uniforms.flashing, 0.0);
+
+    drawCube();
+
+    glEnable(GL_CULL_FACE);
+    glEnable(GL_DEPTH_TEST);
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+}
+
 void drawMeshWireframe(Mesh *mesh, const glm::vec3 &pos, const glm::quat &rot, const glm::mat3x3 &scl, const Camera &camera, bool flash = false){
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     glDisable(GL_CULL_FACE);
@@ -601,6 +626,7 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, std::vector<As
     //if(min_collision_distance != std::numeric_limits<float>::max()){
     //    drawEditor3DArrow(collision_point, normal, camera, glm::vec4(1.0));
     //}
+    
 
     // @speed
     if(sel_e.i == -1) gizmo_mode = GIZMO_MODE_NONE;
@@ -612,11 +638,13 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, std::vector<As
 
     {
         if(sel_e.i != -1) {
+            ImGui::SetNextWindowPos(ImVec2(window_width-200,0), ImGuiCond_Appearing);
+            ImGui::SetNextWindowSize(ImVec2(200,window_height), ImGuiCond_Appearing);
             if(window_resized){
                 ImGui::SetNextWindowPos(ImVec2(window_width-200,0));
                 ImGui::SetNextWindowSize(ImVec2(200,window_height));
-                ImGui::SetNextWindowSizeConstraints(ImVec2(100, window_height), ImVec2(window_width / 2.0, window_height));
             }
+            ImGui::SetNextWindowSizeConstraints(ImVec2(100, window_height), ImVec2(window_width / 2.0, window_height));
 
             ImGui::Begin("Entity Properties", NULL, ImGuiWindowFlags_NoMove);
             ImGui::Text("Entity Index: %d Version: %d", sel_e.i, sel_e.v);
@@ -755,7 +783,7 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, std::vector<As
             ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 10);
             if(ImGui::InputFloat3("", (float*)&sun_direction)){
                 sun_direction = glm::normalize(sun_direction);
-                updateCameraView(camera);
+                // Casts shadows from sun direction
                 updateShadowVP(camera);
             }
         }

@@ -28,17 +28,17 @@ namespace shader {
     };
     extern GLuint null_program;
     extern struct NullUniforms {
-        GLuint mvp; 
+        GLuint model; 
     } null_uniforms;
 
     extern GLuint unified_programs[2];
     extern struct UnifiedUniforms {
-        GLuint mvp, shadow_mvp, model, sun_color, sun_direction, camera_position;
+        GLuint mvp, model, sun_color, sun_direction, camera_position, shadow_cascade_distances, far_plane, view;
     } unified_uniforms[2];
 
     extern GLuint water_programs[2];
     extern struct WaterUniforms {
-        GLuint mvp, shadow_mvp, model, sun_color, sun_direction, camera_position, time, shallow_color, deep_color, foam_color, resolution;
+        GLuint mvp, model, view, sun_color, sun_direction, camera_position, time, shallow_color, deep_color, foam_color, resolution, shadow_cascade_distances, far_plane;
     } water_uniforms[2];
 
     extern GLuint gaussian_blur_program;

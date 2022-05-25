@@ -49,11 +49,13 @@ using namespace editor;
 
 void handleEditorControls(Camera &camera, EntityManager &entity_manager, float dt) {
     // Stores the previous state of input, updated at end of function
-    static int space_key_state = GLFW_RELEASE;
+    static int c_key_state = GLFW_RELEASE;
     static int d_key_state = GLFW_RELEASE;
     static int mouse_left_state = GLFW_RELEASE;
     static int ctrl_v_state = GLFW_RELEASE;
     static double mouse_left_press_time = glfwGetTime();
+    static glm::vec3 shooter_camera_velocity = glm::vec3(0.0);
+    static float shooter_camera_deceleration = 0.8;
 
     static Id copy_id = NULLID;
 
@@ -72,7 +74,7 @@ void handleEditorControls(Camera &camera, EntityManager &entity_manager, float d
         entity_manager.deleteEntity(editor::sel_e);
         sel_e = NULLID;
     }
-    if(sel_e.i != -1 && glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS){
+    if(sel_e.i != -1 && glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS && c_key_state == GLFW_RELEASE && glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS){
         copy_id = sel_e;
     }
     if(copy_id.i != -1 && ctrl_v_state == GLFW_RELEASE && glfwGetKey(window, GLFW_KEY_V) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS && entity_manager.getEntity(copy_id) != nullptr){
@@ -87,10 +89,10 @@ void handleEditorControls(Camera &camera, EntityManager &entity_manager, float d
             }
         }
     }
-    if(glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS && d_key_state == GLFW_RELEASE){
+    if(glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS && d_key_state == GLFW_RELEASE && camera.state != Camera::TYPE::SHOOTER){
         editor::draw_debug_wireframe = !editor::draw_debug_wireframe;
     }
-    if(glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS && space_key_state == GLFW_RELEASE){
+    if(glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS && c_key_state == GLFW_RELEASE && glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) != GLFW_PRESS){
         if(camera.state == Camera::TYPE::TRACKBALL) {
             camera.state = Camera::TYPE::SHOOTER;
 
@@ -216,52 +218,65 @@ void handleEditorControls(Camera &camera, EntityManager &entity_manager, float d
             scroll_offset.y = 0;
         }
     } else if (camera.state == Camera::TYPE::SHOOTER && camera_movement_active){
-        static const float camera_movement_speed = 2.0;
+        static const float camera_movement_acceleration = 2.0;
 
         glm::vec3 camera_direction = glm::normalize(camera.target - camera.position);
-
-        // Calculate the amount of rotation given the mouse movement.
-        float delta_angle_x = (2 * M_PI / (float)window_width); // a movement from left to right = 2*PI = 360 deg
-        float delta_angle_y = (M_PI / (float)window_height);  // a movement from top to bottom = PI = 180 deg
-        float x_angle = -delta_mouse_position.x * delta_angle_x;
-        float y_angle = -delta_mouse_position.y * delta_angle_y;
-
-        // @todo Handle camera passing over poles of orbit 
-        
-        // Rotate the camera around the pivot point on the first axis.
-        auto rotation_x = glm::rotate(glm::mat4x4(1.0f), x_angle, camera.up);
         auto camera_right = glm::vec3(glm::transpose(camera.view)[0]);
-        auto rotation_y = glm::rotate(glm::mat4x4(1.0f), y_angle, camera_right);
+        
+        glm::vec3 camera_direction_rotated;
+        if(delta_mouse_position.length() != 0){
+            // Calculate the amount of rotation given the mouse movement.
+            float delta_angle_x = (2 * M_PI / (float)window_width); // a movement from left to right = 2*PI = 360 deg
+            float delta_angle_y = (M_PI / (float)window_height);  // a movement from top to bottom = PI = 180 deg
+            float x_angle = -delta_mouse_position.x * delta_angle_x;
+            float y_angle = -delta_mouse_position.y * delta_angle_y;
 
-        glm::vec3 camera_direction_rotated = glm::vec3(rotation_y * (rotation_x * glm::vec4(camera_direction, 1)));
+            // @todo Handle camera passing over poles of orbit 
+            
+            auto rotation_x = glm::rotate(glm::mat4x4(1.0f), x_angle, camera.up);
+            auto rotation_y = glm::rotate(glm::mat4x4(1.0f), y_angle, camera_right);
+
+            camera_direction_rotated = glm::vec3(rotation_y * (rotation_x * glm::vec4(camera_direction, 1)));
+        }
 
         // Move forward
-        if (glfwGetKey( window, GLFW_KEY_UP ) == GLFW_PRESS){
-            camera.position += camera_direction * dt * camera_movement_speed;
+        if (glfwGetKey( window, GLFW_KEY_W ) == GLFW_PRESS){
+            shooter_camera_velocity += camera_direction * camera_movement_acceleration;
         }
         // Move backward
-        if (glfwGetKey( window, GLFW_KEY_DOWN ) == GLFW_PRESS){
-            camera.position -= camera_direction * dt * camera_movement_speed;
+        if (glfwGetKey( window, GLFW_KEY_S ) == GLFW_PRESS){
+            shooter_camera_velocity -= camera_direction * camera_movement_acceleration;
         }
         // Strafe right
-        if (glfwGetKey( window, GLFW_KEY_RIGHT ) == GLFW_PRESS){
-            camera.position += camera_right * dt * camera_movement_speed;
+        if (glfwGetKey( window, GLFW_KEY_D ) == GLFW_PRESS){
+            shooter_camera_velocity += camera_right * camera_movement_acceleration;
         }
         // Strafe left
-        if (glfwGetKey( window, GLFW_KEY_LEFT ) == GLFW_PRESS){
-            camera.position -= camera_right * dt * camera_movement_speed;
+        if (glfwGetKey( window, GLFW_KEY_A ) == GLFW_PRESS){
+            shooter_camera_velocity -= camera_right * camera_movement_acceleration;
         }
+        if (glfwGetKey( window, GLFW_KEY_SPACE ) == GLFW_PRESS){
+            shooter_camera_velocity += camera.up * camera_movement_acceleration;
+        }
+        if (glfwGetKey( window, GLFW_KEY_LEFT_SHIFT ) == GLFW_PRESS){
+            shooter_camera_velocity -= camera.up * camera_movement_acceleration;
+        }
+        camera.position += shooter_camera_velocity*dt;
+        shooter_camera_velocity *= shooter_camera_deceleration;
 
-        camera.target = camera.position + camera_direction_rotated;
-        updateCameraView(camera);
-        updateShadowVP(camera);
+        auto new_target = camera.position + camera_direction_rotated;
+        if(new_target != camera.target){
+            camera.target = new_target;
+            updateCameraView(camera);
+            updateShadowVP(camera);
+        }
 
         glfwSetCursorPos(window, (float)window_width/2, (float)window_height/2);
         glfwGetCursorPos(window, &mouse_position.x, &mouse_position.y);
     }
 
     ctrl_v_state    = glfwGetKey(window, GLFW_KEY_V) == GLFW_PRESS & glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS;
-    space_key_state = glfwGetKey(window, GLFW_KEY_SPACE);
+    c_key_state = glfwGetKey(window, GLFW_KEY_C);
     d_key_state     = glfwGetKey(window, GLFW_KEY_D);
     if(mouse_left_state == GLFW_RELEASE && glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT)) mouse_left_press_time = glfwGetTime();
     mouse_left_state = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT);

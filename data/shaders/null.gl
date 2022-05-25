@@ -1,12 +1,32 @@
 #ifdef COMPILING_VS
-layout (location = 0) in vec3 position;
+layout (location = 0) in vec3 vertex;
 
-uniform mat4 mvp;
+uniform mat4 model;
 
 void main()
 {
-    gl_Position = mvp * vec4(position, 1.0);
+    gl_Position = model * vec4(vertex, 1.0);
 }
+#endif
+
+#ifdef COMPILING_GS
+layout(triangles, invocations=INVOCATIONS) in;
+layout(triangle_strip, max_vertices=3) out;
+layout(std140, binding=0) uniform ShadowVP 
+{
+    mat4 shadow_vps[INVOCATIONS];
+};
+
+void main()
+{
+    for(int i=0; i < 3; i++){
+        gl_Position = shadow_vps[gl_InvocationID] * gl_in[i].gl_Position;
+        gl_Layer    = gl_InvocationID;
+        EmitVertex();
+    }
+    EndPrimitive();
+}
+
 #endif
 
 #ifdef COMPILING_FS

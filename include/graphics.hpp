@@ -46,7 +46,7 @@ void updateCameraProjection(Camera &camera);
 
 void initGraphicsPrimitives();
 void drawQuad();
-void drawPlane();
+void drawCube();
 
 void updateShadowVP(const Camera &camera);
 void createShadowFbo();
@@ -67,10 +67,12 @@ namespace graphics {
     extern GLuint bloom_buffers[2];
     extern GLuint hdr_fbo;
     extern GLuint hdr_buffers[2];
+    extern const char *shadow_macro;
+    extern const char * shadow_invocation_macro;
     extern GLuint shadow_fbo;
     extern GLuint shadow_buffer;
-    extern glm::mat4x4 shadow_vp;
     extern Mesh quad;
+    extern Mesh cube;
     extern Mesh grid;
 }
     

@@ -180,7 +180,6 @@ int main() {
 
         if (window_resized){
             updateCameraProjection(camera);
-            updateShadowVP(camera);
             createHdrFbo(true);
             if(shader::unified_bloom){
                 createBloomFbo(true);

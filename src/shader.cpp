@@ -213,7 +213,7 @@ void loadGaussianBlurShader(std::string path){
 void loadNullShader(std::string path){
 	auto tmp = null_program;
 	// Create and compile our GLSL program from the shaders
-	null_program = loadShader(path);
+	null_program = loadShader(path, graphics::shadow_invocation_macro, true);
 	if(null_program == GL_FALSE) {
 		printf("Failed to load null shader\n");
 		null_program = tmp;
@@ -221,10 +221,15 @@ void loadNullShader(std::string path){
 	}
 
 	// Grab uniforms to modify
-	null_uniforms.mvp = glGetUniformLocation(null_program, "mvp");
+	null_uniforms.model = glGetUniformLocation(null_program, "model");
+	
+	glUseProgram(null_program);
 }
 void loadUnifiedShader(std::string path){
-	static const std::string macros[] = {"", "#define BLOOM 1\n"};
+    static const std::string macros[] = {
+        std::string("") + graphics::shadow_macro,
+        std::string("#define BLOOM 1\n") + graphics::shadow_macro
+    };
 	for(int i = 0; i < 2; i++){
 		// Create and compile our GLSL program from the shaders
 		auto tmp = unified_programs[i];
@@ -234,12 +239,14 @@ void loadUnifiedShader(std::string path){
 			return;
 		}
 		// Grab uniforms to modify during rendering
-		unified_uniforms[i].mvp   = glGetUniformLocation(unified_programs[i], "mvp");
-		unified_uniforms[i].shadow_mvp   = glGetUniformLocation(unified_programs[i], "shadow_mvp");
-		unified_uniforms[i].model = glGetUniformLocation(unified_programs[i], "model");
-		unified_uniforms[i].sun_color = glGetUniformLocation(unified_programs[i], "sun_color");
-		unified_uniforms[i].sun_direction = glGetUniformLocation(unified_programs[i], "sun_direction");
-		unified_uniforms[i].camera_position = glGetUniformLocation(unified_programs[i], "camera_position");
+		unified_uniforms[i].mvp                         = glGetUniformLocation(unified_programs[i], "mvp");
+		unified_uniforms[i].model                       = glGetUniformLocation(unified_programs[i], "model");
+		unified_uniforms[i].sun_color                   = glGetUniformLocation(unified_programs[i], "sun_color");
+		unified_uniforms[i].sun_direction               = glGetUniformLocation(unified_programs[i], "sun_direction");
+		unified_uniforms[i].camera_position             = glGetUniformLocation(unified_programs[i], "camera_position");
+        unified_uniforms[i].shadow_cascade_distances    = glGetUniformLocation(unified_programs[i], "shadow_cascade_distances");
+        unified_uniforms[i].far_plane                   = glGetUniformLocation(unified_programs[i], "far_plane");
+        unified_uniforms[i].view                        = glGetUniformLocation(unified_programs[i], "view");
 		
 		glUseProgram(unified_programs[i]);
 		// Set fixed locations for textures in GL_TEXTUREi
@@ -252,7 +259,10 @@ void loadUnifiedShader(std::string path){
 	}
 }
 void loadWaterShader(std::string path){
-	static const std::string macros[] = {"", "#define BLOOM 1\n"};
+    static const std::string macros[] = {
+        std::string("") + graphics::shadow_macro,
+        std::string("#define BLOOM 1\n") + graphics::shadow_macro
+    };
 	for(int i = 0; i < 2; i++){
 		// Create and compile our GLSL program from the shaders
 		auto tmp = water_programs[i];
@@ -262,17 +272,19 @@ void loadWaterShader(std::string path){
 			return;
 		}
 		// Grab uniforms to modify during rendering
-		water_uniforms[i].mvp   = glGetUniformLocation(water_programs[i], "mvp");
-		water_uniforms[i].shadow_mvp   = glGetUniformLocation(water_programs[i], "shadow_mvp");
-		water_uniforms[i].model = glGetUniformLocation(water_programs[i], "model");
-		water_uniforms[i].sun_color = glGetUniformLocation(water_programs[i], "sun_color");
-		water_uniforms[i].sun_direction = glGetUniformLocation(water_programs[i], "sun_direction");
-		water_uniforms[i].camera_position = glGetUniformLocation(water_programs[i], "camera_position");
-		water_uniforms[i].time = glGetUniformLocation(water_programs[i], "time");
-		water_uniforms[i].shallow_color = glGetUniformLocation(water_programs[i], "shallow_color");
-		water_uniforms[i].deep_color = glGetUniformLocation(water_programs[i], "deep_color");
-		water_uniforms[i].foam_color = glGetUniformLocation(water_programs[i], "foam_color");
-		water_uniforms[i].resolution = glGetUniformLocation(water_programs[i], "resolution");
+		water_uniforms[i].mvp                       = glGetUniformLocation(water_programs[i], "mvp");
+		water_uniforms[i].model                     = glGetUniformLocation(water_programs[i], "model");
+		water_uniforms[i].sun_color                 = glGetUniformLocation(water_programs[i], "sun_color");
+		water_uniforms[i].sun_direction             = glGetUniformLocation(water_programs[i], "sun_direction");
+		water_uniforms[i].camera_position           = glGetUniformLocation(water_programs[i], "camera_position");
+		water_uniforms[i].time                      = glGetUniformLocation(water_programs[i], "time");
+		water_uniforms[i].shallow_color             = glGetUniformLocation(water_programs[i], "shallow_color");
+		water_uniforms[i].deep_color                = glGetUniformLocation(water_programs[i], "deep_color");
+		water_uniforms[i].foam_color                = glGetUniformLocation(water_programs[i], "foam_color");
+		water_uniforms[i].resolution                = glGetUniformLocation(water_programs[i], "resolution");
+        water_uniforms[i].shadow_cascade_distances  = glGetUniformLocation(water_programs[i], "shadow_cascade_distances");
+        water_uniforms[i].far_plane                 = glGetUniformLocation(water_programs[i], "far_plane");
+        water_uniforms[i].view                      = glGetUniformLocation(water_programs[i], "view");
 		
 		glUseProgram(water_programs[i]);
 		// Set fixed locations for textures in GL_TEXTUREi

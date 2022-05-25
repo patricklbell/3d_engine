@@ -9,12 +9,14 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include "glm/detail/type_mat.hpp"
 #include "graphics.hpp"
 #include "assets.hpp"
 #include "utilities.hpp"
 #include "globals.hpp"
 #include "shader.hpp"
 #include "entities.hpp"
+#include "editor.hpp"
 
 int    window_width;
 int    window_height;
@@ -25,15 +27,21 @@ namespace graphics{
     GLuint hdr_fbo;
     GLuint hdr_buffers[2];
     GLuint hdr_depth;
+    const int shadow_num = 4;
+    float shadow_cascade_distances[shadow_num];
+    const char * shadow_macro = "#define CASCADE_NUM 4\n";
+    // @note make sure to change macro to shadow_num + 1
+    const char * shadow_invocation_macro = "#define INVOCATIONS 5\n";
     GLuint shadow_fbo;
     GLuint shadow_buffer;
-    glm::mat4x4 shadow_vp;
+    GLuint shadow_matrices_ubo;
+    glm::mat4x4 shadow_vps[shadow_num + 1];
     Mesh quad;
-    Mesh plane;
+    Mesh cube;
     Mesh grid;
 }
 // @hardcoded Cascaded shadow maps are better
-static const int SHADOW_SIZE = 2048;
+static const int SHADOW_SIZE = 4096;
 
 void windowSizeCallback(GLFWwindow* window, int width, int height){
     if(width != window_width || height != window_height) window_resized = true;
@@ -58,61 +66,90 @@ void updateCameraProjection(Camera &camera){
     camera.projection = glm::perspective(glm::radians(45.0f), (float)window_width/(float)window_height, camera.near_plane, camera.far_plane);
 }
 
-void updateShadowVP(const Camera &camera){
-    // Make shadow's view target the center of the camera frustrum
-    glm::vec3 center = camera.position + glm::normalize(camera.target - camera.position)*(camera.near_plane + (camera.far_plane - camera.near_plane)/2);
-    const auto shadow_view = glm::lookAt(-sun_direction + center, center, camera.up);
+glm::mat4x4 getShadowMatrixFromFrustrum(const Camera &camera, float near_plane, float far_plane){
+    // Make shadow's view target the center of the camera frustrum by averaging frustrum corners
+    // maybe you can just calculate from view direction and near and far
+    const auto camera_projection_alt = glm::perspective(glm::radians(45.0f), (float)window_width/(float)window_height, near_plane, far_plane);
+    const auto inv_VP = glm::inverse(camera_projection_alt * camera.view);
 
-    // 
-    // Fit shadow map to camera's frustrum
-    //
-    const auto inv_VP = glm::inverse(camera.projection * camera.view);
-    
-    typedef std::numeric_limits<float> lim;
-    float min_x = lim::max(), min_y = lim::max(), min_z = lim::max();
-    float max_x = lim::min(), max_y = lim::min(), max_z = lim::min();
+    std::vector<glm::vec4> frustrum;
+    auto center = glm::vec3(0.0);
     for (int x = -1; x < 2; x+=2){
         for (int y = -1; y < 2; y+=2){
             for (int z = -1; z < 2; z+=2){
-                const glm::vec4 world_p = inv_VP * glm::vec4(x,y,z,1.0f);
-                const glm::vec4 shadow_p = shadow_view * (world_p / world_p.w);
-                //printf("shadow position: %f, %f, %f, %f\n", shadow_p.x, shadow_p.y, shadow_p.z, shadow_p.w);
-                min_x = std::min(shadow_p.x, min_x);
-                min_y = std::min(shadow_p.y, min_y);
-                min_z = std::min(shadow_p.z, min_z);
-                max_x = std::max(shadow_p.x, max_x);
-                max_y = std::max(shadow_p.y, max_y);
-                max_z = std::max(shadow_p.z, max_z);
-                //printf("x: %f %f y: %f %f z: %f %f\n", min_x, max_x, min_y, max_y, min_z, max_z);
+                auto p = inv_VP * glm::vec4(x,y,z,1.0f);
+                auto wp = p / p.w;
+                center += glm::vec3(wp);
+                frustrum.push_back(wp);
             }
         }
     }
+    center /= frustrum.size();
+    
+    const auto shadow_view = glm::lookAt(-sun_direction + center, center, camera.up);
+    typedef std::numeric_limits<float> lim;
+    float min_x = lim::max(), min_y = lim::max(), min_z = lim::max();
+    float max_x = lim::min(), max_y = lim::min(), max_z = lim::min();
+    for(const auto &wp: frustrum){
+        const glm::vec4 shadow_p = shadow_view * wp;
+        //printf("shadow position: %f, %f, %f, %f\n", shadow_p.x, shadow_p.y, shadow_p.z, shadow_p.w);
+        min_x = std::min(shadow_p.x, min_x);
+        min_y = std::min(shadow_p.y, min_y);
+        min_z = std::min(shadow_p.z, min_z);
+        max_x = std::max(shadow_p.x, max_x);
+        max_y = std::max(shadow_p.y, max_y);
+        max_z = std::max(shadow_p.z, max_z);
+    }
+    //printf("x: %f %f y: %f %f z: %f %f\n", min_x, max_x, min_y, max_y, min_z, max_z);
+
     // @todo Tune this parameter according to the scene
     constexpr float z_mult = 10.0f;
     if (min_z < 0){
         min_z *= z_mult;
-    } else{
+    } else {
         min_z /= z_mult;
     } if (max_z < 0){
         max_z /= z_mult;
-    } else{
+    } else {
         max_z *= z_mult;
     }
 
     // Round bounds to reduce artifacts when moving camera
     // @note Relies on shadow map being square
-    float max_world_units_per_texel = 100*(glm::tan(glm::radians(45.0f)) * (camera.near_plane+camera.far_plane)) / SHADOW_SIZE;
+    //float max_world_units_per_texel = 100*(glm::tan(glm::radians(45.0f)) * (near_plane+far_plane)) / SHADOW_SIZE;
     //printf("World units per texel %f\n", max_world_units_per_texel);
-    min_x = glm::floor(min_x / max_world_units_per_texel) * max_world_units_per_texel;
-    max_x = glm::floor(max_x / max_world_units_per_texel) * max_world_units_per_texel;    
-    min_y = glm::floor(min_y / max_world_units_per_texel) * max_world_units_per_texel;
-    max_y = glm::floor(max_y / max_world_units_per_texel) * max_world_units_per_texel;    
-    min_z = glm::floor(min_z / max_world_units_per_texel) * max_world_units_per_texel;
-    max_z = glm::floor(max_z / max_world_units_per_texel) * max_world_units_per_texel;
+    //min_x = glm::floor(min_x / max_world_units_per_texel) * max_world_units_per_texel;
+    //max_x = glm::floor(max_x / max_world_units_per_texel) * max_world_units_per_texel;    
+    //min_y = glm::floor(min_y / max_world_units_per_texel) * max_world_units_per_texel;
+    //max_y = glm::floor(max_y / max_world_units_per_texel) * max_world_units_per_texel;    
+    //min_z = glm::floor(min_z / max_world_units_per_texel) * max_world_units_per_texel;
+    //max_z = glm::floor(max_z / max_world_units_per_texel) * max_world_units_per_texel;
 
     const auto shadow_projection = glm::ortho(min_x, max_x, min_y, max_y, min_z, max_z);
     //const auto shadow_projection = glm::ortho(50.0f, -50.0f, 50.0f, -50.0f, camera.near_plane, camera.far_plane);
-    graphics::shadow_vp = shadow_projection * shadow_view;
+    return shadow_projection * shadow_view;
+}
+
+void updateShadowVP(const Camera &camera){
+    graphics::shadow_cascade_distances[0] = camera.far_plane / 50.0f;
+    graphics::shadow_cascade_distances[1] = camera.far_plane / 25.0f;
+    graphics::shadow_cascade_distances[2] = camera.far_plane / 10.0f;
+    graphics::shadow_cascade_distances[3] = camera.far_plane / 2.0f;
+    float np = camera.near_plane, fp;
+    for(int i = 0; i < graphics::shadow_num; i++){
+        fp = graphics::shadow_cascade_distances[i];
+        graphics::shadow_vps[i] = getShadowMatrixFromFrustrum(camera, np, fp);
+        np = fp;
+    }
+    graphics::shadow_vps[graphics::shadow_num] = getShadowMatrixFromFrustrum(camera, np, camera.far_plane);
+
+    // @note if something else binds another ubo to 0 then this will be overwritten
+    glBindBuffer(GL_UNIFORM_BUFFER, graphics::shadow_matrices_ubo);
+    for (size_t i = 0; i < graphics::shadow_num + 1; ++i)
+    {
+        glBufferSubData(GL_UNIFORM_BUFFER, i * sizeof(glm::mat4x4), sizeof(glm::mat4x4), &graphics::shadow_vps[i]);
+    }
+    glBindBuffer(GL_UNIFORM_BUFFER, 0);
 }
 
 void createShadowFbo(){
@@ -120,18 +157,18 @@ void createShadowFbo(){
     glBindFramebuffer(GL_FRAMEBUFFER, graphics::shadow_fbo);
 
     glGenTextures(1, &graphics::shadow_buffer);
-    glBindTexture(GL_TEXTURE_2D, graphics::shadow_buffer);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT16, 
-                 SHADOW_SIZE, SHADOW_SIZE, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-    float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
-    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor); 
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
-		 
+    glBindTexture(GL_TEXTURE_2D_ARRAY, graphics::shadow_buffer);
+    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_DEPTH_COMPONENT32F, 
+                 SHADOW_SIZE, SHADOW_SIZE, graphics::shadow_num+1, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    const float border_col[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    glTexParameterfv(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_BORDER_COLOR, border_col); 
+	//glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+	//glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+    glFramebufferTexture(GL_FRAMEBUFFER, GL_TEXTURE_2D_ARRAY, graphics::shadow_buffer, 0);
 
 	glFramebufferTexture(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, graphics::shadow_buffer, 0);
     glDrawBuffer(GL_NONE);
@@ -141,24 +178,38 @@ void createShadowFbo(){
 	    fprintf(stderr, "Failed to create shadow fbo.\n");	
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+    glGenBuffers(1, &graphics::shadow_matrices_ubo);
+    glBindBuffer(GL_UNIFORM_BUFFER, graphics::shadow_matrices_ubo);
+    glBufferData(GL_UNIFORM_BUFFER, sizeof(glm::mat4x4) * (graphics::shadow_num+1), nullptr, GL_STATIC_DRAW);
+    glBindBufferBase(GL_UNIFORM_BUFFER, 0, graphics::shadow_matrices_ubo);
+    glBindBuffer(GL_UNIFORM_BUFFER, 0);
 }
 
 // Since shadow buffer wont need to be bound otherwise just combine these operations
 void bindDrawShadowMap(const EntityManager &entity_manager, const Camera &camera){
+    glBindBuffer(GL_UNIFORM_BUFFER, graphics::shadow_matrices_ubo);
+    for (size_t i = 0; i < graphics::shadow_num + 1; ++i)
+    {
+        glBufferSubData(GL_UNIFORM_BUFFER, i * sizeof(glm::mat4x4), sizeof(glm::mat4x4), &graphics::shadow_vps[i]);
+    }
+
+    glUseProgram(shader::null_program);
+    glBindBuffer(GL_UNIFORM_BUFFER, 0);
+
     glBindFramebuffer(GL_FRAMEBUFFER, graphics::shadow_fbo);
     glViewport(0, 0, SHADOW_SIZE, SHADOW_SIZE);
     
     // Make shadow line up with object by culling front (Peter Panning)
     // @note face culling wont work with certain techniques i.e. grass
-    glDisable(GL_CULL_FACE);
+    glEnable(GL_CULL_FACE);
     glCullFace(GL_FRONT);
-
-    glUseProgram(shader::null_program);
+    glDisable(GL_CULL_FACE);
 
     glDepthMask(GL_TRUE);
     glEnable(GL_DEPTH_TEST);
-	glDepthFunc(GL_LESS); 
-
+	//glDepthFunc(GL_LESS); 
+    
     //glDisable(GL_BLEND);
     glClear(GL_DEPTH_BUFFER_BIT);
 
@@ -166,8 +217,8 @@ void bindDrawShadowMap(const EntityManager &entity_manager, const Camera &camera
         auto m_e = (MeshEntity*)entity_manager.entities[i];
         if(m_e == nullptr || !(m_e->type & EntityType::MESH_ENTITY) || !m_e->casts_shadow) continue;
 
-        auto mvp = graphics::shadow_vp * createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
-        glUniformMatrix4fv(shader::null_uniforms.mvp, 1, GL_FALSE, &mvp[0][0]);
+        auto model = createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
+        glUniformMatrix4fv(shader::null_uniforms.model, 1, GL_FALSE, &model[0][0]);
 
         Mesh *mesh = m_e->mesh;
         for (int j = 0; j < mesh->num_materials; ++j) {
@@ -239,8 +290,13 @@ void createHdrFbo(bool resize){
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE){
         printf("Hdr framebuffer not complete.\n");
     }
-    static const GLuint attachments[2] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
-    glDrawBuffers(2, attachments);
+    if(shader::unified_bloom){
+        static const GLuint attachments[] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
+        glDrawBuffers(2, attachments);
+    } else {
+        static const GLuint attachments[] = { GL_COLOR_ATTACHMENT0 };
+        glDrawBuffers(2, attachments);
+    }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
@@ -279,18 +335,49 @@ void initGraphicsPrimitives(){
 
     // @hardcoded
     static const float plane_vertices[] = {
-        // positions     
-        -1.0f, 0.0f,  1.0f,
-        -1.0f, 0.0f, -1.0f,
-         1.0f, 0.0f,  1.0f,
-         1.0f, 0.0f, -1.0f,
+        -1.0f,-1.0f,-1.0f, // triangle 1 : begin
+        -1.0f,-1.0f, 1.0f,
+        -1.0f, 1.0f, 1.0f, // triangle 1 : end
+        1.0f, 1.0f,-1.0f, // triangle 2 : begin
+        -1.0f,-1.0f,-1.0f,
+        -1.0f, 1.0f,-1.0f, // triangle 2 : end
+        1.0f,-1.0f, 1.0f,
+        -1.0f,-1.0f,-1.0f,
+        1.0f,-1.0f,-1.0f,
+        1.0f, 1.0f,-1.0f,
+        1.0f,-1.0f,-1.0f,
+        -1.0f,-1.0f,-1.0f,
+        -1.0f,-1.0f,-1.0f,
+        -1.0f, 1.0f, 1.0f,
+        -1.0f, 1.0f,-1.0f,
+        1.0f,-1.0f, 1.0f,
+        -1.0f,-1.0f, 1.0f,
+        -1.0f,-1.0f,-1.0f,
+        -1.0f, 1.0f, 1.0f,
+        -1.0f,-1.0f, 1.0f,
+        1.0f,-1.0f, 1.0f,
+        1.0f, 1.0f, 1.0f,
+        1.0f,-1.0f,-1.0f,
+        1.0f, 1.0f,-1.0f,
+        1.0f,-1.0f,-1.0f,
+        1.0f, 1.0f, 1.0f,
+        1.0f,-1.0f, 1.0f,
+        1.0f, 1.0f, 1.0f,
+        1.0f, 1.0f,-1.0f,
+        -1.0f, 1.0f,-1.0f,
+        1.0f, 1.0f, 1.0f,
+        -1.0f, 1.0f,-1.0f,
+        -1.0f, 1.0f, 1.0f,
+        1.0f, 1.0f, 1.0f,
+        -1.0f, 1.0f, 1.0f,
+        1.0f,-1.0f, 1.0f
     };
-    glGenVertexArrays(1, &graphics::plane.vao);
-    GLuint plane_vbo;
-    glGenBuffers(1, &plane_vbo);
+    glGenVertexArrays(1, &graphics::cube.vao);
+    GLuint cube_vbo;
+    glGenBuffers(1, &cube_vbo);
 
-    glBindVertexArray(graphics::plane.vao);
-    glBindBuffer(GL_ARRAY_BUFFER, plane_vbo);
+    glBindVertexArray(graphics::cube.vao);
+    glBindBuffer(GL_ARRAY_BUFFER, cube_vbo);
 
     glBufferData(GL_ARRAY_BUFFER, sizeof(plane_vertices), &plane_vertices, GL_STATIC_DRAW);
 
@@ -299,19 +386,19 @@ void initGraphicsPrimitives(){
 
     glBindVertexArray(0);
 
-	graphics::plane.draw_count = (GLint*)malloc(sizeof(GLint));
-	graphics::plane.draw_start = (GLint*)malloc(sizeof(GLint));
-    graphics::plane.draw_mode = GL_TRIANGLE_STRIP;
-    graphics::plane.draw_type = GL_UNSIGNED_SHORT;
+	graphics::cube.draw_count = (GLint*)malloc(sizeof(GLint));
+	graphics::cube.draw_start = (GLint*)malloc(sizeof(GLint));
+    graphics::cube.draw_mode = GL_TRIANGLES;
+    graphics::cube.draw_type = GL_UNSIGNED_SHORT;
 
-    graphics::plane.draw_start[0] = 0; 
-    graphics::plane.draw_count[0] = 4;
+    graphics::cube.draw_start[0] = 0; 
+    graphics::cube.draw_count[0] = sizeof(plane_vertices) / 3.0;
 
     loadMesh(graphics::grid, "data/models/grid.obj");
 }
-void drawPlane(){
-    glBindVertexArray(graphics::plane.vao);
-    glDrawArrays(graphics::plane.draw_mode, graphics::plane.draw_start[0], graphics::plane.draw_count[0]);
+void drawCube(){
+    glBindVertexArray(graphics::cube.vao);
+    glDrawArrays(graphics::cube.draw_mode, graphics::cube.draw_start[0], graphics::cube.draw_count[0]);
 }
 void drawQuad(){
     glBindVertexArray(graphics::quad.vao);
@@ -357,21 +444,24 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Camera &camera){
     // @note face culling wont work with certain techniques i.e. grass
     glEnable(GL_CULL_FACE);
 
-    glClearColor(0,0,0,1);
+    glClearColor(0.05,0.05,0.05,1);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glUseProgram(shader::unified_programs[shader::unified_bloom]);
     glUniform3fv(shader::unified_uniforms[shader::unified_bloom].sun_color, 1, &sun_color[0]);
     glUniform3fv(shader::unified_uniforms[shader::unified_bloom].sun_direction, 1, &sun_direction[0]);
     glUniform3fv(shader::unified_uniforms[shader::unified_bloom].camera_position, 1, &camera.position[0]);
+    glUniformMatrix4fv(shader::unified_uniforms[shader::unified_bloom].view, 1, GL_FALSE, &camera.view[0][0]);
     
     glActiveTexture(GL_TEXTURE5);
-    glBindTexture(GL_TEXTURE_2D, graphics::shadow_buffer);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, graphics::shadow_buffer);
 
     // @ In general we could store lists of needed types with the entity_manager
     std::vector<int> water_ids;
     bool draw_water = false;
 
-    // @speed already calculated when performing dynamic shadow mapping
+    glUniform1fv(shader::unified_uniforms[shader::unified_bloom].shadow_cascade_distances, graphics::shadow_num, graphics::shadow_cascade_distances);
+    glUniform1f(shader::unified_uniforms[shader::unified_bloom].far_plane, camera.far_plane);
+
     auto vp = camera.projection * camera.view;
     for (int i = 0; i < ENTITY_COUNT; ++i) {
         auto m_e = (MeshEntity*)entity_manager.entities[i];
@@ -383,13 +473,10 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Camera &camera){
         }
         if(!(m_e->type & EntityType::MESH_ENTITY) || m_e->mesh == nullptr) continue;
 
-        auto trans = createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
-        auto shadow_mvp = graphics::shadow_vp * trans;
-        glUniformMatrix4fv(shader::unified_uniforms[shader::unified_bloom].shadow_mvp, 1, GL_FALSE, &shadow_mvp[0][0]);
-
-        auto mvp = vp * trans;
+        auto model = createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
+        auto mvp = vp * model;
         glUniformMatrix4fv(shader::unified_uniforms[shader::unified_bloom].mvp, 1, GL_FALSE, &mvp[0][0]);
-        glUniformMatrix4fv(shader::unified_uniforms[shader::unified_bloom].model, 1, GL_FALSE, &trans[0][0]);
+        glUniformMatrix4fv(shader::unified_uniforms[shader::unified_bloom].model, 1, GL_FALSE, &model[0][0]);
 
         auto mesh = m_e->mesh;
         for (int j = 0; j < mesh->num_materials; ++j) {
@@ -417,13 +504,17 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Camera &camera){
 
     if(draw_water){
         glDepthMask(GL_FALSE);
-        glUseProgram(shader::water_programs[shader::unified_bloom]);
-        glUniform3fv(shader::water_uniforms[shader::unified_bloom].sun_color, 1, &sun_color[0]);
-        glUniform3fv(shader::water_uniforms[shader::unified_bloom].sun_direction, 1, &sun_direction[0]);
-        glUniform3fv(shader::water_uniforms[shader::unified_bloom].camera_position, 1, &camera.position[0]);
-        glUniform2f(shader::water_uniforms[shader::unified_bloom].resolution, window_width, window_height);
+        glUseProgram(       shader::water_programs[shader::unified_bloom]);
+        glUniform1fv(       shader::water_uniforms[shader::unified_bloom].shadow_cascade_distances, graphics::shadow_num, graphics::shadow_cascade_distances);
+        glUniform1f(        shader::water_uniforms[shader::unified_bloom].far_plane, camera.far_plane);
+        glUniform3fv(       shader::water_uniforms[shader::unified_bloom].sun_color, 1, &sun_color[0]);
+        glUniform3fv(       shader::water_uniforms[shader::unified_bloom].sun_direction, 1, &sun_direction[0]);
+        glUniform3fv(       shader::water_uniforms[shader::unified_bloom].camera_position, 1, &camera.position[0]);
+        glUniform2f(        shader::water_uniforms[shader::unified_bloom].resolution, window_width, window_height);
+        glUniform1f(        shader::water_uniforms[shader::unified_bloom].time, glfwGetTime());
+        glUniformMatrix4fv( shader::water_uniforms[shader::unified_bloom].view, 1, GL_FALSE, &camera.view[0][0]);
 
-        // @debug the geometry shader and tesselation in future
+        // @debug the geometry shader and tesselation
         //glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
         glActiveTexture(GL_TEXTURE0);
@@ -434,14 +525,10 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Camera &camera){
         // @note Sort by depth
         for(auto &id : water_ids){
             auto e = (WaterEntity*)entity_manager.entities[id];
-            auto trans = createModelMatrix(e->position, glm::quat(), e->scale);
-            auto shadow_mvp = graphics::shadow_vp * trans;
-            glUniformMatrix4fv(shader::water_uniforms[shader::unified_bloom].shadow_mvp, 1, GL_FALSE, &shadow_mvp[0][0]);
-
-            auto mvp = vp * trans;
+            auto model = createModelMatrix(e->position, glm::quat(), e->scale);
+            auto mvp = vp * model;
             glUniformMatrix4fv(shader::water_uniforms[shader::unified_bloom].mvp, 1, GL_FALSE, &mvp[0][0]);
-            glUniformMatrix4fv(shader::water_uniforms[shader::unified_bloom].model, 1, GL_FALSE, &trans[0][0]);
-            glUniform1f(shader::water_uniforms[shader::unified_bloom].time, glfwGetTime());
+            glUniformMatrix4fv(shader::water_uniforms[shader::unified_bloom].model, 1, GL_FALSE, &model[0][0]);
             glUniform4fv(shader::water_uniforms[shader::unified_bloom].shallow_color, 1, &e->shallow_color[0]);
             glUniform4fv(shader::water_uniforms[shader::unified_bloom].deep_color, 1, &e->deep_color[0]);
             glUniform4fv(shader::water_uniforms[shader::unified_bloom].foam_color, 1, &e->foam_color[0]);
