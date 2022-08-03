@@ -40,7 +40,7 @@ namespace graphics{
     Mesh cube;
     Mesh grid;
 }
-// @hardcoded Cascaded shadow maps are better
+// @hardcoded
 static const int SHADOW_SIZE = 4096;
 
 void windowSizeCallback(GLFWwindow* window, int width, int height){
@@ -49,6 +49,7 @@ void windowSizeCallback(GLFWwindow* window, int width, int height){
     window_width  = width;
     window_height = height;
 }
+void framebufferSizeCallback(GLFWwindow *window, int width, int height){}
 
 void createDefaultCamera(Camera &camera){
     camera.state = Camera::TYPE::TRACKBALL;
@@ -394,7 +395,7 @@ void initGraphicsPrimitives(){
     graphics::cube.draw_start[0] = 0; 
     graphics::cube.draw_count[0] = sizeof(plane_vertices) / 3.0;
 
-    loadMesh(graphics::grid, "data/models/grid.obj");
+    loadMesh(graphics::grid, "data/models/grid.obj", editor::editor_assets);
 }
 void drawCube(){
     glBindVertexArray(graphics::cube.vao);
@@ -482,19 +483,19 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Camera &camera){
         for (int j = 0; j < mesh->num_materials; ++j) {
             auto &mat = mesh->materials[j];
             glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, mat->t_albedo);
+            glBindTexture(GL_TEXTURE_2D, mat->t_albedo->texture_id);
 
             glActiveTexture(GL_TEXTURE1);
-            glBindTexture(GL_TEXTURE_2D, mat->t_normal);
+            glBindTexture(GL_TEXTURE_2D, mat->t_normal->texture_id);
 
             glActiveTexture(GL_TEXTURE2);
-            glBindTexture(GL_TEXTURE_2D, mat->t_metallic);
+            glBindTexture(GL_TEXTURE_2D, mat->t_metallic->texture_id);
 
             glActiveTexture(GL_TEXTURE3);
-            glBindTexture(GL_TEXTURE_2D, mat->t_roughness);
+            glBindTexture(GL_TEXTURE_2D, mat->t_roughness->texture_id);
 
             glActiveTexture(GL_TEXTURE4);
-            glBindTexture(GL_TEXTURE_2D, mat->t_ambient);
+            glBindTexture(GL_TEXTURE_2D, mat->t_ambient->texture_id);
 
             // Bind VAO and draw
             glBindVertexArray(mesh->vao);

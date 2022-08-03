@@ -69,51 +69,53 @@ void handleEditorControls(Camera &camera, EntityManager &entity_manager, float d
     glfwGetCursorPos(window, &mouse_position.x, &mouse_position.y);
     delta_mouse_position = mouse_position - delta_mouse_position;
 
-    glfwGetKey(window, GLFW_KEY_DELETE);
-    if(sel_e.i != -1 && glfwGetKey(window, GLFW_KEY_DELETE) == GLFW_PRESS){
-        entity_manager.deleteEntity(editor::sel_e);
-        sel_e = NULLID;
-    }
-    if(sel_e.i != -1 && glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS && c_key_state == GLFW_RELEASE && glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS){
-        copy_id = sel_e;
-    }
-    if(copy_id.i != -1 && ctrl_v_state == GLFW_RELEASE && glfwGetKey(window, GLFW_KEY_V) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS && entity_manager.getEntity(copy_id) != nullptr){
-        auto e = entity_manager.duplicateEntity(copy_id);
-        copy_id = e->id;
-        if((e->type & MESH_ENTITY)){
-            ((MeshEntity*)e)->position += glm::vec3(0.1);
-            if(camera.state == Camera::TYPE::TRACKBALL){
-                sel_e = e->id;
-                camera.target = ((MeshEntity*)e)->position;
-                updateCameraView(camera);
+    if(!io.WantCaptureKeyboard){
+        glfwGetKey(window, GLFW_KEY_DELETE);
+        if(sel_e.i != -1 && glfwGetKey(window, GLFW_KEY_DELETE) == GLFW_PRESS){
+            entity_manager.deleteEntity(editor::sel_e);
+            sel_e = NULLID;
+        }
+        if(sel_e.i != -1 && glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS && c_key_state == GLFW_RELEASE && glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS){
+            copy_id = sel_e;
+        }
+        if(copy_id.i != -1 && ctrl_v_state == GLFW_RELEASE && glfwGetKey(window, GLFW_KEY_V) == GLFW_PRESS && glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS && entity_manager.getEntity(copy_id) != nullptr){
+            auto e = entity_manager.duplicateEntity(copy_id);
+            copy_id = e->id;
+            if((e->type & MESH_ENTITY)){
+                ((MeshEntity*)e)->position += glm::vec3(0.1);
+                if(camera.state == Camera::TYPE::TRACKBALL){
+                    sel_e = e->id;
+                    camera.target = ((MeshEntity*)e)->position;
+                    updateCameraView(camera);
+                }
             }
         }
-    }
-    if(glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS && d_key_state == GLFW_RELEASE && camera.state != Camera::TYPE::SHOOTER){
-        editor::draw_debug_wireframe = !editor::draw_debug_wireframe;
-    }
-    if(glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS && c_key_state == GLFW_RELEASE && glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) != GLFW_PRESS){
-        if(camera.state == Camera::TYPE::TRACKBALL) {
-            camera.state = Camera::TYPE::SHOOTER;
+        if(glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS && d_key_state == GLFW_RELEASE && camera.state != Camera::TYPE::SHOOTER){
+            editor::draw_debug_wireframe = !editor::draw_debug_wireframe;
+        }
+        if(glfwGetKey(window, GLFW_KEY_C) == GLFW_PRESS && c_key_state == GLFW_RELEASE && glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) != GLFW_PRESS){
+            if(camera.state == Camera::TYPE::TRACKBALL) {
+                camera.state = Camera::TYPE::SHOOTER;
 
-            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-            glfwSetCursorPos(window, window_width/2, window_height/2);
+                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+                glfwSetCursorPos(window, window_width/2, window_height/2);
 
-            mouse_position = glm::dvec2(window_width/2, window_height/2);
-            delta_mouse_position = glm::dvec2(0,0);
+                mouse_position = glm::dvec2(window_width/2, window_height/2);
+                delta_mouse_position = glm::dvec2(0,0);
 
-            sel_e = NULLID;
-        } else if(camera.state == Camera::TYPE::SHOOTER) {
-            camera.state = Camera::TYPE::TRACKBALL;
+                sel_e = NULLID;
+            } else if(camera.state == Camera::TYPE::SHOOTER) {
+                camera.state = Camera::TYPE::TRACKBALL;
 
-            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-           
-            if(sel_e.i != -1){
-                auto s_m_e = (MeshEntity*)entity_manager.getEntity(sel_e);
-                if(s_m_e != nullptr && s_m_e->type == EntityType::MESH_ENTITY){
-                    camera.target = s_m_e->position;
-                    updateCameraView(camera);
-                    updateShadowVP(camera);
+                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+               
+                if(sel_e.i != -1){
+                    auto s_m_e = (MeshEntity*)entity_manager.getEntity(sel_e);
+                    if(s_m_e != nullptr && s_m_e->type == EntityType::MESH_ENTITY){
+                        camera.target = s_m_e->position;
+                        updateCameraView(camera);
+                        updateShadowVP(camera);
+                    }
                 }
             }
         }

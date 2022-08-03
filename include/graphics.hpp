@@ -13,6 +13,7 @@ extern int    window_width;
 extern int    window_height;
 extern bool   window_resized;
 
+void framebufferSizeCallback(GLFWwindow *window, int width, int height);
 void windowSizeCallback(GLFWwindow* window, int width, int height);
 
 struct Entity;

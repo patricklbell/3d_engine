@@ -45,6 +45,7 @@ namespace editor {
     Mesh block_arrow_mesh;
     Mesh ring_mesh;
     Id sel_e(-1, -1);
+    std::map<std::string, Asset*> editor_assets;
 }
 using namespace editor;
 
@@ -71,9 +72,9 @@ void initEditorGui(){
     //bt_debug_drawer.init();
     //dynamics_world->setDebugDrawer(&bt_debug_drawer);
 	//bt_debug_drawer.setDebugMode(1);
-    loadMesh(arrow_mesh, "data/models/arrow.obj");
-    loadMesh(block_arrow_mesh, "data/models/block_arrow.obj");
-    loadMesh(ring_mesh, "data/models/ring.obj");
+    loadMesh(arrow_mesh, "data/models/arrow.obj", editor_assets);
+    loadMesh(block_arrow_mesh, "data/models/block_arrow.obj", editor_assets);
+    loadMesh(ring_mesh, "data/models/ring.obj", editor_assets);
 }
 
 bool editTransform(Camera &camera, glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, TransformType type=TransformType::ALL){
@@ -601,7 +602,7 @@ void drawEditor3DArrow(const glm::vec3 &position, const glm::vec3 &direction, co
     glDisable(GL_BLEND);  
 }
 
-void drawEditorGui(Camera &camera, EntityManager &entity_manager, std::vector<Asset *> &assets){
+void drawEditorGui(Camera &camera, EntityManager &entity_manager, std::map<std::string, Asset *> &assets){
     // 
     // Visualise entity picker and ray cast
     //
@@ -746,27 +747,35 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, std::vector<As
             im_file_dialog.SetTypeFilters({ ".level" });
             im_file_dialog.Open();
         }
-
-        if (ImGui::CollapsingHeader("Add Entity", ImGuiTreeNodeFlags_DefaultOpen)){
-            static int asset_current = 0;
+        static std::string current_asset = "";
+        if (assets.size() > 0 && ImGui::CollapsingHeader("Add Entity", ImGuiTreeNodeFlags_DefaultOpen)){
+            if(current_asset == "") current_asset = assets.begin()->first;
             ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 10);
-            if (ImGui::BeginCombo("##asset-combo", assets[asset_current]->path.c_str())){
-                for (int n = 0; n < assets.size(); n++)
-                {
-                    bool is_selected = (asset_current == n); // You can store your selection however you want, outside or inside your objects
-                    if(!(assets[n]->type & AssetType::MESH_ASSET)) continue;
-                    if (ImGui::Selectable(assets[n]->path.c_str(), is_selected))
-                        asset_current = n;
+            if (ImGui::BeginCombo("##asset-combo", current_asset.c_str())){
+                for(auto &a : assets){
+                    bool is_selected = (current_asset == a.first); 
+                    if (a.second->type != AssetType::MESH_ASSET) continue;
+                    if (ImGui::Selectable(a.first.c_str(), is_selected))
+                        current_asset = a.first;
                     if (is_selected)
-                        ImGui::SetItemDefaultFocus();   // You may set the initial focus when opening the combo (scrolling + for keyboard navigation support)
+                        ImGui::SetItemDefaultFocus(); 
                 }
                 ImGui::EndCombo();
             }
-
             if(ImGui::Button("Add Instance", ImVec2(ImGui::GetWindowWidth() - 10, 20))){
                 auto e = new MeshEntity();
-                e->mesh = &((MeshAsset*)assets[asset_current])->mesh;
+                e->mesh = &((MeshAsset*)assets[current_asset])->mesh;
                 entity_manager.setEntity(entity_manager.getFreeId().i, e);
+            }
+            if(ImGui::Button("Export Mesh", ImVec2(ImGui::GetWindowWidth() - 10, 20))){
+                im_file_dialog_type = "exportMesh";
+                im_file_dialog.SetTypeFilters({ ".mesh" });
+                im_file_dialog.Open();
+            }
+            if(ImGui::Button("Load Mesh", ImVec2(ImGui::GetWindowWidth() - 10, 20))){
+                im_file_dialog_type = "loadMesh";
+                im_file_dialog.SetTypeFilters({ ".mesh" });
+                im_file_dialog.Open();
             }
         }
 
@@ -800,16 +809,23 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, std::vector<As
         im_file_dialog.Display();
         if(im_file_dialog.HasSelected())
         {
+            auto p = std::string(im_file_dialog.GetSelected());
             printf("Selected filename: %s\n", im_file_dialog.GetSelected().c_str());
             if(im_file_dialog_type == "loadLevel"){
                 entity_manager.reset();
                 // @fix uses more memory than necessary/accumulates assets because unused assets arent destroyed
-                loadLevel(entity_manager, assets, im_file_dialog.GetSelected()) ;
+                loadLevel(entity_manager, assets, p) ;
                 sel_e = Id(-1, -1);
             } else if(im_file_dialog_type == "saveLevel"){
-                saveLevel(entity_manager, assets, im_file_dialog.GetSelected());
+                saveLevel(entity_manager, assets, p);
+            } else if(im_file_dialog_type == "exportMesh"){
+                writeMeshFile(((MeshAsset*)assets[current_asset])->mesh, p);
+            } else if(im_file_dialog_type == "loadMesh"){
+                auto m_a = new MeshAsset(p);
+                readMeshFile(m_a->mesh, p);
+                assets[p] = m_a;
             } else {
-                fprintf(stderr, "Unhandled imgui file dialog type %s.\n", im_file_dialog_type.c_str());
+                fprintf(stderr, "Unhandled imgui file dialog type %s.\n", p.c_str());
             }
 
             //if(im_file_dialog_type == "asset.mat.tDiffuse"){

@@ -1,6 +1,7 @@
 #ifndef ASSETS_HPP
 #define ASSETS_HPP
 
+#include <map>
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -11,15 +12,16 @@
 
 #include <assimp/scene.h> 
 
+struct TextureAsset;
+
 struct Material {
-    std::string name;
 // Store constant uniforms in 1x1 textures, it would be good to
 // check if this is performant.
-    GLuint    t_normal               = 0;
-    GLuint    t_albedo               = 0;
-    GLuint    t_ambient              = 0;
-    GLuint    t_roughness            = 0;
-    GLuint    t_metallic             = 0;
+    TextureAsset *t_normal    = nullptr;
+    TextureAsset *t_albedo    = nullptr;
+    TextureAsset *t_ambient   = nullptr;
+    TextureAsset *t_roughness = nullptr;
+    TextureAsset *t_metallic  = nullptr;
 } typedef Material;
 
 extern Material *default_material;
@@ -52,6 +54,7 @@ struct Mesh {
 enum AssetType {
     ASSET = 0,
     MESH_ASSET = 1,
+    TEXTURE_ASSET = 2,
 };
 
 struct Asset {
@@ -60,8 +63,6 @@ struct Asset {
     Asset(std::string _path) : path(_path){}
 };
 
-bool loadAsset(Asset *asset);
-
 struct MeshAsset : Asset {
     Mesh mesh;
     MeshAsset(std::string _path) : Asset(_path){
@@ -69,7 +70,20 @@ struct MeshAsset : Asset {
     };
     ~MeshAsset();
 };
-bool loadMesh(Mesh &mesh, std::string path);
+bool loadMesh(Mesh &mesh, std::string path, std::map<std::string, Asset*> &assets);
+bool writeMeshFile(const Mesh &mesh, std::string path);
+bool readMeshFile(Mesh &mesh, std::string path);
+
+struct TextureAsset : Asset {
+    GLuint texture_id;
+    TextureAsset(std::string _path) : Asset(_path){
+        type = (AssetType)(type | AssetType::TEXTURE_ASSET);
+    };
+    ~TextureAsset(){
+        glDeleteTextures(1, &texture_id);
+    }
+};
+TextureAsset *loadTextureFromAssimp(std::map<std::string, Asset*> &assets, aiMaterial *mat, const aiScene *scene, aiTextureType texture_type, GLint internal_format);
 
 //bool loadAssimp(
 //	std::string path,
@@ -84,5 +98,4 @@ bool loadMesh(Mesh &mesh, std::string path);
 //);
 //bool loadMtl(std::unordered_map<std::string, Material *> &material_map, const std::string &path);
 //bool loadAssetObj(Mesh *asset, const std::string &objpath, const std::string &mtlpath);
-GLuint loadTextureFromAssimp(aiMaterial *mat, const aiScene *scene, aiTextureType texture_type, GLint internal_format);
 #endif

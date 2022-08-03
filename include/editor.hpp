@@ -4,6 +4,7 @@
 #include <string>
 #include <iostream>
 #include <stack>
+#include <map>
 
 #include <glm/glm.hpp>
 
@@ -28,7 +29,7 @@ enum class TransformType : unsigned int{
 
 void initEditorGui();
 
-void drawEditorGui(Camera &camera, EntityManager &entity_manager, std::vector<Asset *> &assets);
+void drawEditorGui(Camera &camera, EntityManager &entity_manager, std::map<std::string, Asset *> &assets);
 
 bool editorTranslationGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, Camera &camera, const glm::vec3 &snap, bool do_snap);
 bool editorRotationGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, const Camera &camera);
@@ -164,6 +165,7 @@ namespace editor {
     extern bool draw_debug_wireframe;
     extern bool transform_active;
     extern Id sel_e;
+    extern std::map<std::string, Asset*> editor_assets;
 }
 
 #endif

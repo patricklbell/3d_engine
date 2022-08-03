@@ -3,6 +3,7 @@
 #include <limits>
 #include <vector>
 #include <cstdint>
+#include <map>
 #include <unordered_map>
 #include "assets.hpp"
 #include "entities.hpp"
@@ -15,14 +16,15 @@
 #include "utilities.hpp"
 #include "texture.hpp"
 
-void saveLevel(EntityManager &entity_manager, const std::vector<Asset*> assets, std::string level_path){
+void saveLevel(EntityManager &entity_manager, const std::map<std::string, Asset*> assets, std::string level_path){
     FILE *f;
     f=fopen(level_path.c_str(),"wb");
 
     // Construct map between asset pointers and index
     std::unordered_map<intptr_t, uint64_t> asset_lookup;
     uint64_t index = 0;
-    for(auto &asset : assets){
+    for(const auto &a : assets){
+        auto asset = a.second;
         if(asset->type != AssetType::MESH_ASSET) continue;
         auto m_a = (MeshAsset*)asset;
 
@@ -77,15 +79,7 @@ void saveLevel(EntityManager &entity_manager, const std::vector<Asset*> assets, 
 // @todo if needed make loading asign new ids such that connections are maintained
 // @todo any entities that store ids must be resolved so that invalid ie wrong versions are NULLID 
 // since we dont maintain version either
-bool loadLevel(EntityManager &entity_manager, std::vector<Asset*> &assets, std::string level_path){
-    // Create lookup to check if entity is already loaded
-    std::unordered_map<std::string, uint64_t> asset_lookup;
-    uint64_t index = 0;
-    for(auto &asset : assets){
-        asset_lookup[asset->path] = index;
-        index++;
-    }
-
+bool loadLevel(EntityManager &entity_manager, std::map<std::string, Asset*> &assets, std::string level_path){
     FILE *f;
     f=fopen(level_path.c_str(),"rb");
 
@@ -97,27 +91,26 @@ bool loadLevel(EntityManager &entity_manager, std::vector<Asset*> &assets, std::
     std::string asset_path;
 
     uint64_t asset_index = 0;
-    std::unordered_map<uint64_t, uint64_t> file_asset_mapping;
+    std::unordered_map<uint64_t, std::string> file_asset_mapping;
     while((c = fgetc(f)) != EOF){
         if(c == '\0'){
             // Reached end of paths
             if(asset_path == "") break;
 
-            auto found_asset = asset_lookup.find(asset_path);
+            auto found_asset = assets.find(asset_path);
             // Asset not loaded so create mapping to existing new index
-            if(found_asset == asset_lookup.end()){
+            if(found_asset == assets.end()){
                 printf("Loading new asset, path is %s.\n", asset_path.c_str());
 
                 // @todo make good system for loading asset ie saving asset type, for now assume mesh asset
-                assets.push_back((Asset*)new MeshAsset(asset_path));
-                loadAsset(assets.back());
-                asset_lookup[asset_path] = assets.size()-1;
+                auto a = new MeshAsset(asset_path);
+                loadMesh(a->mesh, asset_path, assets);
+                assets[asset_path] = a;
 
-                file_asset_mapping[asset_index] = assets.size()-1;
+                file_asset_mapping[asset_index] = asset_path;
             } else {
                 printf("Using existing asset, path is %s.\n", asset_path.c_str());
-                printf("%li --> %li\n", asset_index, found_asset->second);
-                file_asset_mapping[asset_index] = found_asset->second;
+                file_asset_mapping[asset_index] = asset_path;
             }
 
             asset_path = "";
@@ -152,7 +145,7 @@ bool loadLevel(EntityManager &entity_manager, std::vector<Asset*> &assets, std::
                     // Convert asset index to ptr
                     uint64_t file_asset_index = (uint64_t)m_e->mesh;
                     printf("Asset index is %d.\n", (int)file_asset_index);
-                    printf("Which maps to %d.\n", (int)file_asset_mapping[file_asset_index]);
+                    printf("Which maps to %s.\n", file_asset_mapping[file_asset_index].c_str());
                     m_e->mesh = &( ( (MeshAsset*)assets[file_asset_mapping[file_asset_index]] )->mesh );
 
                     printf("Entity position %f %f %f.\n", m_e->position.x, m_e->position.y, m_e->position.z);

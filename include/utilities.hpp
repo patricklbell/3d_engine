@@ -7,8 +7,8 @@
 #include "assets.hpp"
 #include "graphics.hpp"
 
-void saveLevel(EntityManager &entity_manager, const std::vector<Asset*> assets, std::string level_path);
-bool loadLevel(EntityManager &entity_manager, std::vector<Asset*> &assets, std::string level_path);
+void saveLevel(EntityManager &entity_manager, const std::map<std::string, Asset*> assets, std::string level_path);
+bool loadLevel(EntityManager &entity_manager, std::map<std::string, Asset*> &assets, std::string level_path);
 glm::mat4x4 createModelMatrix(const glm::vec3 &pos, const glm::quat &rot, const glm::mat3x3 &scl);
 void screenPosToWorldRay(glm::ivec2 mouse_position, glm::mat4 view, glm::mat4 projection, glm::vec3 &out_origin, glm::vec3 &out_direction);
 bool rayIntersectsTriangleCull(const glm::vec3 vertices[3], const glm::vec3 &ray_origin, const glm::vec3 &ray_direction, double &t, double &u, double &v);

@@ -13,10 +13,10 @@ add_definitions(
 
 ### GLFW ###
 
-add_subdirectory (glfw-3.2.1)
+add_subdirectory (glfw-3.3.7)
 
 include_directories(
-	glfw-3.2.1/include/GLFW/
+	glfw-3.3.7/include/GLFW/
 	glew-2.1.0/include/
 )
 
@@ -60,15 +60,3 @@ target_link_libraries(GLEW_210
 # AssImp already has a CMakeLists.txt so let's use these
 
 add_subdirectory( assimp-5.1.5 )
-
-### BULLET ###
-# Bullet already has a CMakeLists.txt so let's use these
-
-#set(BULLET_VERSION 2.82)
-#include_directories(
-#	bullet-2.82-r2704/src
-#)
-#add_subdirectory( bullet-2.82-r2704/src/BulletSoftBody )
-#add_subdirectory( bullet-2.82-r2704/src/BulletCollision )
-#add_subdirectory( bullet-2.82-r2704/src/BulletDynamics )
-#add_subdirectory( bullet-2.82-r2704/src/LinearMath )

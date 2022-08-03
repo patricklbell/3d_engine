@@ -107,6 +107,10 @@ int main() {
     glfwGetWindowSize(window, &window_width, &window_height);
     glfwSetWindowSizeCallback(window, windowSizeCallback);
 
+    glfwMakeContextCurrent(window);
+    glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
+    glfwSwapInterval(0);
+
     glEnable(GL_MULTISAMPLE);
 
     initDefaultMaterial();
@@ -116,6 +120,7 @@ int main() {
     if(shader::unified_bloom){
         createBloomFbo();
     }
+
 
     // @note camera instanciation uses sun direction to create shadow view
     // In future create a shadow object/directional light object which contains
@@ -151,17 +156,11 @@ int main() {
     }
 
     // Load assets
-    const std::vector<std::string> asset_paths = {"data/models/cube.obj", "data/models/sphere.obj", "data/models/WoodenCrate.obj"};
-    std::vector<Asset *> assets;
-    for (int i = 0; i < asset_paths.size(); ++i) {
-        assets.push_back((Asset *)new MeshAsset(asset_paths[i]));
-        loadAsset(assets.back());
-    }
+    std::map<std::string, Asset*> assets;
     
     EntityManager entity_manager;
 
-    // Create instance
-    entity_manager.setEntity(entity_manager.getFreeId().i, new WaterEntity());
+    loadLevel(entity_manager, assets, "data/levels/test.level");
 
     // @todo Skymap loading and rendering
     //GLuint tSkybox = load_cubemap({"Skybox1.bmp", "Skybox2.bmp","Skybox3.bmp","Skybox4.bmp","Skybox5.bmp","Skybox6.bmp"});
@@ -252,8 +251,11 @@ int main() {
     while( glfwGetKey(window, GLFW_KEY_ESCAPE ) != GLFW_PRESS && glfwWindowShouldClose(window) == 0 );
 
     // Free assets
-    for(auto &asset : assets){
-        delete(asset);
+    for(const auto &a : assets){
+        delete(a.second);
+    }
+    for(const auto &a : editor::editor_assets){
+        delete(a.second);
     }
     deleteShaderPrograms();    
 
