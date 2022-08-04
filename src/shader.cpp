@@ -56,7 +56,7 @@ GLuint loadShader(std::string vertex_fragment_file_path, std::string macro_prepe
 	GLuint vertex_shader_id   = glCreateShader(GL_VERTEX_SHADER);
 	GLuint fragment_shader_id = glCreateShader(GL_FRAGMENT_SHADER);
 
-	FILE *fp = fopen(path, "r");
+	FILE *fp = fopen(path, "rb");
 
 	if (fp == NULL) {
 		fprintf(stderr, "Can't open shader file %s.\n", path);
@@ -66,13 +66,13 @@ GLuint loadShader(std::string vertex_fragment_file_path, std::string macro_prepe
 	int num_bytes = ftell(fp);
 	
 	// @note adds \0 to fread
-	rewind(fp); 
-	char *shader_code = (char*)malloc((num_bytes+1) * sizeof(char));	
-	if(shader_code == NULL)
+	rewind(fp);
+	char* shader_code = (char*)malloc((num_bytes + 1) * sizeof(char));
+	if (shader_code == NULL)
 		return 0;
 	fread(shader_code, sizeof(char), num_bytes, fp);
 	fclose(fp);
-	shader_code[num_bytes] = 0;
+	shader_code[num_bytes] = '\0';
     
 	GLint result = GL_FALSE;
 	int info_log_length;
@@ -90,6 +90,7 @@ GLuint loadShader(std::string vertex_fragment_file_path, std::string macro_prepe
 		char *vertex_shader_error_message = (char *)malloc(sizeof(char) * (info_log_length+1));
 		glGetShaderInfoLog(vertex_shader_id, info_log_length, NULL, vertex_shader_error_message);
 		fprintf(stderr, "Vertex shader:\n%s\n", vertex_shader_error_message);
+		fprintf(stderr, "%s%s%s%s\n", vertex_shader_code[0], vertex_shader_code[1], vertex_shader_code[2], vertex_shader_code[3]);
 		free(vertex_shader_error_message);
     	free(shader_code);
 		return GL_FALSE;

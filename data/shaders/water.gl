@@ -17,11 +17,11 @@ uniform float time;
 
 vec3 gwaves(in vec3 v) {
     const int wn = 1;
-    const vec2  d[] = {normalize(vec2(0.2, 0.4))};
-    const float a[] = {0.08};
-    const float q[] = {0.7};
-    const float p[] = {0.7};
-    const float w[] = {20.0};
+    const vec2  d[wn] = {normalize(vec2(0.2f, 0.4f))};
+    const float a[wn] = {0.08};
+    const float q[wn] = {0.7};
+    const float p[wn] = {0.7};
+    const float w[wn] = {20.0};
 
     vec3 res = v;
     for(int i = 0; i < wn; i++){
@@ -605,11 +605,11 @@ float depthToDist(float d){
 
 vec3 dgwaves(in vec3 v) {
   const int wn = 1;
-  const vec2  d[] = {normalize(vec2(0.2, 0.4))};
-  const float a[] = {0.01};
-  const float q[] = {0.7};
-  const float p[] = {0.7};
-  const float w[] = {20.0};
+  const vec2  d[wn] = {normalize(vec2(0.2, 0.4))};
+  const float a[wn] = {0.01};
+  const float q[wn] = {0.7};
+  const float p[wn] = {0.7};
+  const float w[wn] = {20.0};
 
   vec3 n = vec3(0.0, 1.0, 0.0);
   for(int i = 0; i < wn; i++){
@@ -671,15 +671,14 @@ void main(){
     vec3 hdr_color = ambient + brdfSchlickGGX(vs_in.position, normal, albedo, -sun_direction, sun_color);
     
     out_color = vec4(hdr_color, 1.0);
-    out_color = vec4(1,0,0,1);
     //out_color = mix(vec4(1,0,0,1), vec4(0,0,1,1), screen_d);
   }
 
 #ifdef BLOOM
     // If we are doing bloom write to second buffer
-    float brightness = dot(hdr_color, vec3(0.2126, 0.7152, 0.0722));
+    float brightness = dot(vec3(out_color), vec3(0.2126, 0.7152, 0.0722));
     if(brightness > 1.0)
-        out_bloom_color = vec4(hdr_color, 1.0);
+        out_bloom_color = out_color;
     else
         out_bloom_color = vec4(0.0, 0.0, 0.0, 1.0);
 #endif

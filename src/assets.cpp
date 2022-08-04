@@ -480,9 +480,11 @@ bool readMeshFile(std::map<std::string, Asset*> &assets, Mesh &mesh, std::string
 
         int albedo_len;
         fread(&albedo_len, sizeof(int), 1, f);
-        char albedo_path[albedo_len];
-        fread(&albedo_path, sizeof(char), albedo_len, f);
-        if(!strcmp(albedo_path, "DEFAULTMATERIAL:albedo")) mat->t_albedo = default_material->t_albedo;
+        std::string albedo_path;
+        albedo_path.resize(albedo_len);
+        fread(&albedo_path[0], sizeof(char), albedo_len, f);
+        mat->t_albedo = new TextureAsset(albedo_path);
+        if (albedo_path == "DEFAULTMATERIAL:albedo") mat->t_albedo = default_material->t_albedo;
         else {
             mat->t_albedo = new TextureAsset(albedo_path);
             mat->t_albedo->texture_id = loadImage(albedo_path, GL_RGBA);
@@ -491,34 +493,37 @@ bool readMeshFile(std::map<std::string, Asset*> &assets, Mesh &mesh, std::string
 
         int normal_len;
         fread(&normal_len, sizeof(int), 1, f);
-        char normal_path[normal_len];
-        fread(&normal_path, sizeof(char), normal_len, f);
+        std::string normal_path;
+        normal_path.resize(normal_len);
+        fread(&normal_path[0], sizeof(char), normal_len, f);
         mat->t_normal = new TextureAsset(normal_path);
-        if(!strcmp(normal_path, "DEFAULTMATERIAL:normal")) mat->t_normal = default_material->t_normal;
+        if (normal_path == "DEFAULTMATERIAL:normal") mat->t_normal = default_material->t_normal;
         else {
             mat->t_normal = new TextureAsset(normal_path);
             mat->t_normal->texture_id = loadImage(normal_path, GL_RGBA);
             assets[normal_path] = mat->t_normal;
         }
 
-
         int ambient_len;
         fread(&ambient_len, sizeof(int), 1, f);
-        char ambient_path[ambient_len];
-        fread(&ambient_path, sizeof(char), ambient_len, f);
-        if(!strcmp(ambient_path, "DEFAULTMATERIAL:ambient")) mat->t_ambient = default_material->t_ambient;
+        std::string ambient_path;
+        ambient_path.resize(ambient_len);
+        fread(&ambient_path[0], sizeof(char), ambient_len, f);
+        mat->t_ambient = new TextureAsset(ambient_path);
+        if (ambient_path == "DEFAULTMATERIAL:ambient") mat->t_ambient = default_material->t_ambient;
         else {
             mat->t_ambient = new TextureAsset(ambient_path);
             mat->t_ambient->texture_id = loadImage(ambient_path, GL_RGBA);
             assets[ambient_path] = mat->t_ambient;
         }
 
-
         int metallic_len;
         fread(&metallic_len, sizeof(int), 1, f);
-        char metallic_path[metallic_len];
-        fread(&metallic_path, sizeof(char), metallic_len, f);
-        if(!strcmp(metallic_path, "DEFAULTMATERIAL:metallic")) mat->t_metallic = default_material->t_metallic;
+        std::string metallic_path;
+        metallic_path.resize(metallic_len);
+        fread(&metallic_path[0], sizeof(char), metallic_len, f);
+        mat->t_metallic = new TextureAsset(metallic_path);
+        if (metallic_path == "DEFAULTMATERIAL:metallic") mat->t_metallic = default_material->t_metallic;
         else {
             mat->t_metallic = new TextureAsset(metallic_path);
             mat->t_metallic->texture_id = loadImage(metallic_path, GL_RGBA);
@@ -527,16 +532,18 @@ bool readMeshFile(std::map<std::string, Asset*> &assets, Mesh &mesh, std::string
 
         int roughness_len;
         fread(&roughness_len, sizeof(int), 1, f);
-        char roughness_path[roughness_len];
-        fread(&roughness_path, sizeof(char), roughness_len, f);
-        if(!strcmp(roughness_path, "DEFAULTMATERIAL:roughness")) mat->t_roughness = default_material->t_roughness;
+        std::string roughness_path;
+        roughness_path.resize(roughness_len);
+        fread(&roughness_path[0], sizeof(char), roughness_len, f);
+        mat->t_roughness = new TextureAsset(roughness_path);
+        if (roughness_path == "DEFAULTMATERIAL:roughness") mat->t_roughness = default_material->t_roughness;
         else {
             mat->t_roughness = new TextureAsset(roughness_path);
             mat->t_roughness->texture_id = loadImage(roughness_path, GL_RGBA);
             assets[roughness_path] = mat->t_roughness;
         }
 
-        printf("Material %d\nAlbedo: %s, Normal %s, Ambient %s, Metallic %s, Roughness %s\n", i, albedo_path, normal_path, ambient_path, metallic_path, roughness_path);
+        printf("Material %d\nAlbedo: %s, Normal %s, Ambient %s, Metallic %s, Roughness %s\n", i, albedo_path.c_str(), normal_path.c_str(), ambient_path.c_str(), metallic_path.c_str(), roughness_path.c_str());
 
         mesh.materials[i] = mat;
     }
@@ -554,10 +561,10 @@ bool readMeshFile(std::map<std::string, Asset*> &assets, Mesh &mesh, std::string
     createMeshVao(mesh);
     return true;
 }
-bool loadMesh(Mesh &mesh, std::string path, std::map<std::string, Asset*> &assets){
-    std::string m_path = path;
-    m_path.replace(path.size() - 3, 3, "mesh");
-    printf("Mesh path %s\n", m_path.c_str());
+bool loadMesh(Mesh &mesh, const std::string &path, std::map<std::string, Asset*> &assets){
+    //std::string m_path = path;
+    //m_path.replace(path.size() - 3, 3, "mesh");
+    //printf("Mesh path %s\n", m_path.c_str());
 
     //if(std::filesystem::exists(m_path)) {
     //    return readMeshFile(mesh, m_path);

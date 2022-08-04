@@ -5,12 +5,18 @@
 
 #include <glm/glm.hpp>
 
+#include <GL/glew.h>
 #include <GLFW/glfw3.h>
 
 #include "imgui.h"
 
 #define ENTITY_COUNT 1000
 #define PI           3.14159265359
+
+// disable Windows.h min max macros
+#ifdef _WINDOWS
+#define NOMINMAX 
+#endif
 
 extern GLFWwindow* window;
 extern std::string glsl_version;

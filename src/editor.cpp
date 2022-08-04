@@ -1,7 +1,8 @@
-#include "editor.hpp"
+#include "globals.hpp"
 
 #include <stack>
 #include <limits>
+#include <algorithm>
 
 // Include GLEW
 #include <GL/glew.h>
@@ -26,7 +27,7 @@
 #include <glm/gtx/euler_angles.hpp>
 #include <string>
 
-#include "globals.hpp"
+#include "editor.hpp"
 #include "utilities.hpp"
 #include "graphics.hpp"
 #include "shader.hpp"
@@ -953,8 +954,9 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, std::map<std::
         im_file_dialog.Display();
         if(im_file_dialog.HasSelected())
         {
-            auto p = std::string(im_file_dialog.GetSelected());
-            printf("Selected filename: %s\n", im_file_dialog.GetSelected().c_str());
+            auto p = im_file_dialog.GetSelected().string().erase(0, exepath.length() + 1);
+            std::replace(p.begin(), p.end(), '\\', '/');
+            printf("Selected filename: %s\n", p.c_str());
             if(im_file_dialog_type == "loadLevel"){
                 entity_manager.reset();
                 // @fix uses more memory than necessary/accumulates assets because unused assets arent destroyed

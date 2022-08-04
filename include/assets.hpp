@@ -6,6 +6,10 @@
 #include <vector>
 #include <unordered_map>
 
+// Include GLEW
+#include <GL/glew.h>
+
+// Include GLFW
 #include <GLFW/glfw3.h>
 
 #include <glm/glm.hpp>
@@ -71,7 +75,7 @@ struct MeshAsset : Asset {
     };
     ~MeshAsset();
 };
-bool loadMesh(Mesh &mesh, std::string path, std::map<std::string, Asset*> &assets);
+bool loadMesh(Mesh &mesh, const std::string &path, std::map<std::string, Asset*> &assets);
 bool writeMeshFile(const Mesh &mesh, std::string path);
 bool readMeshFile(std::map<std::string, Asset*> &assets, Mesh &mesh, std::string path);
 

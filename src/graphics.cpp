@@ -86,9 +86,9 @@ glm::mat4x4 getShadowMatrixFromFrustrum(const Camera &camera, float near_plane, 
         }
     }
     center /= frustrum.size();
-    
+ 
     const auto shadow_view = glm::lookAt(-sun_direction + center, center, camera.up);
-    typedef std::numeric_limits<float> lim;
+    using lim = std::numeric_limits<float>;
     float min_x = lim::max(), min_y = lim::max(), min_z = lim::max();
     float max_x = lim::min(), max_y = lim::min(), max_z = lim::min();
     for(const auto &wp: frustrum){
@@ -436,7 +436,7 @@ void initGraphicsPrimitives() {
     graphics::cube.draw_start[0] = 0; 
     graphics::cube.draw_count[0] = sizeof(cube_vertices) / (3.0 * sizeof(*cube_vertices));
 
-    loadMesh(graphics::grid, "data/models/grid.obj", editor::editor_assets);
+    readMeshFile(editor::editor_assets, graphics::grid, "./data/models/grid.mesh");
 }
 void drawCube(){
     glBindVertexArray(graphics::cube.vao);

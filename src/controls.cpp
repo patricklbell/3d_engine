@@ -180,8 +180,8 @@ void handleEditorControls(Camera &camera, EntityManager &entity_manager, float d
             auto camera_right = glm::vec3(glm::transpose(camera.view)[0]);
 
             // Calculate the amount of rotation given the mouse movement.
-            float delta_angle_x = (2 * M_PI / (float)window_width); // a movement from left to right = 2*PI = 360 deg
-            float delta_angle_y = (M_PI / (float)window_height);  // a movement from top to bottom = PI = 180 deg
+            float delta_angle_x = (2 * PI / (float)window_width); // a movement from left to right = 2*PI = 360 deg
+            float delta_angle_y = (PI / (float)window_height);  // a movement from top to bottom = PI = 180 deg
             float x_angle = -delta_mouse_position.x * delta_angle_x;
             float y_angle = -delta_mouse_position.y * delta_angle_y;
 
@@ -238,8 +238,8 @@ void handleEditorControls(Camera &camera, EntityManager &entity_manager, float d
         glm::vec3 camera_direction_rotated;
         if(delta_mouse_position.length() != 0){
             // Calculate the amount of rotation given the mouse movement.
-            float delta_angle_x = (2 * M_PI / (float)window_width); // a movement from left to right = 2*PI = 360 deg
-            float delta_angle_y = (M_PI / (float)window_height);  // a movement from top to bottom = PI = 180 deg
+            float delta_angle_x = (2 * PI / (float)window_width); // a movement from left to right = 2*PI = 360 deg
+            float delta_angle_y = (PI / (float)window_height);  // a movement from top to bottom = PI = 180 deg
             float x_angle = -delta_mouse_position.x * delta_angle_x;
             float y_angle = -delta_mouse_position.y * delta_angle_y;
 

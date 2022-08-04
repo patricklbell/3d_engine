@@ -58,26 +58,26 @@ int main() {
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE); // To make MacOS happy; should not be needed
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    glsl_version = "";
+    glsl_version = "#version 430\n";
 #ifdef __APPLE__
-    // GL 4.1 + GLSL 410
-    glsl_version = "#version 410\n";
+    // GL 4.3 + GLSL 430
+    glsl_version = "#version 430\n";
     glfwWindowHint( // required on Mac OS
         GLFW_OPENGL_FORWARD_COMPAT,
         GL_TRUE
     );
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 1);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 #elif __linux__
     // GL 4.3 + GLSL 430
     glsl_version = "#version 430\n";
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 #elif _WIN32
-    // GL 3.0 + GLSL 130
-    glsl_version = "#version 130\n";
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
+    // GL 4.3 + GLSL 430
+    glsl_version = "#version 430\n";
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 #endif
 
 #if __APPLE__
@@ -167,9 +167,11 @@ int main() {
 
     //loadLevel(entity_manager, assets, "data/levels/test.level");
 
-    auto t_e = new TerrainEntity();
-    t_e->texture = createTextureAsset(assets, "data/textures/iceland_heightmap.png");
-    entity_manager.setEntity(entity_manager.getFreeId().i, t_e);
+    //auto t_e = new TerrainEntity();
+    //t_e->texture = createTextureAsset(assets, "data/textures/iceland_heightmap.png");
+    //entity_manager.setEntity(entity_manager.getFreeId().i, t_e);
+    auto w_e = new WaterEntity();
+    entity_manager.setEntity(entity_manager.getFreeId().i, w_e);
 
     std::array<std::string,6> skybox_paths = {"data/textures/cloudy/bluecloud_ft.jpg", "data/textures/cloudy/bluecloud_bk.jpg",
                                               "data/textures/cloudy/bluecloud_up.jpg", "data/textures/cloudy/bluecloud_dn.jpg",
