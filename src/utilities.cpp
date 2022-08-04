@@ -57,7 +57,7 @@ void saveLevel(EntityManager &entity_manager, const std::map<std::string, Asset*
                     auto m_e = (MeshEntity*)e;
                     auto mesh = m_e->mesh;
                     auto lookup = asset_lookup[(intptr_t)m_e->mesh];
-                    m_e->mesh = (Mesh*)lookup;
+                    m_e->mesh = reinterpret_cast<MeshAsset*>(lookup);
 
                     fwrite(m_e, sizeof(MeshEntity), 1, f);
                    
@@ -104,8 +104,13 @@ bool loadLevel(EntityManager &entity_manager, std::map<std::string, Asset*> &ass
 
                 // @todo make good system for loading asset ie saving asset type, for now assume mesh asset
                 auto a = new MeshAsset(asset_path);
-                loadMesh(a->mesh, asset_path, assets);
-                assets[asset_path] = a;
+                // @todo make this cleaner, either by having all models be meshes or having a flag
+                if (endsWith(asset_path, ".mesh")) {
+                    readMeshFile(assets, a->mesh, asset_path);
+                } else {
+                    loadMesh(a->mesh, asset_path, assets);
+                }
+                assets.emplace(asset_path, std::move(a));
 
                 file_asset_mapping[asset_index] = asset_path;
             } else {
@@ -146,7 +151,7 @@ bool loadLevel(EntityManager &entity_manager, std::map<std::string, Asset*> &ass
                     uint64_t file_asset_index = (uint64_t)m_e->mesh;
                     printf("Asset index is %d.\n", (int)file_asset_index);
                     printf("Which maps to %s.\n", file_asset_mapping[file_asset_index].c_str());
-                    m_e->mesh = &( ( (MeshAsset*)assets[file_asset_mapping[file_asset_index]] )->mesh );
+                    m_e->mesh = (MeshAsset*)assets[file_asset_mapping[file_asset_index]];
 
                     printf("Entity position %f %f %f.\n", m_e->position.x, m_e->position.y, m_e->position.z);
 
@@ -376,3 +381,33 @@ void screenPosToWorldRay(
     out_direction = glm::vec3(glm::normalize(ray_end_world - ray_start_world));
     out_origin = glm::vec3(ray_start_world);
 }
+
+bool endsWith(std::string_view str, std::string_view suffix)
+{
+    return str.size() >= suffix.size() && 0 == str.compare(str.size()-suffix.size(), suffix.size(), suffix);
+}
+
+bool startsWith(std::string_view str, std::string_view prefix)
+{
+    return str.size() >= prefix.size() && 0 == str.compare(0, prefix.size(), prefix);
+}
+
+#include <filesystem>
+#ifdef _WINDOWS
+#include <windows.h>
+std::string getexepath() {
+    char result[MAX_PATH];
+    auto p = std::filesystem::path(std::string(result, GetModuleFileName(NULL, result, MAX_PATH)));
+    return p.parent_path().string();
+}
+#else
+#include <limits.h>
+#include <unistd.h>
+std::string getexepath() {
+    char result[PATH_MAX];
+    ssize_t count = readlink("/proc/self/exe", result, PATH_MAX);
+    auto p = std::filesystem::path(std::string(result, (count > 0) ? count : 0));
+    return p.parent_path().string();
+}
+#endif
+

@@ -8,6 +8,7 @@
 
 class EntityManager;
 struct Mesh;
+struct CubemapAsset;
 
 extern int    window_width;
 extern int    window_height;
@@ -55,6 +56,7 @@ void bindDrawShadowMap(const EntityManager &entity_manager, const Camera &camera
 
 void clearFramebuffer(const glm::vec4 &color);
 void bindHdr();
+void drawSkybox(const CubemapAsset *skybox, const Camera &camera);
 void drawUnifiedHdr(const EntityManager &entity_manager, const Camera &camera);
 
 void bindBackbuffer();

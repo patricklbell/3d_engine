@@ -221,10 +221,10 @@ void bindDrawShadowMap(const EntityManager &entity_manager, const Camera &camera
         auto model = createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
         glUniformMatrix4fv(shader::null_uniforms.model, 1, GL_FALSE, &model[0][0]);
 
-        Mesh *mesh = m_e->mesh;
-        for (int j = 0; j < mesh->num_materials; ++j) {
-            glBindVertexArray(mesh->vao);
-            glDrawElements(mesh->draw_mode, mesh->draw_count[j], mesh->draw_type, (GLvoid*)(sizeof(GLubyte)*mesh->draw_start[j]));
+        Mesh &mesh = m_e->mesh->mesh;
+        for (int j = 0; j < mesh.num_materials; ++j) {
+            glBindVertexArray(mesh.vao);
+            glDrawElements(mesh.draw_mode, mesh.draw_count[j], mesh.draw_type, (GLvoid*)(sizeof(GLubyte)*mesh.draw_start[j]));
         }
     }
     glCullFace(GL_BACK);
@@ -301,7 +301,7 @@ void createHdrFbo(bool resize){
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-void initGraphicsPrimitives(){
+void initGraphicsPrimitives() {
     // @hardcoded
     static const float quad_vertices[] = {
         // positions        // texture Coords
@@ -335,43 +335,84 @@ void initGraphicsPrimitives(){
     graphics::quad.draw_count[0] = 4;
 
     // @hardcoded
-    static const float plane_vertices[] = {
-        -1.0f,-1.0f,-1.0f, // triangle 1 : begin
-        -1.0f,-1.0f, 1.0f,
-        -1.0f, 1.0f, 1.0f, // triangle 1 : end
-        1.0f, 1.0f,-1.0f, // triangle 2 : begin
-        -1.0f,-1.0f,-1.0f,
-        -1.0f, 1.0f,-1.0f, // triangle 2 : end
-        1.0f,-1.0f, 1.0f,
-        -1.0f,-1.0f,-1.0f,
-        1.0f,-1.0f,-1.0f,
-        1.0f, 1.0f,-1.0f,
-        1.0f,-1.0f,-1.0f,
-        -1.0f,-1.0f,-1.0f,
-        -1.0f,-1.0f,-1.0f,
-        -1.0f, 1.0f, 1.0f,
-        -1.0f, 1.0f,-1.0f,
-        1.0f,-1.0f, 1.0f,
-        -1.0f,-1.0f, 1.0f,
-        -1.0f,-1.0f,-1.0f,
-        -1.0f, 1.0f, 1.0f,
-        -1.0f,-1.0f, 1.0f,
-        1.0f,-1.0f, 1.0f,
-        1.0f, 1.0f, 1.0f,
-        1.0f,-1.0f,-1.0f,
-        1.0f, 1.0f,-1.0f,
-        1.0f,-1.0f,-1.0f,
-        1.0f, 1.0f, 1.0f,
-        1.0f,-1.0f, 1.0f,
-        1.0f, 1.0f, 1.0f,
-        1.0f, 1.0f,-1.0f,
-        -1.0f, 1.0f,-1.0f,
-        1.0f, 1.0f, 1.0f,
-        -1.0f, 1.0f,-1.0f,
-        -1.0f, 1.0f, 1.0f,
-        1.0f, 1.0f, 1.0f,
-        -1.0f, 1.0f, 1.0f,
-        1.0f,-1.0f, 1.0f
+    static const float cube_vertices[] = {
+//        -1.0f,-1.0f,-1.0f, // triangle 1 : begin
+//        -1.0f,-1.0f, 1.0f,
+//        -1.0f, 1.0f, 1.0f, // triangle 1 : end
+//        1.0f, 1.0f,-1.0f,  // triangle 2 : begin
+//        -1.0f,-1.0f,-1.0f,
+//        -1.0f, 1.0f,-1.0f, // triangle 2 : end
+//        1.0f,-1.0f, 1.0f,
+//        -1.0f,-1.0f,-1.0f,
+//        1.0f,-1.0f,-1.0f,
+//        1.0f, 1.0f,-1.0f,
+//        1.0f,-1.0f,-1.0f,
+//        -1.0f,-1.0f,-1.0f,
+//        -1.0f,-1.0f,-1.0f,
+//        -1.0f, 1.0f, 1.0f,
+//        -1.0f, 1.0f,-1.0f,
+//        1.0f,-1.0f, 1.0f,
+//        -1.0f,-1.0f, 1.0f,
+//        -1.0f,-1.0f,-1.0f,
+//        -1.0f, 1.0f, 1.0f,
+//        -1.0f,-1.0f, 1.0f,
+//        1.0f,-1.0f, 1.0f,
+//        1.0f, 1.0f, 1.0f,
+//        1.0f,-1.0f,-1.0f,
+//        1.0f, 1.0f,-1.0f,
+//        1.0f,-1.0f,-1.0f,
+//        1.0f, 1.0f, 1.0f,
+//        1.0f,-1.0f, 1.0f,
+//        1.0f, 1.0f, 1.0f,
+//        1.0f, 1.0f,-1.0f,
+//        -1.0f, 1.0f,-1.0f,
+//        1.0f, 1.0f, 1.0f,
+//        -1.0f, 1.0f,-1.0f,
+//        -1.0f, 1.0f, 1.0f,
+//        1.0f, 1.0f, 1.0f,
+//        -1.0f, 1.0f, 1.0f,
+//        1.0f,-1.0f, 1.0f
+        -1.0f,  1.0f, -1.0f,
+        -1.0f, -1.0f, -1.0f,
+         1.0f, -1.0f, -1.0f,
+         1.0f, -1.0f, -1.0f,
+         1.0f,  1.0f, -1.0f,
+        -1.0f,  1.0f, -1.0f,
+
+        -1.0f, -1.0f,  1.0f,
+        -1.0f, -1.0f, -1.0f,
+        -1.0f,  1.0f, -1.0f,
+        -1.0f,  1.0f, -1.0f,
+        -1.0f,  1.0f,  1.0f,
+        -1.0f, -1.0f,  1.0f,
+
+         1.0f, -1.0f, -1.0f,
+         1.0f, -1.0f,  1.0f,
+         1.0f,  1.0f,  1.0f,
+         1.0f,  1.0f,  1.0f,
+         1.0f,  1.0f, -1.0f,
+         1.0f, -1.0f, -1.0f,
+
+        -1.0f, -1.0f,  1.0f,
+        -1.0f,  1.0f,  1.0f,
+         1.0f,  1.0f,  1.0f,
+         1.0f,  1.0f,  1.0f,
+         1.0f, -1.0f,  1.0f,
+        -1.0f, -1.0f,  1.0f,
+
+        -1.0f,  1.0f, -1.0f,
+         1.0f,  1.0f, -1.0f,
+         1.0f,  1.0f,  1.0f,
+         1.0f,  1.0f,  1.0f,
+        -1.0f,  1.0f,  1.0f,
+        -1.0f,  1.0f, -1.0f,
+
+        -1.0f, -1.0f, -1.0f,
+        -1.0f, -1.0f,  1.0f,
+         1.0f, -1.0f, -1.0f,
+         1.0f, -1.0f, -1.0f,
+        -1.0f, -1.0f,  1.0f,
+         1.0f, -1.0f,  1.0f
     };
     glGenVertexArrays(1, &graphics::cube.vao);
     GLuint cube_vbo;
@@ -380,7 +421,7 @@ void initGraphicsPrimitives(){
     glBindVertexArray(graphics::cube.vao);
     glBindBuffer(GL_ARRAY_BUFFER, cube_vbo);
 
-    glBufferData(GL_ARRAY_BUFFER, sizeof(plane_vertices), &plane_vertices, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(cube_vertices), &cube_vertices, GL_STATIC_DRAW);
 
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
@@ -393,7 +434,7 @@ void initGraphicsPrimitives(){
     graphics::cube.draw_type = GL_UNSIGNED_SHORT;
 
     graphics::cube.draw_start[0] = 0; 
-    graphics::cube.draw_count[0] = sizeof(plane_vertices) / 3.0;
+    graphics::cube.draw_count[0] = sizeof(cube_vertices) / (3.0 * sizeof(*cube_vertices));
 
     loadMesh(graphics::grid, "data/models/grid.obj", editor::editor_assets);
 }
@@ -405,7 +446,6 @@ void drawQuad(){
     glBindVertexArray(graphics::quad.vao);
     glDrawArrays(graphics::quad.draw_mode, graphics::quad.draw_start[0],  graphics::quad.draw_count[0]);
 }
-
 // Returns the index of the resulting blur buffer in bloom_buffers
 int blurBloomFbo(){
     bool horizontal = true, first_iteration = true;
@@ -435,7 +475,27 @@ void bindHdr(){
 void clearFramebuffer(const glm::vec4 &color){
     glClearColor(color.x, color.y, color.z, color.w);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    glClearColor(0.0,0.0,0.0,1.0);
+}
+
+void drawSkybox(const CubemapAsset *skybox, const Camera &camera) {
+    glDepthMask(GL_FALSE);
+    glEnable(GL_DEPTH_TEST);
+    // Since skybox shader writes maximum depth of 1.0, for skybox to always be we
+    // need to adjust depth func
+	glDepthFunc(GL_LEQUAL); 
+
+    glDisable(GL_CULL_FACE);
+
+    glUseProgram(shader::skybox_program);
+    auto untranslated_view = glm::mat4(glm::mat3(camera.view));
+    glUniformMatrix4fv(shader::skybox_uniforms.view,       1, GL_FALSE, &untranslated_view[0][0]);
+    glUniformMatrix4fv(shader::skybox_uniforms.projection, 1, GL_FALSE, &camera.projection[0][0]);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, skybox->texture_id);
+
+    drawCube();
+
+    // Revert state which is unexpected
+	glDepthFunc(GL_LESS); 
 }
 
 void drawUnifiedHdr(const EntityManager &entity_manager, const Camera &camera){
@@ -445,8 +505,6 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Camera &camera){
     // @note face culling wont work with certain techniques i.e. grass
     glEnable(GL_CULL_FACE);
 
-    glClearColor(0.05,0.05,0.05,1);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glUseProgram(shader::unified_programs[shader::unified_bloom]);
     glUniform3fv(shader::unified_uniforms[shader::unified_bloom].sun_color, 1, &sun_color[0]);
     glUniform3fv(shader::unified_uniforms[shader::unified_bloom].sun_direction, 1, &sun_direction[0]);
@@ -479,9 +537,9 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Camera &camera){
         glUniformMatrix4fv(shader::unified_uniforms[shader::unified_bloom].mvp, 1, GL_FALSE, &mvp[0][0]);
         glUniformMatrix4fv(shader::unified_uniforms[shader::unified_bloom].model, 1, GL_FALSE, &model[0][0]);
 
-        auto mesh = m_e->mesh;
-        for (int j = 0; j < mesh->num_materials; ++j) {
-            auto &mat = mesh->materials[j];
+        auto &mesh = m_e->mesh->mesh;
+        for (int j = 0; j < mesh.num_materials; ++j) {
+            auto &mat = mesh.materials[j];
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, mat->t_albedo->texture_id);
 
@@ -498,13 +556,14 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Camera &camera){
             glBindTexture(GL_TEXTURE_2D, mat->t_ambient->texture_id);
 
             // Bind VAO and draw
-            glBindVertexArray(mesh->vao);
-            glDrawElements(mesh->draw_mode, mesh->draw_count[j], mesh->draw_type, (GLvoid*)(sizeof(GLubyte)*mesh->draw_start[j]));
+            glBindVertexArray(mesh.vao);
+            glDrawElements(mesh.draw_mode, mesh.draw_count[j], mesh.draw_type, (GLvoid*)(sizeof(GLubyte)*mesh.draw_start[j]));
         }
     }
 
     if(draw_water){
-        glDepthMask(GL_FALSE);
+        glDisable(GL_DEPTH_TEST);
+
         glUseProgram(       shader::water_programs[shader::unified_bloom]);
         glUniform1fv(       shader::water_uniforms[shader::unified_bloom].shadow_cascade_distances, graphics::shadow_num, graphics::shadow_cascade_distances);
         glUniform1f(        shader::water_uniforms[shader::unified_bloom].far_plane, camera.far_plane);

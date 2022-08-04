@@ -12,18 +12,20 @@ void loadWaterShader(std::string path);
 void loadGaussianBlurShader(std::string path);
 void loadPostShader(std::string path);
 void loadDebugShader(std::string path);
+void loadSkyboxShader(std::string path);
 void deleteShaderPrograms();
 
 namespace shader {
 	extern bool unified_bloom;
 
-    enum TYPE {
+    enum class TYPE {
         NULL_SHADER = 0,
         UNIFIED_SHADER,
         WATER_SHADER,
         GAUSSIAN_BLUR_SHADER,
         POST_SHADER,
         DEBUG_SHADER,
+        SKYBOX_SHADER,
         NUM_SHADER_TYPES,
     };
     extern GLuint null_program;
@@ -55,6 +57,11 @@ namespace shader {
     extern struct PostUniforms {
         GLuint resolution;
     } post_uniforms[2];
+
+    extern GLuint skybox_program;
+    extern struct SkyboxUniforms {
+        GLuint view, projection;
+    } skybox_uniforms;
 }
 
 #endif

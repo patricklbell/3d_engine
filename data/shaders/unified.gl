@@ -288,8 +288,8 @@ void main() {
 #endif
 
 #ifdef PBR
-    float ao = texture(ao_map, texcoord).r; 
-    vec3 ambient = vec3(0.03) * albedo * ao;
+    float ao = texture(ao_map, texcoord).r + 0.04;
+    vec3 ambient = albedo * ao;
     vec3 hdr_color = ambient + brdfSchlickGGX(position, normal, albedo, -sun_direction, sun_color);
 #endif
 

@@ -1,4 +1,5 @@
 #include <vector>
+#include <array>
 #include <stdio.h>
 #include <string>
 #include <cstring>
@@ -432,7 +433,7 @@ void createMeshVao(Mesh &mesh){
 	glBindVertexArray(0); //Unbind the VAO
 }
 
-bool readMeshFile(Mesh &mesh, std::string path){
+bool readMeshFile(std::map<std::string, Asset*> &assets, Mesh &mesh, std::string path){
     FILE *f;
     f=fopen(path.c_str(), "rb");
     if (!f) {
@@ -481,41 +482,61 @@ bool readMeshFile(Mesh &mesh, std::string path){
         fread(&albedo_len, sizeof(int), 1, f);
         char albedo_path[albedo_len];
         fread(&albedo_path, sizeof(char), albedo_len, f);
-        if(strcmp(albedo_path, "DEFAULTMATERIAL:albedo")) mat->t_albedo = default_material->t_albedo;
-        else                                              mat->t_albedo = new TextureAsset(albedo_path);
+        if(!strcmp(albedo_path, "DEFAULTMATERIAL:albedo")) mat->t_albedo = default_material->t_albedo;
+        else {
+            mat->t_albedo = new TextureAsset(albedo_path);
+            mat->t_albedo->texture_id = loadImage(albedo_path, GL_RGBA);
+            assets[albedo_path] = mat->t_albedo;
+        }
 
         int normal_len;
         fread(&normal_len, sizeof(int), 1, f);
         char normal_path[normal_len];
         fread(&normal_path, sizeof(char), normal_len, f);
         mat->t_normal = new TextureAsset(normal_path);
-        if(strcmp(normal_path, "DEFAULTMATERIAL:normal")) mat->t_normal = default_material->t_normal;
-        else                                              mat->t_normal = new TextureAsset(normal_path);
+        if(!strcmp(normal_path, "DEFAULTMATERIAL:normal")) mat->t_normal = default_material->t_normal;
+        else {
+            mat->t_normal = new TextureAsset(normal_path);
+            mat->t_normal->texture_id = loadImage(normal_path, GL_RGBA);
+            assets[normal_path] = mat->t_normal;
+        }
 
 
         int ambient_len;
         fread(&ambient_len, sizeof(int), 1, f);
         char ambient_path[ambient_len];
         fread(&ambient_path, sizeof(char), ambient_len, f);
-        if(strcmp(ambient_path, "DEFAULTMATERIAL:ambient")) mat->t_ambient = default_material->t_ambient;
-        else                                                mat->t_ambient = new TextureAsset(ambient_path);
+        if(!strcmp(ambient_path, "DEFAULTMATERIAL:ambient")) mat->t_ambient = default_material->t_ambient;
+        else {
+            mat->t_ambient = new TextureAsset(ambient_path);
+            mat->t_ambient->texture_id = loadImage(ambient_path, GL_RGBA);
+            assets[ambient_path] = mat->t_ambient;
+        }
 
 
         int metallic_len;
         fread(&metallic_len, sizeof(int), 1, f);
         char metallic_path[metallic_len];
         fread(&metallic_path, sizeof(char), metallic_len, f);
-        if(strcmp(metallic_path, "DEFAULTMATERIAL:metallic")) mat->t_metallic = default_material->t_metallic;
-        else                                                  mat->t_metallic = new TextureAsset(metallic_path);
+        if(!strcmp(metallic_path, "DEFAULTMATERIAL:metallic")) mat->t_metallic = default_material->t_metallic;
+        else {
+            mat->t_metallic = new TextureAsset(metallic_path);
+            mat->t_metallic->texture_id = loadImage(metallic_path, GL_RGBA);
+            assets[metallic_path] = mat->t_metallic;
+        }
 
         int roughness_len;
         fread(&roughness_len, sizeof(int), 1, f);
         char roughness_path[roughness_len];
         fread(&roughness_path, sizeof(char), roughness_len, f);
-        if(strcmp(roughness_path, "DEFAULTMATERIAL:roughness")) mat->t_roughness = default_material->t_roughness;
-        else                                                    mat->t_roughness = new TextureAsset(roughness_path);
+        if(!strcmp(roughness_path, "DEFAULTMATERIAL:roughness")) mat->t_roughness = default_material->t_roughness;
+        else {
+            mat->t_roughness = new TextureAsset(roughness_path);
+            mat->t_roughness->texture_id = loadImage(roughness_path, GL_RGBA);
+            assets[roughness_path] = mat->t_roughness;
+        }
 
-        printf("Material %d\nAlbedo: %s, Normal %s, Ambient %s, Metallic %s, Roughness %s\n", i+1, albedo_path, normal_path, ambient_path, metallic_path, roughness_path);
+        printf("Material %d\nAlbedo: %s, Normal %s, Ambient %s, Metallic %s, Roughness %s\n", i, albedo_path, normal_path, ambient_path, metallic_path, roughness_path);
 
         mesh.materials[i] = mat;
     }
@@ -548,7 +569,7 @@ bool loadMesh(Mesh &mesh, std::string path, std::map<std::string, Asset*> &asset
 
 	const aiScene* scene = importer.ReadFile(path, ai_import_flags);
 	if( !scene) {
-		fprintf( stderr, importer.GetErrorString());
+		fprintf(stderr, "%s\n", importer.GetErrorString());
 		getchar();
 		return false;
 	}
@@ -740,4 +761,41 @@ TextureAsset *loadTextureFromAssimp(std::map<std::string, Asset*> &assets, aiMat
         }
 	}
 	return nullptr;
+}
+
+TextureAsset *createTextureAsset(std::map<std::string, Asset*> &assets, std::string path, GLint internal_format) {
+    auto a = new TextureAsset(path);
+    a->path = path;
+    a->texture_id = loadImage(path, internal_format);
+    return a;
+}
+
+#include <stb_image.h>
+
+CubemapAsset *createCubemapAsset(std::map<std::string, Asset*> &assets, std::array<std::string,FACE_NUM_FACES> paths, GLint internal_format) {
+    // @fix assumes path[0] is unique, maybe just add together all the paths?
+    auto a = new CubemapAsset(paths[0]);
+
+    glGenTextures(1, &a->texture_id);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, a->texture_id);
+
+    int width, height, nrChannels;
+    for (int i = 0; i < static_cast<int>(FACE_NUM_FACES); ++i) {
+        unsigned char *data = stbi_load(paths[i].c_str(), &width, &height, &nrChannels, 0);
+        if (data) {
+            glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 
+                         0, GL_RGB, width, height, 0, internal_format, GL_UNSIGNED_BYTE, data
+            );
+        } else {
+            printf("Cubemap texture failed to load at path: %s\n", paths[i].c_str());
+        }
+        stbi_image_free(data);
+    }
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+
+    return a;
 }

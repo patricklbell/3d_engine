@@ -37,10 +37,13 @@ GLFWwindow* window;
 
 // Defined in globals.hpp
 std::string glsl_version;
+std::string exepath;
 glm::vec3 sun_color;
 glm::vec3 sun_direction;
 
 int main() {
+    exepath = getexepath();
+
     // Initialise GLFW
     if( !glfwInit() )
     {
@@ -139,6 +142,7 @@ int main() {
     loadGaussianBlurShader("data/shaders/gaussian_blur.gl");
     loadPostShader("data/shaders/post.gl");
     loadDebugShader("data/shaders/debug.gl");
+    loadSkyboxShader("data/shaders/skybox.gl");
 
     // Map for last update time for hotswaping files
     std::filesystem::file_time_type empty_file_time;
@@ -149,6 +153,7 @@ int main() {
         {"data/shaders/gaussian_blur.gl", {shader::TYPE::GAUSSIAN_BLUR_SHADER, empty_file_time}},
         {"data/shaders/post.gl", {shader::TYPE::POST_SHADER, empty_file_time}},
         {"data/shaders/debug.gl", {shader::TYPE::DEBUG_SHADER, empty_file_time}},
+        {"data/shaders/skybox.gl", {shader::TYPE::SKYBOX_SHADER, empty_file_time}},
     };
     // Fill in with correct file time
     for (auto &pair : shader_update_times) {
@@ -160,10 +165,16 @@ int main() {
     
     EntityManager entity_manager;
 
-    loadLevel(entity_manager, assets, "data/levels/test.level");
+    //loadLevel(entity_manager, assets, "data/levels/test.level");
 
-    // @todo Skymap loading and rendering
-    //GLuint tSkybox = load_cubemap({"Skybox1.bmp", "Skybox2.bmp","Skybox3.bmp","Skybox4.bmp","Skybox5.bmp","Skybox6.bmp"});
+    auto t_e = new TerrainEntity();
+    t_e->texture = createTextureAsset(assets, "data/textures/iceland_heightmap.png");
+    entity_manager.setEntity(entity_manager.getFreeId().i, t_e);
+
+    std::array<std::string,6> skybox_paths = {"data/textures/cloudy/bluecloud_ft.jpg", "data/textures/cloudy/bluecloud_bk.jpg",
+                                              "data/textures/cloudy/bluecloud_up.jpg", "data/textures/cloudy/bluecloud_dn.jpg",
+                                              "data/textures/cloudy/bluecloud_rt.jpg", "data/textures/cloudy/bluecloud_lf.jpg"};
+    auto skybox_a = createCubemapAsset(assets, skybox_paths);
     
     initEditorGui();
     initEditorControls();
@@ -210,6 +221,9 @@ int main() {
                         case shader::TYPE::DEBUG_SHADER:
                             loadDebugShader(pair.first.c_str());
                             break;
+                        case shader::TYPE::SKYBOX_SHADER:
+                            loadSkyboxShader(pair.first.c_str());
+                            break;
                         default:
                             break;
                     }
@@ -220,7 +234,9 @@ int main() {
         bindDrawShadowMap(entity_manager, camera);
 
         bindHdr();
+        clearFramebuffer(glm::vec4(0.1,0.1,0.1,1.0));
         drawUnifiedHdr(entity_manager, camera);
+        drawSkybox(skybox_a, camera);
 
         handleEditorControls(camera, entity_manager, true_dt);
 

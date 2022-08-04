@@ -18,6 +18,7 @@ GLuint create1x1Texture(const unsigned char color[3], GLint internal_format=GL_R
 	glTexImage2D(GL_TEXTURE_2D, 0, internal_format, 1, 1, 0, GL_RGB, GL_UNSIGNED_BYTE, &color[0]);
 	return texture_id;
 }
+
 GLuint loadImage(std::string imagepath, GLint internal_format){
 	printf("Loading texture: %s\n", imagepath.c_str());
 

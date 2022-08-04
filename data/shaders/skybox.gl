@@ -1,0 +1,30 @@
+#ifdef COMPILING_VS
+layout (location = 0) in vec3 in_position;
+
+uniform mat4 view;
+uniform mat4 projection;
+
+out vec3 texcoords;
+
+void main()
+{
+    texcoords = in_position;
+    gl_Position = projection * view * vec4(in_position, 1.0);
+    // @optimize? because part of multiplication is not needed
+    gl_Position.z = gl_Position.w;
+}
+#endif
+
+#ifdef COMPILING_FS
+
+in vec3 texcoords;
+
+out vec4 out_color;
+
+uniform samplerCube skybox;
+
+void main()
+{
+    out_color = texture(skybox, texcoords);
+} 
+#endif

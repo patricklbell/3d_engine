@@ -55,6 +55,7 @@ enum AssetType {
     ASSET = 0,
     MESH_ASSET = 1,
     TEXTURE_ASSET = 2,
+    CUBEMAP_ASSET = 4,
 };
 
 struct Asset {
@@ -72,7 +73,7 @@ struct MeshAsset : Asset {
 };
 bool loadMesh(Mesh &mesh, std::string path, std::map<std::string, Asset*> &assets);
 bool writeMeshFile(const Mesh &mesh, std::string path);
-bool readMeshFile(Mesh &mesh, std::string path);
+bool readMeshFile(std::map<std::string, Asset*> &assets, Mesh &mesh, std::string path);
 
 struct TextureAsset : Asset {
     GLuint texture_id;
@@ -84,6 +85,30 @@ struct TextureAsset : Asset {
     }
 };
 TextureAsset *loadTextureFromAssimp(std::map<std::string, Asset*> &assets, aiMaterial *mat, const aiScene *scene, aiTextureType texture_type, GLint internal_format);
+TextureAsset *createTextureAsset(std::map<std::string, Asset*> &assets, std::string path, GLint internal_format=GL_SRGB);
+
+enum CubemapFaces : unsigned int {
+    FACE_RIGHT = 0,
+    FACE_LEFT, 
+    FACE_TOP,
+    FACE_BOTTOM,
+    FACE_FRONT,
+    FACE_BACK,
+    FACE_NUM_FACES,
+};
+
+struct CubemapAsset: Asset {
+    GLuint texture_id;
+
+    CubemapAsset(std::string _path) : Asset(_path){
+        type = (AssetType)(type | AssetType::CUBEMAP_ASSET);
+    };
+    ~CubemapAsset(){
+        glDeleteTextures(1, &texture_id);
+    }
+};
+
+CubemapAsset *createCubemapAsset(std::map<std::string, Asset*> &assets, std::array<std::string,FACE_NUM_FACES> paths, GLint internal_format=GL_RGB);
 
 //bool loadAssimp(
 //	std::string path,

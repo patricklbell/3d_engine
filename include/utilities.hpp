@@ -19,5 +19,8 @@ bool rayIntersectsMesh(Mesh *mesh, const glm::mat4x4 &transform, const Camera &c
 bool lineIntersectsPlane(const glm::vec3 &plane_origin, const glm::vec3 &plane_normal,const glm::vec3 &line_origin, const glm::vec3 &line_direction, float &t);
 float closestDistanceBetweenLines(const glm::vec3 &l1_origin, const glm::vec3 &l1_direction, const glm::vec3 &l2_origin, const glm::vec3 &l2_direction, float &l1_t, float &l2_t);
 float closestDistanceBetweenLineCircle(const glm::vec3 &line_origin, const glm::vec3 &line_direction, const glm::vec3 &circle_center, const glm::vec3 &circle_normal, float circle_radius, glm::vec3& point);
+bool startsWith(std::string_view str, std::string_view prefix);
+bool endsWith(std::string_view str, std::string_view suffix);
+std::string getexepath();
 
 #endif /* ifndef UTILITIES_HPP */

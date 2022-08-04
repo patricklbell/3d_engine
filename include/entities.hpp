@@ -20,6 +20,7 @@ enum EntityType {
     ENTITY = 0,
     MESH_ENTITY = 1,
     WATER_ENTITY = 2,
+    TERRAIN_ENTITY = 4,
 };
 
 struct Entity {
@@ -30,7 +31,7 @@ struct Entity {
 };
 
 struct MeshEntity : Entity {
-    Mesh* mesh = nullptr;
+    MeshAsset* mesh = nullptr;
     glm::vec3 position      = glm::vec3(0.0);
     glm::quat rotation      = glm::quat(0.0,0.0,0.0,1.0);
     glm::mat3 scale         = glm::mat3(1.0);
@@ -52,15 +53,30 @@ struct WaterEntity : Entity {
         type = (EntityType)(type | EntityType::WATER_ENTITY);
     }
 };
+
+struct TerrainEntity : Entity {
+    glm::vec3 position = glm::vec3(0.0);
+    glm::mat3 scale    = glm::mat3(1.0);
+    TextureAsset *texture;
+
+    TerrainEntity(Id _id=NULLID) : Entity(_id){
+        type = (EntityType)(type | EntityType::TERRAIN_ENTITY);
+    }
+};
+
 inline Entity *allocateEntity(Id id, EntityType type){
     if(type & WATER_ENTITY)
         return new WaterEntity(id);
+    if(type & TERRAIN_ENTITY)
+        return new TerrainEntity(id);
     if(type & MESH_ENTITY)
         return new MeshEntity(id);
 
     return new Entity(id);
 }
 inline constexpr size_t entitySize(EntityType type){
+    if(type & TERRAIN_ENTITY)
+        return sizeof(TerrainEntity);
     if(type & WATER_ENTITY)
         return sizeof(WaterEntity);
     if(type & MESH_ENTITY)

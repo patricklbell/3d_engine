@@ -40,6 +40,9 @@ namespace shader {
 
 	GLuint post_program[2];
 	struct PostUniforms post_uniforms[2];
+
+	GLuint skybox_program;
+	struct SkyboxUniforms skybox_uniforms;
 }
 
 using namespace shader;
@@ -288,10 +291,23 @@ void loadWaterShader(std::string path){
 		
 		glUseProgram(water_programs[i]);
 		// Set fixed locations for textures in GL_TEXTUREi
-		glUniform1i(glGetUniformLocation(water_programs[i], "shadow_map"),  5);
 		glUniform1i(glGetUniformLocation(water_programs[i], "screen_map"),  0);
-		glUniform1i(glGetUniformLocation(water_programs[i], "depth_map"),  1);
+		glUniform1i(glGetUniformLocation(water_programs[i], "depth_map"),   1);
+		glUniform1i(glGetUniformLocation(water_programs[i], "shadow_map"),  5);
 	}
+}
+void loadSkyboxShader(std::string path){
+	// Create and compile our GLSL program from the shaders
+	auto tmp = skybox_program;
+	skybox_program = loadShader(path);
+	if(skybox_program == GL_FALSE) {
+		skybox_program = tmp;
+		return;
+	}
+
+	// Grab uniforms to modify during rendering
+	skybox_uniforms.projection = glGetUniformLocation(skybox_program, "projection");
+	skybox_uniforms.view 	   = glGetUniformLocation(skybox_program, "view");
 }
 void deleteShaderPrograms(){
     glDeleteProgram(null_program);
@@ -301,4 +317,5 @@ void deleteShaderPrograms(){
     glDeleteProgram(gaussian_blur_program);
 	glDeleteProgram(post_program[0]);
 	glDeleteProgram(post_program[1]);
+	glDeleteProgram(skybox_program);
 }

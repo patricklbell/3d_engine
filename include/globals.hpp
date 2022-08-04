@@ -14,6 +14,7 @@
 
 extern GLFWwindow* window;
 extern std::string glsl_version;
+extern std::string exepath;
 extern glm::vec3 sun_color;
 extern glm::vec3 sun_direction;
 extern glm::vec4 clear_color;
