@@ -3,6 +3,7 @@
 #include <limits>
 #include <vector>
 #include <cstdint>
+#include <set>
 #include <map>
 #include <unordered_map>
 #include "assets.hpp"
@@ -17,19 +18,24 @@
 #include "texture.hpp"
 
 void saveLevel(EntityManager &entity_manager, const std::map<std::string, Asset*> assets, std::string level_path){
+    std::set<MeshAsset*> used_assets;
+    for(int i = 0; i < ENTITY_COUNT; i++){
+        auto e = entity_manager.entities[i];
+        if(e == nullptr || e->type != EntityType::MESH_ENTITY) continue;
+        auto m_e = reinterpret_cast<MeshEntity*>(e);
+
+        used_assets.emplace(m_e->mesh);
+    }
+
     FILE *f;
-    f=fopen(level_path.c_str(),"wb");
+    f=fopen(level_path.c_str(), "wb");
 
     // Construct map between asset pointers and index
     std::unordered_map<intptr_t, uint64_t> asset_lookup;
     uint64_t index = 0;
-    for(const auto &a : assets){
-        auto asset = a.second;
-        if(asset->type != AssetType::MESH_ASSET) continue;
-        auto m_a = (MeshAsset*)asset;
-
+    for(const auto &m_a : used_assets){
         asset_lookup[(intptr_t)&m_a->mesh] = index;
-        fwrite(asset->path.c_str(), asset->path.size(), 1, f);
+        fwrite(m_a->path.c_str(), m_a->path.size(), 1, f);
 
         // std strings are not null terminated so add it
         fputc('\0', f);

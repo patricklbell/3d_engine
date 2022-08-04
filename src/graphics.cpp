@@ -562,6 +562,7 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Camera &camera){
     }
 
     if(draw_water){
+        glDepthMask(GL_TRUE);
         glDisable(GL_DEPTH_TEST);
 
         glUseProgram(       shader::water_programs[shader::unified_bloom]);

@@ -124,9 +124,12 @@ void initEditorGui(){
     ImGui_ImplOpenGL3_Init(glsl_version.c_str());
 
 	// Setup bullet debug renderer
-    loadMesh(arrow_mesh, "data/models/arrow.obj", editor_assets);
-    loadMesh(block_arrow_mesh, "data/models/block_arrow.obj", editor_assets);
-    loadMesh(ring_mesh, "data/models/ring.obj", editor_assets);
+    readMeshFile(editor_assets, arrow_mesh, "data/models/arrow.mesh");
+    readMeshFile(editor_assets, block_arrow_mesh, "data/models/block_arrow.mesh");
+    readMeshFile(editor_assets, ring_mesh, "data/models/ring.mesh");
+    // loadMesh(arrow_mesh, "data/models/arrow.obj", editor_assets);
+    // loadMesh(block_arrow_mesh, "data/models/block_arrow.obj", editor_assets);
+    // loadMesh(ring_mesh, "data/models/ring.obj", editor_assets);
 }
 
 bool editTransform(Camera &camera, glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, TransformType type=TransformType::ALL){

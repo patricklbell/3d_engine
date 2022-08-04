@@ -721,8 +721,6 @@ bool loadMesh(Mesh &mesh, std::string path, std::map<std::string, Asset*> &asset
     }
     createMeshVao(mesh);	
 
-    writeMeshFile(mesh, m_path);
-
 	// The "scene" pointer will be deleted automatically by "importer"
 	return true;
 }

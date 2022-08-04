@@ -634,43 +634,46 @@ void main(){
   float screen_d = texture(depth_map, screencoord).x;
   float scene_d  = gl_FragCoord.z;
 
-  float screen_z = depthToDist(screen_d);
-  float scene_z = depthToDist(scene_d);
-  float dif = screen_z - scene_z;
-
-  float foam_dif = 1.0 - clamp((screen_z - scene_z) / 0.004, 0.0, 1.0);
-
-  float rad = exp(-dif*BEER_LAW_FACTOR);
-
-  vec4 mat = 0.6*mix(deep_color, shallow_color, 3.0*rad + 2.0*noise(vs_in.texcoord + t*0.12));
-  mat.g += 0.09*noise(0.5*vs_in.vertex.xz - t*0.12 + 0.3);
-
   vec4 alpha = texture(screen_map, screencoord);
-  vec4 col = mat;
-  //vec4 col = mix(mat, alpha, min(rad*0.7 + 0.08, 0.8));
+  if (scene_d >= screen_d) {
+    out_color = alpha;
+  } else {
+    float screen_z = depthToDist(screen_d);
+    float scene_z = depthToDist(scene_d);
+    float dif = screen_z - scene_z;
 
-  col = mix(col, foam_color, foam_dif + foam_dif*simplexNoise2(18.0*vs_in.texcoord + (-1.0+screen_z - scene_z)*t*0.1 + t));
+    float foam_dif = 1.0 - clamp((screen_z - scene_z) / 0.004, 0.0, 1.0);
 
-  vec3 albedo = col.xyz;
-  vec3 normal = dgwaves(vs_in.vertex);
-  normal += 0.07*normalize(vec3(n1.yz, -1.0));
-  normal = normalize(normal);
+    float rad = exp(-dif*BEER_LAW_FACTOR);
 
-  //float fin = 0.0;
-	//if (sum > 0.0 && sum < 0.4) fin = 0.1;
-	//if (sum > 0.4 && sum < 0.8) fin = 0.0;
-	//if (sum > 0.8) fin = 1.0;
-	//
-	//vec3 albedo = vec3(fin) + mix(alpha.rgb, col.rgb, gradientcolor.a);
-  //albedo *= 2.0;
+    vec4 mat = 0.6*mix(deep_color, shallow_color, 3.0*rad + 2.0*noise(vs_in.texcoord + t*0.12));
+    mat.g += 0.09*noise(0.5*vs_in.vertex.xz - t*0.12 + 0.3);
 
-  // Maybe full brdf is unnecessary? test performance
-  vec3 ambient = vec3(0.03) * albedo;
-  vec3 hdr_color = ambient + brdfSchlickGGX(vs_in.position, normal, albedo, -sun_direction, sun_color);
-  hdr_color = vec3(mat);
-  
-  //out_color = vec4(hdr_color, 1.0);
-  out_color = mix(vec4(1,0,0,1), vec4(0,0,1,1), screen_d);
+    vec4 col = mix(mat, alpha, min(rad*0.7 + 0.08, 0.8));
+
+    col = mix(col, foam_color, foam_dif + foam_dif*simplexNoise2(18.0*vs_in.texcoord + (-1.0+screen_z - scene_z)*t*0.1 + t));
+
+    vec3 albedo = col.xyz;
+    vec3 normal = dgwaves(vs_in.vertex);
+    normal += 0.07*normalize(vec3(n1.yz, -1.0));
+    normal = normalize(normal);
+
+    //float fin = 0.0;
+	  //if (sum > 0.0 && sum < 0.4) fin = 0.1;
+	  //if (sum > 0.4 && sum < 0.8) fin = 0.0;
+	  //if (sum > 0.8) fin = 1.0;
+	  //
+	  //vec3 albedo = vec3(fin) + mix(alpha.rgb, col.rgb, gradientcolor.a);
+    //albedo *= 2.0;
+
+    // Maybe full brdf is unnecessary? test performance
+    vec3 ambient = vec3(0.05) * albedo;
+    vec3 hdr_color = ambient + brdfSchlickGGX(vs_in.position, normal, albedo, -sun_direction, sun_color);
+    
+    out_color = vec4(hdr_color, 1.0);
+    out_color = vec4(1,0,0,1);
+    //out_color = mix(vec4(1,0,0,1), vec4(0,0,1,1), screen_d);
+  }
 
 #ifdef BLOOM
     // If we are doing bloom write to second buffer
