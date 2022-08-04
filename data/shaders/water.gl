@@ -172,6 +172,8 @@ layout (location = 0) out vec4 out_color;
 layout (location = 1) out vec4 out_bloom_color; 
 #endif
 
+layout (depth_less) out float gl_FragDepth;
+
 uniform sampler2DArray shadow_map;
 layout(std140, binding=0) uniform ShadowVP 
 {
@@ -637,6 +639,7 @@ void main(){
   vec4 alpha = texture(screen_map, screencoord);
   if (scene_d >= screen_d) {
     out_color = alpha;
+    gl_FragDepth = screen_d;
   } else {
     float screen_z = depthToDist(screen_d);
     float scene_z = depthToDist(scene_d);
@@ -672,6 +675,7 @@ void main(){
     
     out_color = vec4(hdr_color, 1.0);
     //out_color = mix(vec4(1,0,0,1), vec4(0,0,1,1), screen_d);
+    gl_FragDepth = scene_d;
   }
 
 #ifdef BLOOM

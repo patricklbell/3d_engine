@@ -165,13 +165,11 @@ int main() {
     
     EntityManager entity_manager;
 
-    //loadLevel(entity_manager, assets, "data/levels/test.level");
+    loadLevel(entity_manager, assets, "data/levels/water_test.level");
 
     //auto t_e = new TerrainEntity();
     //t_e->texture = createTextureAsset(assets, "data/textures/iceland_heightmap.png");
     //entity_manager.setEntity(entity_manager.getFreeId().i, t_e);
-    auto w_e = new WaterEntity();
-    entity_manager.setEntity(entity_manager.getFreeId().i, w_e);
 
     std::array<std::string,6> skybox_paths = {"data/textures/cloudy/bluecloud_ft.jpg", "data/textures/cloudy/bluecloud_bk.jpg",
                                               "data/textures/cloudy/bluecloud_up.jpg", "data/textures/cloudy/bluecloud_dn.jpg",
