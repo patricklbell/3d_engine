@@ -4,8 +4,8 @@
 #include <vector>
 #include <cstdint>
 #include <set>
-#include <map>
 #include <unordered_map>
+#include <iostream>
 #include "assets.hpp"
 #include "entities.hpp"
 #include "glm/detail/type_mat.hpp"
@@ -17,30 +17,53 @@
 #include "utilities.hpp"
 #include "texture.hpp"
 
-void saveLevel(EntityManager &entity_manager, const std::map<std::string, Asset*> assets, std::string level_path){
-    std::set<MeshAsset*> used_assets;
+template<typename T, glm::precision P>
+std::ostream &operator<<(std::ostream &os, const glm::tvec1<T, P> &v) {
+    return os << v.x;
+}
+
+template<typename T, glm::precision P>
+std::ostream &operator<<(std::ostream &os, const glm::tvec2<T, P> &v) {
+    return os << v.x << ", " << v.y;
+}
+
+template<typename T, glm::precision P>
+std::ostream &operator<<(std::ostream &os, const glm::tvec3<T, P> &v) {
+    return os << v.x << ", " << v.y << ", " << v.z;
+}
+
+template<typename T, glm::precision P>
+std::ostream &operator<<(std::ostream &os, const glm::tvec4<T, P> &v) {
+    return os << v.x << ", " << v.y << ", " << v.z << ", " << v.w;
+}
+
+void saveLevel(const EntityManager &entity_manager, const std::string &level_path){
+    std::cerr << "----------- Saving Level " << level_path << "----------\n";
+
+    std::set<Mesh*> used_meshes;
     for(int i = 0; i < ENTITY_COUNT; i++){
         auto e = entity_manager.entities[i];
         if(e == nullptr || e->type != EntityType::MESH_ENTITY) continue;
         auto m_e = reinterpret_cast<MeshEntity*>(e);
 
-        used_assets.emplace(m_e->mesh);
+        used_meshes.emplace(m_e->mesh);
     }
 
     FILE *f;
     f=fopen(level_path.c_str(), "wb");
 
-    // Construct map between asset pointers and index
+    // Construct map between mesh pointers and index
     std::unordered_map<intptr_t, uint64_t> asset_lookup;
     uint64_t index = 0;
-    for(const auto &m_a : used_assets){
-        asset_lookup[(intptr_t)&m_a->mesh] = index;
-        fwrite(m_a->path.c_str(), m_a->path.size(), 1, f);
+    for(const auto &mesh : used_meshes){
+        asset_lookup[(intptr_t)mesh] = index;
+        fwrite(mesh->handle.data(), mesh->handle.size(), 1, f);
 
         // std strings are not null terminated so add it
         fputc('\0', f);
         ++index;
     }
+
     // Write extra null terminator to signal end of asset paths
     fputc('\0', f);
 
@@ -61,13 +84,15 @@ void saveLevel(EntityManager &entity_manager, const std::map<std::string, Asset*
             case EntityType::MESH_ENTITY:
                 {
                     auto m_e = (MeshEntity*)e;
+
+                    // Hacky way of writing pointers by mapping to indexes into a list
                     auto mesh = m_e->mesh;
-                    auto lookup = asset_lookup[(intptr_t)m_e->mesh];
-                    m_e->mesh = reinterpret_cast<MeshAsset*>(lookup);
+                    auto lookup = asset_lookup[reinterpret_cast<intptr_t>(mesh)];
+                    m_e->mesh = reinterpret_cast<Mesh*>(lookup);
 
                     fwrite(m_e, sizeof(MeshEntity), 1, f);
                    
-                    // Restore correct pointer
+                    // Restore real pointer
                     m_e->mesh = mesh;
 
                     break;
@@ -85,51 +110,52 @@ void saveLevel(EntityManager &entity_manager, const std::map<std::string, Asset*
 // @todo if needed make loading asign new ids such that connections are maintained
 // @todo any entities that store ids must be resolved so that invalid ie wrong versions are NULLID 
 // since we dont maintain version either
-bool loadLevel(EntityManager &entity_manager, std::map<std::string, Asset*> &assets, std::string level_path){
+bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const std::string &level_path) {
+    std::cout << "---------- Loading Level " << level_path << "----------\n";
+
     FILE *f;
     f=fopen(level_path.c_str(),"rb");
 
     if (!f) {
-        fprintf(stderr, "Error in reading level file %s.\n", level_path.c_str());
+        // @debug
+        std::cerr << "Error in reading level file at path: " << level_path << ".\n";
+        fclose(f);
         return false;
     }
-    char c;
-    std::string asset_path;
 
-    uint64_t asset_index = 0;
-    std::unordered_map<uint64_t, std::string> file_asset_mapping;
+    std::string mesh_path;
+    uint64_t mesh_index = 0;
+    std::unordered_map<uint64_t, Mesh*> index_to_mesh;
+
+    char c;
     while((c = fgetc(f)) != EOF){
         if(c == '\0'){
             // Reached end of paths
-            if(asset_path == "") break;
+            if(mesh_path == "") break;
 
-            auto found_asset = assets.find(asset_path);
-            // Asset not loaded so create mapping to existing new index
-            if(found_asset == assets.end()){
-                printf("Loading new asset, path is %s.\n", asset_path.c_str());
+            auto mesh = asset_manager.getMesh(mesh_path);
+            // Asset not loaded already so load from file 
+            if(mesh == nullptr){
+                std::cout << "Loading new mesh at path " << mesh_path << ".\n";
 
-                // @todo make good system for loading asset ie saving asset type, for now assume mesh asset
-                auto a = new MeshAsset(asset_path);
-                // @todo make this cleaner, either by having all models be meshes or having a flag
-                if (endsWith(asset_path, ".mesh")) {
-                    readMeshFile(assets, a->mesh, asset_path);
-                } else {
-                    loadMesh(a->mesh, asset_path, assets);
-                }
-                assets.emplace(asset_path, std::move(a));
+                mesh = asset_manager.createMesh(mesh_path);
+                // @todo make this cleaner, either by guaranteeing all models be meshes or having a flag
+                //asset_manager.loadMesh(mesh, mesh_path, endsWith(mesh_path, ".mesh"));
 
-                file_asset_mapping[asset_index] = asset_path;
+                //index_to_mesh[mesh_index] = mesh;
             } else {
-                printf("Using existing asset, path is %s.\n", asset_path.c_str());
-                file_asset_mapping[asset_index] = asset_path;
+                std::cout << "Using existing asset at path " << mesh_path << ".\n";
+                index_to_mesh[mesh_index] = mesh;
             }
 
-            asset_path = "";
-            asset_index++;
+            mesh_path = "";
+            mesh_index++;
         } else {
-            asset_path += c;
+            mesh_path += c;
         }
     }
+    fclose(f);
+    return false;
 
     while((c = fgetc(f)) != EOF){
         ungetc(c, f);
@@ -137,7 +163,7 @@ bool loadLevel(EntityManager &entity_manager, std::map<std::string, Asset*> &ass
         EntityType type;
         fread(&type, sizeof(EntityType), 1, f);
 
-        printf("Entity type %d.\n", type);
+        std::cout << "Reading entity of type " << type << ":\n";
         switch (type) {
             // Contains no pointers
             case EntityType::WATER_ENTITY:
@@ -154,12 +180,11 @@ bool loadLevel(EntityManager &entity_manager, std::map<std::string, Asset*> &ass
                     fread(m_e, sizeof(MeshEntity), 1, f);
 
                     // Convert asset index to ptr
-                    uint64_t file_asset_index = (uint64_t)m_e->mesh;
-                    printf("Asset index is %d.\n", (int)file_asset_index);
-                    printf("Which maps to %s.\n", file_asset_mapping[file_asset_index].c_str());
-                    m_e->mesh = (MeshAsset*)assets[file_asset_mapping[file_asset_index]];
+                    auto file_asset_index = reinterpret_cast<uint64_t>(m_e->mesh);
+                    m_e->mesh = index_to_mesh[file_asset_index];
 
-                    printf("Entity position %f %f %f.\n", m_e->position.x, m_e->position.y, m_e->position.z);
+                    std::cout << "\tAsset index is " << file_asset_index << ".\n";
+                    std::cout << "\tPosition is " << m_e->position << ".\n";
 
                     entity_manager.setEntity(entity_manager.getFreeId().i, m_e);
                     break;

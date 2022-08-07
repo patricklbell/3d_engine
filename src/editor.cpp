@@ -46,11 +46,10 @@ namespace editor {
     Mesh block_arrow_mesh;
     Mesh ring_mesh;
     Id sel_e(-1, -1);
-    std::map<std::string, Asset*> editor_assets;
 }
 using namespace editor;
 
-void initEditorGui(){
+void initEditorGui(AssetManager &asset_manager){
     // Setup Dear ImGui context
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -124,13 +123,9 @@ void initEditorGui(){
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init(glsl_version.c_str());
 
-	// Setup bullet debug renderer
-    readMeshFile(editor_assets, arrow_mesh, "data/models/arrow.mesh");
-    readMeshFile(editor_assets, block_arrow_mesh, "data/models/block_arrow.mesh");
-    readMeshFile(editor_assets, ring_mesh, "data/models/ring.mesh");
-    // loadMesh(arrow_mesh, "data/models/arrow.obj", editor_assets);
-    // loadMesh(block_arrow_mesh, "data/models/block_arrow.obj", editor_assets);
-    // loadMesh(ring_mesh, "data/models/ring.obj", editor_assets);
+    asset_manager.loadMeshFile(&arrow_mesh, "data/models/arrow.mesh");
+    asset_manager.loadMeshFile(&block_arrow_mesh, "data/models/block_arrow.mesh");
+    asset_manager.loadMeshFile(&ring_mesh, "data/models/ring.mesh");
 }
 
 bool editTransform(Camera &camera, glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, TransformType type=TransformType::ALL){
@@ -658,7 +653,7 @@ void drawEditor3DArrow(const glm::vec3 &position, const glm::vec3 &direction, co
     glDisable(GL_BLEND);  
 }
 
-void drawEditorGui(Camera &camera, EntityManager &entity_manager, std::map<std::string, Asset *> &assets){
+void drawEditorGui(Camera &camera, EntityManager &entity_manager, AssetManager &asset_manager){
     // 
     // Visualise entity picker and ray cast
     //
@@ -685,9 +680,8 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, std::map<std::
     //}
     
 
-    // @speed
     if(sel_e.i == -1) gizmo_mode = GIZMO_MODE_NONE;
-    static int selected_entity_mesh_material = -1;
+    static int s_entity_material_index = -1;
     
     // Start the Dear ImGui frame;
     ImGui_ImplOpenGL3_NewFrame();
@@ -712,88 +706,85 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, std::map<std::
 
             auto s_e = entity_manager.getEntity(sel_e);
             if(s_e != nullptr){
-                if(s_e->type & EntityType::MESH_ENTITY && ((MeshEntity*)s_e)->mesh != nullptr){
-                    auto m_e = (MeshEntity*)s_e;
+                auto m_e = reinterpret_cast<MeshEntity*>(s_e);
+                if(s_e->type == EntityType::MESH_ENTITY && m_e->mesh != nullptr){
+                    auto &mesh = m_e->mesh;
+
                     if(editor::draw_debug_wireframe)
-                        drawMeshWireframe(m_e->mesh->mesh, m_e->position, m_e->rotation, m_e->scale, camera, true);
+                        drawMeshWireframe(*mesh, m_e->position, m_e->rotation, m_e->scale, camera, true);
+
                     editor::transform_active = editTransform(camera, m_e->position, m_e->rotation, m_e->scale);
 
-                    auto asset_lookup = assets.find(m_e->mesh->path);
-                    if (asset_lookup != assets.end()) {
-                        auto mesh = static_cast<MeshAsset*>(asset_lookup->second)->mesh;
-
-                        if (ImGui::CollapsingHeader("Materials")){
-                            static const std::vector<std::string> image_file_extensions = { ".jpg", ".png", ".bmp", ".tiff", ".tga" };
-                            for(int i = 0; i < mesh.num_materials; i++) {
-                                auto mat = mesh.materials[i];
-                                char buf[128];
-                                sprintf(buf, "Material %d", i);
-                                constexpr int img_w = 128;
-                                if (ImGui::CollapsingHeader(buf)){
-                                    ImGui::Text("Albedo");
-                                    ImGui::SameLine();
-                                    auto cursor = ImGui::GetCursorPos();
-                                    cursor.x += img_w;
-                                    ImGui::SetCursorPos(cursor);
-                                    ImGui::Text("Ambient");
-                                    void * tex_albedo = (void *)(intptr_t)mat->t_albedo->texture_id;
-                                    if(ImGui::ImageButton(tex_albedo, ImVec2(img_w,img_w))){
-                                        im_file_dialog.SetPwd(exepath+"/data/textures");
-                                        selected_entity_mesh_material = i;
-                                        im_file_dialog_type = "asset.mat.tAlbedo";
-                                        im_file_dialog.SetCurrentTypeFilterIndex(2);
-                                        im_file_dialog.SetTypeFilters(image_file_extensions);
-                                        im_file_dialog.Open();
-                                    }
-                                    ImGui::SameLine();
-                                    void * tex_ambient = (void *)(intptr_t)mat->t_ambient->texture_id;
-                                    if(ImGui::ImageButton(tex_ambient, ImVec2(img_w,img_w))){
-                                        im_file_dialog.SetPwd(exepath+"/data/textures");
-                                        selected_entity_mesh_material = i;
-                                        im_file_dialog_type = "asset.mat.tAmbient";
-                                        im_file_dialog.SetCurrentTypeFilterIndex(2);
-                                        im_file_dialog.SetTypeFilters(image_file_extensions);
-                                        im_file_dialog.Open();
-                                    }
-                                    ImGui::Text("Metallic");
-                                    ImGui::SameLine();
-                                    cursor = ImGui::GetCursorPos();
-                                    cursor.x += img_w;
-                                    ImGui::SetCursorPos(cursor);
-                                    ImGui::Text("Normal");
-                                    void * tex_metallic = (void *)(intptr_t)mat->t_metallic->texture_id;
-                                    if(ImGui::ImageButton(tex_metallic, ImVec2(img_w,img_w))){
-                                        selected_entity_mesh_material = i;
-                                        im_file_dialog_type = "asset.mat.tMetallic";
-                                        im_file_dialog.SetCurrentTypeFilterIndex(2);
-                                        im_file_dialog.SetTypeFilters(image_file_extensions);
-                                        im_file_dialog.Open();
-                                    }
-                                    ImGui::SameLine();
-                                    void * tex_normal = (void *)(intptr_t)mat->t_normal->texture_id;
-                                    if(ImGui::ImageButton(tex_normal, ImVec2(img_w,img_w))){
-                                        im_file_dialog.SetPwd(exepath+"/data/textures");
-                                        selected_entity_mesh_material = i;
-                                        im_file_dialog_type = "asset.mat.tNormal";
-                                        im_file_dialog.SetCurrentTypeFilterIndex(2);
-                                        im_file_dialog.SetTypeFilters(image_file_extensions);
-                                        im_file_dialog.Open();
-                                    }
-                                    ImGui::Text("Roughness");
-                                    void * tex_roughness = (void *)(intptr_t)mat->t_roughness->texture_id;
-                                    if(ImGui::ImageButton(tex_roughness, ImVec2(img_w,img_w))){
-                                        im_file_dialog.SetPwd(exepath+"/data/textures");
-                                        selected_entity_mesh_material = i;
-                                        im_file_dialog_type = "asset.mat.tRoughness";
-                                        im_file_dialog.SetCurrentTypeFilterIndex(2);
-                                        im_file_dialog.SetTypeFilters(image_file_extensions);
-                                        im_file_dialog.Open();
-                                    }
+                    if (ImGui::CollapsingHeader("Materials")){
+                        static const std::vector<std::string> image_file_extensions = { ".jpg", ".png", ".bmp", ".tiff", ".tga" };
+                        for(int i = 0; i < mesh->num_materials; i++) {
+                            auto &mat = mesh->materials[i];
+                            char buf[128];
+                            sprintf(buf, "Material %d", i);
+                            constexpr int img_w = 128;
+                            if (ImGui::CollapsingHeader(buf)){
+                                ImGui::Text("Albedo");
+                                ImGui::SameLine();
+                                auto cursor = ImGui::GetCursorPos();
+                                cursor.x += img_w;
+                                ImGui::SetCursorPos(cursor);
+                                ImGui::Text("Ambient");
+                                void * tex_albedo = (void *)(intptr_t)mat.t_albedo->id;
+                                if(ImGui::ImageButton(tex_albedo, ImVec2(img_w,img_w))){
+                                    im_file_dialog.SetPwd(exepath+"/data/textures");
+                                    s_entity_material_index = i;
+                                    im_file_dialog_type = "asset.mat.tAlbedo";
+                                    im_file_dialog.SetCurrentTypeFilterIndex(2);
+                                    im_file_dialog.SetTypeFilters(image_file_extensions);
+                                    im_file_dialog.Open();
+                                }
+                                ImGui::SameLine();
+                                void * tex_ambient = (void *)(intptr_t)mat.t_ambient->id;
+                                if(ImGui::ImageButton(tex_ambient, ImVec2(img_w,img_w))){
+                                    im_file_dialog.SetPwd(exepath+"/data/textures");
+                                    s_entity_material_index = i;
+                                    im_file_dialog_type = "asset.mat.tAmbient";
+                                    im_file_dialog.SetCurrentTypeFilterIndex(2);
+                                    im_file_dialog.SetTypeFilters(image_file_extensions);
+                                    im_file_dialog.Open();
+                                }
+                                ImGui::Text("Metallic");
+                                ImGui::SameLine();
+                                cursor = ImGui::GetCursorPos();
+                                cursor.x += img_w;
+                                ImGui::SetCursorPos(cursor);
+                                ImGui::Text("Normal");
+                                void * tex_metallic = (void *)(intptr_t)mat.t_metallic->id;
+                                if(ImGui::ImageButton(tex_metallic, ImVec2(img_w,img_w))){
+                                    s_entity_material_index = i;
+                                    im_file_dialog_type = "asset.mat.tMetallic";
+                                    im_file_dialog.SetCurrentTypeFilterIndex(2);
+                                    im_file_dialog.SetTypeFilters(image_file_extensions);
+                                    im_file_dialog.Open();
+                                }
+                                ImGui::SameLine();
+                                void * tex_normal = (void *)(intptr_t)mat.t_normal->id;
+                                if(ImGui::ImageButton(tex_normal, ImVec2(img_w,img_w))){
+                                    im_file_dialog.SetPwd(exepath+"/data/textures");
+                                    s_entity_material_index = i;
+                                    im_file_dialog_type = "asset.mat.tNormal";
+                                    im_file_dialog.SetCurrentTypeFilterIndex(2);
+                                    im_file_dialog.SetTypeFilters(image_file_extensions);
+                                    im_file_dialog.Open();
+                                }
+                                ImGui::Text("Roughness");
+                                void * tex_roughness = (void *)(intptr_t)mat.t_roughness->id;
+                                if(ImGui::ImageButton(tex_roughness, ImVec2(img_w,img_w))){
+                                    im_file_dialog.SetPwd(exepath+"/data/textures");
+                                    s_entity_material_index = i;
+                                    im_file_dialog_type = "asset.mat.tRoughness";
+                                    im_file_dialog.SetCurrentTypeFilterIndex(2);
+                                    im_file_dialog.SetTypeFilters(image_file_extensions);
+                                    im_file_dialog.Open();
                                 }
                             }
                         }
                     }
-
                 } else if(s_e->type & EntityType::WATER_ENTITY) {
                     auto w_e = (WaterEntity*)s_e;
                     if(editor::draw_debug_wireframe)
@@ -872,32 +863,32 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, std::map<std::
                 im_file_dialog.Open();
             }
             if (ImGui::Button("Clear Level", button_size)) {
-                entity_manager.reset();
-                for(auto &pair : assets) {
-                    free(pair.second);
-                }
-                assets.clear();
+                entity_manager.clear();
+                asset_manager.clear();
             }
         }
-        static std::string current_asset = "";
-        if (ImGui::CollapsingHeader("Assets", ImGuiTreeNodeFlags_DefaultOpen)){
-            if (assets.size() > 0 && ImGui::CollapsingHeader("Add Entity", ImGuiTreeNodeFlags_DefaultOpen)){
-                if(current_asset == "") current_asset = assets.begin()->first;
+        static Mesh* s_mesh = nullptr;
+        if (ImGui::CollapsingHeader("Meshes", ImGuiTreeNodeFlags_DefaultOpen)){
+            auto &mmap = asset_manager.handle_mesh_map;
+            if (mmap.size() > 0){
+                if(s_mesh == nullptr) s_mesh = &mmap.begin()->second;
+
                 ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - pad);
-                if (ImGui::BeginCombo("##asset-combo", current_asset.c_str())){
-                    for(auto &a : assets){
-                        bool is_selected = (current_asset == a.first); 
+                if (ImGui::BeginCombo("##asset-combo", s_mesh->handle.c_str())){
+                    for(auto &a : mmap){
+                        bool is_selected = (s_mesh == &a.second); 
                         if (ImGui::Selectable(a.first.c_str(), is_selected))
-                            current_asset = a.first;
+                            s_mesh = &a.second;
                         if (is_selected)
                             ImGui::SetItemDefaultFocus(); 
                     }
                     ImGui::EndCombo();
                 }
-                if(assets[current_asset]->type & MESH_ASSET) {
+
+                if(s_mesh != nullptr) {
                     if(ImGui::Button("Add Instance", button_size)){
                         auto e = new MeshEntity();
-                        e->mesh = (MeshAsset*)assets[current_asset];
+                        e->mesh = s_mesh;
                         entity_manager.setEntity(entity_manager.getFreeId().i, e);
                     }
                     if(ImGui::Button("Export Mesh", button_size)){
@@ -926,8 +917,8 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, std::map<std::
         }
         if (ImGui::CollapsingHeader("Graphics", ImGuiTreeNodeFlags_DefaultOpen)){
             if (ImGui::Checkbox("Bloom", &shader::unified_bloom)){
-                createHdrFbo();
-                createBloomFbo();
+                initHdrFbo();
+                initBloomFbo();
             }
 
             ImGui::Text("Sun Color:");
@@ -941,7 +932,9 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, std::map<std::
                 updateShadowVP(camera);
             }
         }
-        ImGui::SetCursorPosY(window_height - ImGui::GetTextLineHeightWithSpacing()*3);
+        ImGui::SetCursorPosY(window_height - ImGui::GetTextLineHeightWithSpacing()*4);
+        ImGui::Text("%s\n", GL_version.c_str());
+        ImGui::Text("%s\n", GL_renderer.c_str());
         ImGui::TextWrapped("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
         ImGui::End();
         
@@ -958,56 +951,45 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, std::map<std::
             std::replace(p.begin(), p.end(), '\\', '/');
             printf("Selected filename: %s\n", p.c_str());
             if(im_file_dialog_type == "loadLevel"){
-                entity_manager.reset();
-                // @fix uses more memory than necessary/accumulates assets because unused assets arent destroyed
-                loadLevel(entity_manager, assets, p) ;
+                entity_manager.clear();
+                // @note accumulates assets
+                loadLevel(entity_manager, asset_manager, p) ;
                 sel_e = Id(-1, -1);
             } else if(im_file_dialog_type == "saveLevel"){
-                saveLevel(entity_manager, assets, p);
+                saveLevel(entity_manager, p);
             } else if(im_file_dialog_type == "exportMesh"){
-                writeMeshFile(((MeshAsset*)assets[current_asset])->mesh, p);
+                asset_manager.writeMeshFile(s_mesh, p);
             } else if(im_file_dialog_type == "loadMesh"){
-                auto m_a = new MeshAsset(p);
-                readMeshFile(assets, m_a->mesh, p);
-                assets[p] = m_a;
+                auto mesh = asset_manager.createMesh(p);
+                asset_manager.loadMeshFile(mesh, p);
             } else if(im_file_dialog_type == "loadModelAssimp"){
-                auto asset_lookup = assets.find(p);
-                // Asset not loaded so actually load it from filesystem 
-                if(asset_lookup == assets.end()){
-                    // @todo make good system for loading asset ie saving asset type, for now assume mesh asset
-                    auto a = new MeshAsset(p);
-                    loadMesh(a->mesh, p, assets);
-                    assets[p] = a;
-                } else {
-                    printf("This asset has already been loaded, path is %s.\n", p.c_str());
-                }
+                auto mesh = asset_manager.createMesh(p);
+                asset_manager.loadMeshAssimp(mesh, p);
             } else if(startsWith(im_file_dialog_type, "asset.mat.t")) {
                 auto s_e = entity_manager.getEntity(sel_e);
                 if (s_e != nullptr && s_e->type == MESH_ENTITY) {
                     auto m_e = static_cast<MeshEntity*>(s_e);
-                    auto mat = m_e->mesh->mesh.materials[selected_entity_mesh_material];
+                    auto mat = m_e->mesh->materials[s_entity_material_index];
 
-                    auto asset_lookup = assets.find(p);
-                    // Assets has already been loaded so just use it
-                    TextureAsset *texture;
-                    if (asset_lookup == assets.end()) {
-                        texture = new TextureAsset(p);
-                        assets[p] = texture;
-                        texture->texture_id = loadImage(p, GL_RGBA);
-                    } else if (asset_lookup->second->type & TEXTURE_ASSET){
-                        texture = static_cast<TextureAsset*>(asset_lookup->second);
-                    }
-                    
-                    if(endsWith(im_file_dialog_type, "Albedo")) {
-                        mat->t_albedo = texture;
-                    } else if(endsWith(im_file_dialog_type, "Ambient")) {
-                        mat->t_ambient = texture;
-                    } else if(endsWith(im_file_dialog_type, "Normal")) {
-                        mat->t_normal = texture;
-                    } else if(endsWith(im_file_dialog_type, "Metallic")) {
-                        mat->t_metallic = texture;
-                    } else if(endsWith(im_file_dialog_type, "Roughness")) {
-                        mat->t_roughness = texture;
+                    // Assets might already been loaded so just use it
+                    auto tex = asset_manager.getTexture(p);
+                    if(tex == nullptr) {
+                        tex = asset_manager.createTexture(p);
+                        asset_manager.loadTexture(tex, p);
+                    } 
+
+                    if(tex != nullptr) {
+                        if(endsWith(im_file_dialog_type, "Albedo")) {
+                            mat.t_albedo = tex;
+                        } else if(endsWith(im_file_dialog_type, "Ambient")) {
+                            mat.t_ambient = tex;
+                        } else if(endsWith(im_file_dialog_type, "Normal")) {
+                            mat.t_normal = tex;
+                        } else if(endsWith(im_file_dialog_type, "Metallic")) {
+                            mat.t_metallic = tex;
+                        } else if(endsWith(im_file_dialog_type, "Roughness")) {
+                            mat.t_roughness = tex;
+                        }
                     }
                 }
             } else {

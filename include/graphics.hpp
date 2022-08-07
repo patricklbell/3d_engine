@@ -1,14 +1,16 @@
 #ifndef GRAPHIC_HPP
 #define GRAPHIC_HPP
 
+#include <GL/glew.h>
 #include <GLFW/glfw3.h>
+
 #include <glm/glm.hpp>
 
-#include "globals.hpp"
+#include "assets.hpp"
 
 class EntityManager;
 struct Mesh;
-struct CubemapAsset;
+struct Texture;
 
 extern int    window_width;
 extern int    window_height;
@@ -46,25 +48,26 @@ void createDefaultCamera(Camera &camera);
 void updateCameraView(Camera &camera);
 void updateCameraProjection(Camera &camera);
 
-void initGraphicsPrimitives();
+void initGraphicsPrimitives(AssetManager &asset_manager);
 void drawQuad();
 void drawCube();
 
 void updateShadowVP(const Camera &camera);
-void createShadowFbo();
+void initShadowFbo();
 void bindDrawShadowMap(const EntityManager &entity_manager, const Camera &camera);
 
 void clearFramebuffer(const glm::vec4 &color);
 void bindHdr();
-void drawSkybox(const CubemapAsset *skybox, const Camera &camera);
-void drawUnifiedHdr(const EntityManager &entity_manager, const Camera &camera);
+void drawSkybox(const Texture* skybox, const Camera &camera);
+void drawUnifiedHdr(const EntityManager &entity_manager, const Texture* skybox, const Camera &camera);
 
 void bindBackbuffer();
 void drawPost(int bloom_buffer_index);
 
 int blurBloomFbo();
-void createBloomFbo(bool resize=false);
-void createHdrFbo(bool resize=false);
+void initBloomFbo(bool resize=false);
+void initHdrFbo(bool resize=false);
+
 namespace graphics {
     extern GLuint bloom_fbos[2];
     extern GLuint bloom_buffers[2];

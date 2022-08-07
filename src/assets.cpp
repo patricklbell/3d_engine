@@ -25,53 +25,18 @@
 #include "assets.hpp"
 #include "shader.hpp"
 #include "graphics.hpp"
-
-const auto ai_import_flags = aiProcess_JoinIdenticalVertices |
-    aiProcess_Triangulate |
-    aiProcess_GenNormals |
-    aiProcess_CalcTangentSpace |
-    //aiProcess_RemoveComponent (remove colors) |
-    aiProcess_LimitBoneWeights |
-    aiProcess_ImproveCacheLocality |
-    aiProcess_RemoveRedundantMaterials |
-    aiProcess_GenUVCoords |
-    aiProcess_SortByPType |
-    aiProcess_FindDegenerates |
-    aiProcess_FindInvalidData |
-    aiProcess_FindInstances |
-    aiProcess_ValidateDataStructure |
-    aiProcess_OptimizeMeshes |
-    aiProcess_OptimizeGraph |
-    aiProcess_Debone;
+#include "utilities.hpp"
 
 Material *default_material;
-void initDefaultMaterial(){
+void initDefaultMaterial(AssetManager &asset_manager){
     default_material = new Material;
    
-    unsigned char albedo[] = {255,0,255};
-    default_material->t_albedo = new TextureAsset("DEFAULTMATERIAL:albedo");
-    default_material->t_albedo->texture_id = create1x1Texture(albedo);
-
-    unsigned char normal[] = {128, 127, 255};
-    default_material->t_normal = new TextureAsset("DEFAULTMATERIAL:normal");
-    default_material->t_normal->texture_id = create1x1Texture(normal);
-
-    // @speed GL_FALSE may work so texture is set to nothing, either way
-    // loading three of the same texture is needless, set them equal if
-    // correct values
-    unsigned char metallic[] = {0, 0, 0};
-    default_material->t_metallic = new TextureAsset("DEFAULTMATERIAL:metallic");
-    default_material->t_metallic->texture_id = create1x1Texture(metallic, GL_RGB);
-
-    unsigned char roughness[] = {0, 0, 0};
-    default_material->t_roughness = new TextureAsset("DEFAULTMATERIAL:roughness");
-    default_material->t_roughness->texture_id = create1x1Texture(roughness, GL_RGB);
-
-    unsigned char ambient[] = {1, 0, 0};
-    default_material->t_ambient = new TextureAsset("DEFAULTMATERIAL:ambient");
-    default_material->t_ambient->texture_id = create1x1Texture(ambient, GL_SRGB);
+    default_material->t_albedo    = asset_manager.getColorTexture(glm::vec3(1,0,1));
+    default_material->t_normal    = asset_manager.getColorTexture(glm::vec3(0.5,0.5,1));
+    default_material->t_metallic  = asset_manager.getColorTexture(glm::vec3(0));
+    default_material->t_roughness = asset_manager.getColorTexture(glm::vec3(1));
+    default_material->t_ambient   = asset_manager.getColorTexture(glm::vec3(1));
 }
-
 
 //bool loadAssimp(
 //	std::string path, 
@@ -316,192 +281,195 @@ void initDefaultMaterial(){
 //	return true;
 //}
 
-MeshAsset::~MeshAsset(){
-    glDeleteVertexArrays(1, &mesh.vao);
-    for(int i = 0; i<mesh.num_materials; ++i){
-        free(mesh.materials[i]);
-    }
-    free(mesh.indices);
-    free(mesh.vertices);
-    free(mesh.normals);
-    free(mesh.tangents);
-    free(mesh.uvs);
+//
+// ----------------------------------- Mesh ------------------------------------
+//
+Mesh::~Mesh(){
+    glDeleteVertexArrays(1, &vao);
+    free(materials);
+    free(indices);
+    free(vertices);
+    free(normals);
+    free(tangents);
+    free(uvs);
 
-    free(mesh.draw_start);
-    free(mesh.draw_count);
+    free(draw_start);
+    free(draw_count);
 }
 
 enum class MeshAttributes : char {
-    VERTICES = 0,
-    NORMALS  = 1,
-    TANGENTS = 2,
-    UVS      = 4,
+    VERTICES = 1 << 0,
+    NORMALS  = 1 << 1,
+    TANGENTS = 1 << 2,
+    UVS      = 1 << 3,
+    ALL      = VERTICES | NORMALS | TANGENTS | UVS,
 };
 
-const unsigned int MESH_FILE_VERSION = 1;
+constexpr unsigned int MESH_FILE_VERSION = 1;
 // For now dont worry about size of types on different platforms
-bool writeMeshFile(const Mesh &mesh, std::string path){
-    printf("--------------------Save Mesh %s--------------------\n", path.c_str());
+bool AssetManager::writeMeshFile(const Mesh *mesh, const std::string &path){
+    std::cout << "--------------------Save Mesh " << path << "--------------------\n";
 
     FILE *f;
     f=fopen(path.c_str(), "wb");
 
     fwrite(&MESH_FILE_VERSION, sizeof(unsigned int), 1, f);
 
-    fwrite(&mesh.num_indices, sizeof(int), 1, f);
-    fwrite(mesh.indices, sizeof(unsigned short), mesh.num_indices, f);
+    fwrite(&mesh->num_indices, sizeof(int), 1, f);
+    fwrite(mesh->indices, sizeof(unsigned short), mesh->num_indices, f);
 
     // @todo For now just assume every mesh has every attribute
     char attributes = (char)MeshAttributes::VERTICES | (char)MeshAttributes::NORMALS | (char)MeshAttributes::TANGENTS | (char)MeshAttributes::UVS;
     fwrite(&attributes, sizeof(char), 1, f);
 
-    fwrite(&mesh.num_vertices, sizeof(int), 1, f);
+    fwrite(&mesh->num_vertices, sizeof(int), 1, f);
 
-    fwrite(mesh.vertices, sizeof(glm::fvec3), mesh.num_vertices, f);
-    fwrite(mesh.normals,  sizeof(glm::fvec3), mesh.num_vertices, f);
-    fwrite(mesh.tangents, sizeof(glm::fvec3), mesh.num_vertices, f);
+    fwrite(mesh->vertices, sizeof(glm::fvec3), mesh->num_vertices, f);
+    fwrite(mesh->normals,  sizeof(glm::fvec3), mesh->num_vertices, f);
+    fwrite(mesh->tangents, sizeof(glm::fvec3), mesh->num_vertices, f);
 
-    fwrite(mesh.uvs,      sizeof(glm::fvec2), mesh.num_vertices, f);
+    fwrite(mesh->uvs,      sizeof(glm::fvec2), mesh->num_vertices, f);
 
     // Write materials as list of image paths
-    fwrite(&mesh.num_materials, sizeof(int), 1, f);
-    for(int i = 0; i < mesh.num_materials; i++){
-        auto &mat = mesh.materials[i];
-        int albedo_len = mat->t_albedo->path.size();
+    fwrite(&mesh->num_materials, sizeof(int), 1, f);
+    for(int i = 0; i < mesh->num_materials; i++){
+        auto &mat = mesh->materials[i];
+        int albedo_len = mat.t_albedo->handle.size();
         fwrite(&albedo_len, sizeof(int), 1, f);
-        fwrite(mat->t_albedo->path.c_str(), mat->t_albedo->path.size(), 1, f);
+        fwrite(mat.t_albedo->handle.c_str(), mat.t_albedo->handle.size(), 1, f);
 
-        int normal_len = mat->t_normal->path.size();
+        int normal_len = mat.t_normal->handle.size();
         fwrite(&normal_len, sizeof(int), 1, f);
-        fwrite(mat->t_normal->path.c_str(), mat->t_normal->path.size(), 1, f);
+        fwrite(mat.t_normal->handle.c_str(), mat.t_normal->handle.size(), 1, f);
 
-        int ambient_len = mat->t_ambient->path.size();
+        int ambient_len = mat.t_ambient->handle.size();
         fwrite(&ambient_len, sizeof(int), 1, f);
-        fwrite(mat->t_ambient->path.c_str(), mat->t_ambient->path.size(), 1, f);
+        fwrite(mat.t_ambient->handle.c_str(), mat.t_ambient->handle.size(), 1, f);
 
-        int metallic_len = mat->t_metallic->path.size();
+        int metallic_len = mat.t_metallic->handle.size();
         fwrite(&metallic_len, sizeof(int), 1, f);
-        fwrite(mat->t_metallic->path.c_str(), mat->t_metallic->path.size(), 1, f);
+        fwrite(mat.t_metallic->handle.c_str(), mat.t_metallic->handle.size(), 1, f);
 
-        int roughness_len = mat->t_roughness->path.size();
+        int roughness_len = mat.t_roughness->handle.size();
         fwrite(&roughness_len, sizeof(int), 1, f);
-        fwrite(mat->t_roughness->path.c_str(), mat->t_roughness->path.size(), 1, f);
+        fwrite(mat.t_roughness->handle.c_str(), mat.t_roughness->handle.size(), 1, f);
     }
 
     // Write material indice ranges
-    fwrite(mesh.draw_start, sizeof(GLint), mesh.num_materials, f);
-    fwrite(mesh.draw_count, sizeof(GLint), mesh.num_materials, f);
+    fwrite(mesh->draw_start, sizeof(GLint), mesh->num_materials, f);
+    fwrite(mesh->draw_count, sizeof(GLint), mesh->num_materials, f);
 
     fclose(f);
     return true;
 }
-void createMeshVao(Mesh &mesh){
-	glGenBuffers(1, &mesh.vertices_vbo);
-	glGenBuffers(1, &mesh.indices_vbo);
-	glGenBuffers(1, &mesh.tangents_vbo);
-	glGenBuffers(1, &mesh.normals_vbo);
-	glGenBuffers(1, &mesh.uvs_vbo);
 
-	glGenVertexArrays(1, &mesh.vao);
+static void createMeshVao(Mesh *mesh){
+	glGenBuffers(1, &mesh->vertices_vbo);
+	glGenBuffers(1, &mesh->indices_vbo);
+	glGenBuffers(1, &mesh->tangents_vbo);
+	glGenBuffers(1, &mesh->normals_vbo);
+	glGenBuffers(1, &mesh->uvs_vbo);
+
+	glGenVertexArrays(1, &mesh->vao);
 	// bind the vao for writing vbos
-	glBindVertexArray(mesh.vao);
+	glBindVertexArray(mesh->vao);
 
 	// Load the packed vector data into a VBO
-	glBindBuffer(GL_ARRAY_BUFFER, mesh.vertices_vbo);
-	glBufferData(GL_ARRAY_BUFFER, mesh.num_vertices * sizeof(glm::fvec3), &mesh.vertices[0], GL_STATIC_DRAW);
+	glBindBuffer(GL_ARRAY_BUFFER, mesh->vertices_vbo);
+	glBufferData(GL_ARRAY_BUFFER, mesh->num_vertices * sizeof(glm::fvec3), &mesh->vertices[0], GL_STATIC_DRAW);
 	glVertexAttribPointer(0, 3, GL_FLOAT, false, 0, 0);
 	glEnableVertexAttribArray(0);
 
-    glBindBuffer(GL_ARRAY_BUFFER, mesh.normals_vbo);
-	glBufferData(GL_ARRAY_BUFFER, mesh.num_vertices * sizeof(glm::fvec3), &mesh.normals[0], GL_STATIC_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, mesh->normals_vbo);
+	glBufferData(GL_ARRAY_BUFFER, mesh->num_vertices * sizeof(glm::fvec3), &mesh->normals[0], GL_STATIC_DRAW);
 	glVertexAttribPointer(1, 3, GL_FLOAT, false, 0, 0);
 	glEnableVertexAttribArray(1);
 
-    glBindBuffer(GL_ARRAY_BUFFER, mesh.tangents_vbo);
-	glBufferData(GL_ARRAY_BUFFER, mesh.num_vertices * sizeof(glm::fvec3), &mesh.tangents[0], GL_STATIC_DRAW);
+    glBindBuffer(GL_ARRAY_BUFFER, mesh->tangents_vbo);
+	glBufferData(GL_ARRAY_BUFFER, mesh->num_vertices * sizeof(glm::fvec3), &mesh->tangents[0], GL_STATIC_DRAW);
 	glVertexAttribPointer(2, 3, GL_FLOAT, false, 0, 0);
 	glEnableVertexAttribArray(2);
 
-	glBindBuffer(GL_ARRAY_BUFFER, mesh.uvs_vbo);
-	glBufferData(GL_ARRAY_BUFFER, mesh.num_vertices * sizeof(glm::fvec2), &mesh.uvs[0], GL_STATIC_DRAW);
+	glBindBuffer(GL_ARRAY_BUFFER, mesh->uvs_vbo);
+	glBufferData(GL_ARRAY_BUFFER, mesh->num_vertices * sizeof(glm::fvec2), &mesh->uvs[0], GL_STATIC_DRAW);
 	glVertexAttribPointer(3, 2, GL_FLOAT, false, 0, 0);
 	glEnableVertexAttribArray(3);
 
-   	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh.indices_vbo);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, mesh.num_indices * sizeof(unsigned short), &mesh.indices[0], GL_STATIC_DRAW);
+   	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh->indices_vbo);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, mesh->num_indices * sizeof(unsigned short), &mesh->indices[0], GL_STATIC_DRAW);
 
 	glBindVertexArray(0); //Unbind the VAO
 }
 
-bool readMeshFile(std::map<std::string, Asset*> &assets, Mesh &mesh, std::string path){
+bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
+    std::cout << "----------------Loading Mesh File " << path << "----------------\n";
+
     FILE *f;
     f=fopen(path.c_str(), "rb");
     if (!f) {
-        fprintf(stderr, "Error in reading mesh file %s.\n", path.c_str());
+        std::cerr << "Error in reading mesh file " << path << "\n.";
         return false;
     }
-
-    printf("----------------Loading Mesh File %s----------------\n", path.c_str());
 
     unsigned int version;
     fread(&version, sizeof(unsigned int), 1, f);
     if(version!=MESH_FILE_VERSION){
-        fprintf(stderr, "Invalid mesh file version %u expected %u", version, MESH_FILE_VERSION);
+        std::cerr << "Invalid mesh file version, was " << version << " expected " << MESH_FILE_VERSION << ".\n";
         return false;
     }
 
-    fread(&mesh.num_indices, sizeof(int), 1, f);
-    mesh.indices = (unsigned short *)malloc(sizeof(unsigned short)*mesh.num_indices);
-    fread(mesh.indices, sizeof(unsigned short), mesh.num_indices, f);
-    printf("Number of indices %d\n", mesh.num_indices);
+    fread(&mesh->num_indices, sizeof(mesh->num_indices), 1, f);
+    std::cout << "Number of indices " << mesh->num_indices << ".\n";
+
+    mesh->indices = reinterpret_cast<typeof(mesh->indices)>(malloc(sizeof(*mesh->indices)*mesh->num_indices));
+    fread(mesh->indices, sizeof(*mesh->indices), mesh->num_indices, f);
 
     char attributes;
-    fread(&attributes, sizeof(char), 1, f);
+    fread(&attributes, sizeof(attributes), 1, f);
     
     // @todo For now just assume all attributes
-    fread(&mesh.num_vertices, sizeof(int), 1, f);
-    printf("Number of vertices %d\n", mesh.num_vertices);
+    fread(&mesh->num_vertices, sizeof(mesh->num_vertices), 1, f);
+    std::cout << "Number of vertices " << mesh->num_vertices << ".\n";
 
-    mesh.vertices = (glm::fvec3*)malloc(sizeof(glm::fvec3)*mesh.num_vertices);
-    mesh.normals  = (glm::fvec3*)malloc(sizeof(glm::fvec3)*mesh.num_vertices);
-    mesh.tangents = (glm::fvec3*)malloc(sizeof(glm::fvec3)*mesh.num_vertices);
-    fread(mesh.vertices, sizeof(glm::fvec3), mesh.num_vertices, f);
-    fread(mesh.normals,  sizeof(glm::fvec3), mesh.num_vertices, f);
-    fread(mesh.tangents, sizeof(glm::fvec3), mesh.num_vertices, f);
+    mesh->vertices = reinterpret_cast<typeof(mesh->vertices)>(malloc(sizeof(*mesh->vertices)*mesh->num_vertices));
+    mesh->normals  = reinterpret_cast<typeof(mesh->normals )>(malloc(sizeof(*mesh->normals )*mesh->num_vertices));
+    mesh->tangents = reinterpret_cast<typeof(mesh->tangents)>(malloc(sizeof(*mesh->tangents)*mesh->num_vertices));
+    fread(mesh->vertices, sizeof(*mesh->vertices), mesh->num_vertices, f);
+    fread(mesh->normals,  sizeof(*mesh->normals ), mesh->num_vertices, f);
+    fread(mesh->tangents, sizeof(*mesh->tangents), mesh->num_vertices, f);
 
-    mesh.uvs = (glm::fvec2 *)malloc(sizeof(glm::fvec2)*mesh.num_vertices);
-    fread(mesh.uvs, sizeof(glm::fvec2), mesh.num_vertices, f);
+    mesh->uvs = reinterpret_cast<typeof(mesh->uvs)>(malloc(sizeof(*mesh->uvs)*mesh->num_vertices));
+    fread(mesh->uvs, sizeof(*mesh->uvs), mesh->num_vertices, f);
 
     // @note this doesn't support embedded materials for binary formats that assimp loads
-    fread(&mesh.num_materials, sizeof(int), 1, f);
-    mesh.materials = (Material**)malloc(sizeof(Material*)*mesh.num_materials);
-    for(int i = 0; i < mesh.num_materials; i++){
-        auto mat = new Material();
+    fread(&mesh->num_materials, sizeof(mesh->num_materials), 1, f);
+    mesh->materials = reinterpret_cast<typeof(mesh->materials)>(malloc(sizeof(*mesh->materials)*mesh->num_materials));
+    for(int i = 0; i < mesh->num_materials; ++i){
+        auto &mat = mesh->materials[i];
 
         int albedo_len;
         fread(&albedo_len, sizeof(int), 1, f);
         std::string albedo_path;
         albedo_path.resize(albedo_len);
         fread(&albedo_path[0], sizeof(char), albedo_len, f);
-        mat->t_albedo = new TextureAsset(albedo_path);
-        if (albedo_path == "DEFAULTMATERIAL:albedo") mat->t_albedo = default_material->t_albedo;
+
+        if (albedo_path == "DEFAULTMATERIAL:albedo") mat.t_albedo = default_material->t_albedo;
         else {
-            mat->t_albedo = new TextureAsset(albedo_path);
-            mat->t_albedo->texture_id = loadImage(albedo_path, GL_RGBA);
-            assets[albedo_path] = mat->t_albedo;
+            loadTexture(mat.t_albedo, albedo_path);
+            if(mat.t_albedo == nullptr) mat.t_albedo = default_material->t_albedo;
         }
+        mat.t_albedo = default_material->t_albedo;
 
         int normal_len;
         fread(&normal_len, sizeof(int), 1, f);
         std::string normal_path;
         normal_path.resize(normal_len);
         fread(&normal_path[0], sizeof(char), normal_len, f);
-        mat->t_normal = new TextureAsset(normal_path);
-        if (normal_path == "DEFAULTMATERIAL:normal") mat->t_normal = default_material->t_normal;
+
+        if (normal_path == "DEFAULTMATERIAL:normal") mat.t_normal = default_material->t_normal;
         else {
-            mat->t_normal = new TextureAsset(normal_path);
-            mat->t_normal->texture_id = loadImage(normal_path, GL_RGBA);
-            assets[normal_path] = mat->t_normal;
+            loadTexture(mat.t_normal, normal_path);
+            if(mat.t_normal == nullptr) mat.t_normal = default_material->t_normal;
         }
 
         int ambient_len;
@@ -509,12 +477,11 @@ bool readMeshFile(std::map<std::string, Asset*> &assets, Mesh &mesh, std::string
         std::string ambient_path;
         ambient_path.resize(ambient_len);
         fread(&ambient_path[0], sizeof(char), ambient_len, f);
-        mat->t_ambient = new TextureAsset(ambient_path);
-        if (ambient_path == "DEFAULTMATERIAL:ambient") mat->t_ambient = default_material->t_ambient;
+
+        if (ambient_path == "DEFAULTMATERIAL:ambient") mat.t_ambient = default_material->t_ambient;
         else {
-            mat->t_ambient = new TextureAsset(ambient_path);
-            mat->t_ambient->texture_id = loadImage(ambient_path, GL_RGBA);
-            assets[ambient_path] = mat->t_ambient;
+            loadTexture(mat.t_ambient, ambient_path);
+            if(mat.t_ambient == nullptr) mat.t_ambient = default_material->t_ambient;
         }
 
         int metallic_len;
@@ -522,12 +489,11 @@ bool readMeshFile(std::map<std::string, Asset*> &assets, Mesh &mesh, std::string
         std::string metallic_path;
         metallic_path.resize(metallic_len);
         fread(&metallic_path[0], sizeof(char), metallic_len, f);
-        mat->t_metallic = new TextureAsset(metallic_path);
-        if (metallic_path == "DEFAULTMATERIAL:metallic") mat->t_metallic = default_material->t_metallic;
+
+        if (metallic_path == "DEFAULTMATERIAL:metallic") mat.t_metallic = default_material->t_metallic;
         else {
-            mat->t_metallic = new TextureAsset(metallic_path);
-            mat->t_metallic->texture_id = loadImage(metallic_path, GL_RGBA);
-            assets[metallic_path] = mat->t_metallic;
+            loadTexture(mat.t_metallic, metallic_path);
+            if(mat.t_metallic == nullptr) mat.t_metallic = default_material->t_metallic;
         }
 
         int roughness_len;
@@ -535,156 +501,115 @@ bool readMeshFile(std::map<std::string, Asset*> &assets, Mesh &mesh, std::string
         std::string roughness_path;
         roughness_path.resize(roughness_len);
         fread(&roughness_path[0], sizeof(char), roughness_len, f);
-        mat->t_roughness = new TextureAsset(roughness_path);
-        if (roughness_path == "DEFAULTMATERIAL:roughness") mat->t_roughness = default_material->t_roughness;
+
+        if (roughness_path == "DEFAULTMATERIAL:roughness") mat.t_roughness = default_material->t_roughness;
         else {
-            mat->t_roughness = new TextureAsset(roughness_path);
-            mat->t_roughness->texture_id = loadImage(roughness_path, GL_RGBA);
-            assets[roughness_path] = mat->t_roughness;
+            loadTexture(mat.t_roughness, roughness_path);
+            if(mat.t_roughness == nullptr) mat.t_roughness = default_material->t_roughness;
         }
-
-        printf("Material %d\nAlbedo: %s, Normal %s, Ambient %s, Metallic %s, Roughness %s\n", i, albedo_path.c_str(), normal_path.c_str(), ambient_path.c_str(), metallic_path.c_str(), roughness_path.c_str());
-
-        mesh.materials[i] = mat;
+        
+        std::cout << "Material " << i << "\nAlbedo: " << albedo_path << ", Normal: " << normal_path 
+            << ", Ambient: " << ambient_path << ", Metallic: " << metallic_path << ", Roughness: " << roughness_path << "\n";
     }
     // @hardcoded
-	mesh.draw_mode = GL_TRIANGLES;
-	mesh.draw_type = GL_UNSIGNED_SHORT;
+	mesh->draw_mode = GL_TRIANGLES;
+	mesh->draw_type = GL_UNSIGNED_SHORT;
 
-    mesh.draw_start = (GLint*)malloc(sizeof(GLint) * mesh.num_materials);
-    mesh.draw_count = (GLint*)malloc(sizeof(GLint) * mesh.num_materials);
-    fread(mesh.draw_start, sizeof(GLint), mesh.num_materials, f);
-    fread(mesh.draw_count, sizeof(GLint), mesh.num_materials, f);
+    mesh->draw_start = reinterpret_cast<typeof(mesh->draw_start)>(malloc(sizeof(*mesh->draw_start)*mesh->num_materials));
+    mesh->draw_count = reinterpret_cast<typeof(mesh->draw_count)>(malloc(sizeof(*mesh->draw_count)*mesh->num_materials));
+    fread(mesh->draw_start, sizeof(GLint), mesh->num_materials, f);
+    fread(mesh->draw_count, sizeof(GLint), mesh->num_materials, f);
     
     fclose(f);
 
     createMeshVao(mesh);
     return true;
 }
-bool loadMesh(Mesh &mesh, const std::string &path, std::map<std::string, Asset*> &assets){
-    //std::string m_path = path;
-    //m_path.replace(path.size() - 3, 3, "mesh");
-    //printf("Mesh path %s\n", m_path.c_str());
 
-    //if(std::filesystem::exists(m_path)) {
-    //    return readMeshFile(mesh, m_path);
-    //}
-
-	printf("--------------------Loading Mesh %s--------------------\n", path.c_str());
+static constexpr auto ai_import_flags = aiProcess_JoinIdenticalVertices |
+    aiProcess_Triangulate |
+    aiProcess_GenNormals |
+    aiProcess_CalcTangentSpace |
+    //aiProcess_RemoveComponent (remove colors) |
+    aiProcess_LimitBoneWeights |
+    aiProcess_ImproveCacheLocality |
+    aiProcess_RemoveRedundantMaterials |
+    aiProcess_GenUVCoords |
+    aiProcess_SortByPType |
+    aiProcess_FindDegenerates |
+    aiProcess_FindInvalidData |
+    aiProcess_FindInstances |
+    aiProcess_ValidateDataStructure |
+    aiProcess_OptimizeMeshes |
+    aiProcess_OptimizeGraph |
+    aiProcess_Debone;
+bool AssetManager::loadMeshAssimp(Mesh *mesh, const std::string &path) {
+    std::cout << "--------------------Loading Mesh " << path.c_str() << "--------------------\n";
 
 	Assimp::Importer importer;
 
 	const aiScene* scene = importer.ReadFile(path, ai_import_flags);
 	if( !scene) {
-		fprintf(stderr, "%s\n", importer.GetErrorString());
+        std::cerr << "Error loading mesh: " << importer.GetErrorString() << "\n";
 		getchar();
 		return false;
 	}
 
 	// Allocate arrays for each mesh 
-	mesh.num_materials = scene->mNumMeshes;
-	mesh.draw_count = (GLint*)malloc(mesh.num_materials * sizeof(GLint));
-	mesh.draw_start = (GLint*)malloc(mesh.num_materials * sizeof(GLint));
-	mesh.materials  = (Material**)malloc(mesh.num_materials * sizeof(Material*));
+	mesh->num_materials = scene->mNumMeshes;
+    mesh->draw_start = reinterpret_cast<typeof(mesh->draw_start)>(malloc(sizeof(*mesh->draw_start)*mesh->num_materials));
+    mesh->draw_count = reinterpret_cast<typeof(mesh->draw_count)>(malloc(sizeof(*mesh->draw_count)*mesh->num_materials));
+    mesh->materials =  reinterpret_cast<typeof(mesh->materials )>(malloc(sizeof(*mesh->materials )*mesh->num_materials));
 
-	mesh.draw_mode = GL_TRIANGLES;
-	mesh.draw_type = GL_UNSIGNED_SHORT;
+	mesh->draw_mode = GL_TRIANGLES;
+	mesh->draw_type = GL_UNSIGNED_SHORT;
 
     int indice_offset = 0;
 	for (int i = 0; i < scene->mNumMeshes; ++i) {
 		const aiMesh* ai_mesh = scene->mMeshes[i]; 
 
-		mesh.draw_start[i] = indice_offset;
+		mesh->draw_start[i] = indice_offset;
         indice_offset += 3*ai_mesh->mNumFaces;
-		mesh.draw_count[i] = 3*ai_mesh->mNumFaces;
-        mesh.num_vertices += ai_mesh->mNumVertices;
-        mesh.num_indices += 3*ai_mesh->mNumFaces;
-
-        printf("Loading mesh index %d from face %d ---> %d.\n", i, mesh.draw_start[i], mesh.draw_start[i]+mesh.draw_count[i]-1);
+		mesh->draw_count[i] = 3*ai_mesh->mNumFaces;
+        mesh->num_vertices += ai_mesh->mNumVertices;
+        mesh->num_indices += 3*ai_mesh->mNumFaces;
 
         // Load material from assimp
 		auto ai_mat = scene->mMaterials[scene->mMeshes[i]->mMaterialIndex];
-		mesh.materials[i] = new Material;
-		auto mat = mesh.materials[i];
+		memcpy(&mesh->materials[i], default_material, sizeof(*default_material));
+		auto &mat = mesh->materials[i];
 
         // @speed move default intialisation outside loop
-		mat->t_ambient = loadTextureFromAssimp(assets, ai_mat, scene, aiTextureType_AMBIENT_OCCLUSION, GL_SRGB);
-        if(mat->t_ambient == nullptr) mat->t_ambient = loadTextureFromAssimp(assets, ai_mat, scene, aiTextureType_AMBIENT, GL_SRGB);
-        //if(mat->t_ambient == 0){
-        //    aiColor3D ambient;
-        //    if(ai_mat->Get(AI_MATKEY_COLOR_AMBIENT,ambient) == AI_SUCCESS){
-        //        unsigned char data[] = {
-        //            (unsigned char)floor(ambient.r*255),
-        //            (unsigned char)floor(ambient.g*255),
-        //            (unsigned char)floor(ambient.b*255),
-        //        };
-        //        mat->t_ambient = create1x1Texture(data, GL_SRGB);
-        //    }
-        //}
-		if(mat->t_ambient == nullptr) mat->t_ambient = default_material->t_ambient;
+		loadTextureFromAssimp(mat.t_ambient, ai_mat, scene, aiTextureType_AMBIENT_OCCLUSION, GL_SRGB);
+        if(mat.t_ambient == nullptr) loadTextureFromAssimp(mat.t_ambient, ai_mat, scene, aiTextureType_AMBIENT, GL_SRGB);
 
-		mat->t_albedo = loadTextureFromAssimp(assets, ai_mat, scene, aiTextureType_BASE_COLOR, GL_SRGB);
+		loadTextureFromAssimp(mat.t_albedo, ai_mat, scene, aiTextureType_BASE_COLOR, GL_SRGB);
         // If base color isnt present assume diffuse is really an albedo
-		if(mat->t_albedo == nullptr) mat->t_albedo = loadTextureFromAssimp(assets, ai_mat, scene, aiTextureType_DIFFUSE, GL_SRGB);
-        //if(mat->t_albedo == 0){
-        //    aiColor3D albedo;
-        //    if(ai_mat->Get(AI_MATKEY_COLOR_AMBIENT,albedo) == AI_SUCCESS){
-        //        unsigned char data[] = {
-        //            (unsigned char)floor(albedo.r*255),
-        //            (unsigned char)floor(albedo.g*255),
-        //            (unsigned char)floor(albedo.b*255),
-        //        };
-        //        mat->t_albedo = create1x1Texture(data, GL_SRGB);
-        //    }
-        //}
-		if(mat->t_albedo == 0) mat->t_albedo = default_material->t_albedo;
+		if(mat.t_albedo == nullptr) loadTextureFromAssimp(mat.t_albedo, ai_mat, scene, aiTextureType_DIFFUSE, GL_SRGB);
 
-		mat->t_metallic = loadTextureFromAssimp(assets, ai_mat, scene, aiTextureType_METALNESS, GL_RGB);
-        //if(mat->t_metallic == 0){
-        //    aiColor3D metallic;
-		//    if(ai_mat->Get(AI_MATKEY_METALLIC_FACTOR,metallic) == AI_SUCCESS){
-        //        unsigned char data[] = {
-        //            (unsigned char)floor(metallic.r*255),
-        //            (unsigned char)floor(metallic.g*255),
-        //            (unsigned char)floor(metallic.b*255),
-        //        };
-        //        mat->t_metallic = create1x1Texture(data, GL_RGB);
-        //    }
-        //}
-        if(mat->t_metallic == nullptr) mat->t_metallic = loadTextureFromAssimp(assets, ai_mat, scene, aiTextureType_REFLECTION, GL_RGB);
-        if(mat->t_metallic == nullptr) mat->t_metallic = loadTextureFromAssimp(assets, ai_mat, scene, aiTextureType_SPECULAR, GL_RGB);
-		if(mat->t_metallic == nullptr) mat->t_metallic = default_material->t_metallic;
+		loadTextureFromAssimp(mat.t_metallic, ai_mat, scene, aiTextureType_METALNESS, GL_RGB);
+        if(mat.t_metallic == nullptr) loadTextureFromAssimp(mat.t_metallic, ai_mat, scene, aiTextureType_REFLECTION, GL_RGB);
+        if(mat.t_metallic == nullptr) loadTextureFromAssimp(mat.t_metallic, ai_mat, scene, aiTextureType_SPECULAR, GL_RGB);
 
-		mat->t_roughness = loadTextureFromAssimp(assets, ai_mat, scene, aiTextureType_DIFFUSE_ROUGHNESS, GL_RGB);
-        //if(mat->t_roughness == 0){
-        //    aiColor3D roughness;
-		//    if(ai_mat->Get(AI_MATKEY_ROUGHNESS_FACTOR,roughness) == AI_SUCCESS){
-        //        unsigned char data[] = {
-        //            (unsigned char)floor(roughness.r*255),
-        //            (unsigned char)floor(roughness.g*255),
-        //            (unsigned char)floor(roughness.b*255),
-        //        };
-        //        mat->t_roughness = create1x1Texture(data, GL_RGB);
-        //    }
-        //}
-        if(mat->t_roughness == nullptr) mat->t_roughness = loadTextureFromAssimp(assets, ai_mat, scene, aiTextureType_SHININESS, GL_RGB);
-		if(mat->t_roughness == nullptr) mat->t_roughness = default_material->t_roughness;
+		loadTextureFromAssimp(mat.t_roughness, ai_mat, scene, aiTextureType_DIFFUSE_ROUGHNESS, GL_RGB);
+        if(mat.t_roughness == nullptr) loadTextureFromAssimp(mat.t_roughness, ai_mat, scene, aiTextureType_SHININESS, GL_RGB);
 
-		// @note Since mtl files specify normals as bump maps assume all bump maps are really normal
-		mat->t_normal = loadTextureFromAssimp(assets, ai_mat, scene, aiTextureType_NORMALS, GL_RGB);
-		if(mat->t_normal == nullptr) mat->t_normal = loadTextureFromAssimp(assets, ai_mat, scene, aiTextureType_HEIGHT, GL_RGB);
-		if(mat->t_normal == nullptr) mat->t_normal = default_material->t_normal;
+		// @note Since mtl files specify normals as bump maps assume all bump maps are really normals
+		loadTextureFromAssimp(mat.t_normal, ai_mat, scene, aiTextureType_NORMALS, GL_RGB);
+		if(mat.t_normal == nullptr) loadTextureFromAssimp(mat.t_normal, ai_mat, scene, aiTextureType_HEIGHT, GL_RGB);
 	}
-    mesh.vertices = (glm::fvec3*)malloc(sizeof(glm::fvec3)*mesh.num_vertices);
-    mesh.tangents = (glm::fvec3*)malloc(sizeof(glm::fvec3)*mesh.num_vertices);
-    mesh.normals  = (glm::fvec3*)malloc(sizeof(glm::fvec3)*mesh.num_vertices);
-    mesh.uvs      = (glm::fvec2*)malloc(sizeof(glm::fvec2)*mesh.num_vertices);
-    mesh.indices  = (unsigned short*)malloc(sizeof(unsigned short)*mesh.num_indices);
+    mesh->vertices = reinterpret_cast<typeof(mesh->vertices)>(malloc(sizeof(*mesh->vertices)*mesh->num_vertices));
+    mesh->normals  = reinterpret_cast<typeof(mesh->normals )>(malloc(sizeof(*mesh->normals )*mesh->num_vertices));
+    mesh->tangents = reinterpret_cast<typeof(mesh->tangents)>(malloc(sizeof(*mesh->tangents)*mesh->num_vertices));
+    mesh->uvs      = reinterpret_cast<typeof(mesh->uvs     )>(malloc(sizeof(*mesh->uvs     )*mesh->num_vertices));
+
+    mesh->indices  = reinterpret_cast<typeof(mesh->indices )>(malloc(sizeof(*mesh->indices )*mesh->num_indices));
+
     int vertices_offset = 0, indices_offset = 0;
     for (int j = 0; j < scene->mNumMeshes; ++j) {
 		const aiMesh* ai_mesh = scene->mMeshes[j]; 
 		for(unsigned int i=0; i<ai_mesh->mNumVertices; i++){
-            mesh.vertices[vertices_offset + i] = glm::fvec3(
+            mesh->vertices[vertices_offset + i] = glm::fvec3(
                 ai_mesh->mVertices[i].x,
                 ai_mesh->mVertices[i].y,
                 ai_mesh->mVertices[i].z
@@ -692,7 +617,7 @@ bool loadMesh(Mesh &mesh, const std::string &path, std::map<std::string, Asset*>
 		}
         if(ai_mesh->mNormals != NULL){
             for(unsigned int i=0; i<ai_mesh->mNumVertices; i++){
-                mesh.normals[vertices_offset + i] = glm::fvec3(
+                mesh->normals[vertices_offset + i] = glm::fvec3(
                     ai_mesh->mNormals[i].x,
                     ai_mesh->mNormals[i].y,
                     ai_mesh->mNormals[i].z
@@ -701,7 +626,7 @@ bool loadMesh(Mesh &mesh, const std::string &path, std::map<std::string, Asset*>
 		}
         if(ai_mesh->mTangents != NULL){
             for(unsigned int i=0; i<ai_mesh->mNumVertices; i++){
-                mesh.tangents[vertices_offset + i] = glm::fvec3(
+                mesh->tangents[vertices_offset + i] = glm::fvec3(
                     ai_mesh->mTangents[i].x,
                     ai_mesh->mTangents[i].y,
                     ai_mesh->mTangents[i].z
@@ -710,7 +635,7 @@ bool loadMesh(Mesh &mesh, const std::string &path, std::map<std::string, Asset*>
 		}
 		if(ai_mesh->mTextureCoords[0] != NULL){
             for(unsigned int i=0; i<ai_mesh->mNumVertices; i++){
-                mesh.uvs[vertices_offset + i] = glm::fvec2(
+                mesh->uvs[vertices_offset + i] = glm::fvec2(
                     ai_mesh->mTextureCoords[0][i].x,
                     ai_mesh->mTextureCoords[0][i].y
                 );
@@ -719,9 +644,9 @@ bool loadMesh(Mesh &mesh, const std::string &path, std::map<std::string, Asset*>
 		
 		for (unsigned int i=0; i<ai_mesh->mNumFaces; i++){
 			// Assumes the model has only triangles.
-			mesh.indices[indices_offset + 3*i] = ai_mesh->mFaces[i].mIndices[0];
-			mesh.indices[indices_offset + 3*i + 1] = ai_mesh->mFaces[i].mIndices[1];
-			mesh.indices[indices_offset + 3*i + 2] = ai_mesh->mFaces[i].mIndices[2];
+			mesh->indices[indices_offset + 3*i] = ai_mesh->mFaces[i].mIndices[0];
+			mesh->indices[indices_offset + 3*i + 1] = ai_mesh->mFaces[i].mIndices[1];
+			mesh->indices[indices_offset + 3*i + 2] = ai_mesh->mFaces[i].mIndices[2];
 		}
         vertices_offset += ai_mesh->mNumVertices;
         indices_offset += ai_mesh->mNumFaces*3;
@@ -732,75 +657,119 @@ bool loadMesh(Mesh &mesh, const std::string &path, std::map<std::string, Asset*>
 	return true;
 }
 
-TextureAsset *loadTextureFromAssimp(std::map<std::string, Asset*> &assets, aiMaterial *mat, const aiScene *scene, aiTextureType texture_type, GLint internal_format=GL_SRGB){
-	// @note assimp specification wants us to combines a stack texture stack with operations per layer
-	aiString path;
-	if(aiReturn_SUCCESS == mat->GetTexture(texture_type, 0, &path))
-	{
-        auto p = std::string((char *)path.data);
-        if(assets.find(p) != assets.end()){
-            return (TextureAsset*)assets[p];
-        }
+// @note that this function could cause you to "lose" a mesh if the path is 
+// the same as one already in manager
 
-        auto a = new TextureAsset(p);
-        assets[p] = a;
-        auto tex = scene->GetEmbeddedTexture(path.C_Str());
+Mesh* AssetManager::createMesh(const std::string &handle) {
+    auto mesh = &handle_mesh_map.try_emplace(handle).first->second;
+    mesh->handle = handle;
+    return mesh;
+}
+
+bool AssetManager::loadMesh(Mesh *mesh, const std::string &path, const bool is_mesh) {
+    if(is_mesh) {
+        return loadMeshFile(mesh, path);
+    } else {
+        return loadMeshAssimp(mesh, path);
+    }
+}
+
+//
+// --------------------------------- Textures ----------------------------------
+//
+
+// @note that these function could cause you to "lose" a texture if the path is 
+// the same as one already in manager
+
+Texture* AssetManager::createTexture(const std::string &handle) {
+    auto tex = &handle_texture_map.try_emplace(handle).first->second;
+    tex->handle = handle;
+    return tex;
+}
+
+bool AssetManager::loadTextureFromAssimp(Texture *tex, aiMaterial *mat, const aiScene *scene, aiTextureType texture_type, GLint internal_format){
+	// @note assimp specification wants us to combines a stack texture stack with operations per layer
+	// this function instead just takes the first available texture
+	aiString path;
+	if(aiReturn_SUCCESS == mat->GetTexture(texture_type, 0, &path)) {
+	    auto p = std::string(path.data, path.length);
+
+        auto ai_tex = scene->GetEmbeddedTexture(path.data);
         // If true this is an embedded texture so load from assimp
-        if(tex != nullptr){
-            printf("Loading embedded texture %s.\n", path.C_Str());
-            
-            glBindTexture(GL_TEXTURE_2D, a->texture_id);// Binding of texture name
+        if(ai_tex != nullptr){
+            std::cerr << "Loading embedded texture" << path.data << "%s.\n";
+	        glGenTextures(1, &tex->id);
+            glBindTexture(GL_TEXTURE_2D, tex->id);// Binding of texture name
+			
 			// We will use linear interpolation for magnification filter
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 			// tiling mode
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, (tex->achFormatHint[0] & 0x01) ? GL_REPEAT : GL_CLAMP);
-			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, (tex->achFormatHint[0] & 0x01) ? GL_REPEAT : GL_CLAMP);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, (ai_tex->achFormatHint[0] & 0x01) ? GL_REPEAT : GL_CLAMP);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, (ai_tex->achFormatHint[0] & 0x01) ? GL_REPEAT : GL_CLAMP);
 			// Texture specification
-			glTexImage2D(GL_TEXTURE_2D, 0, internal_format, tex->mWidth, tex->mHeight, 0, GL_BGRA, GL_UNSIGNED_BYTE, tex->pcData);
-            return a;
-        } else {
-            a->path = p;
-            a->texture_id = loadImage(p, internal_format);
-            return a;
+			glTexImage2D(GL_TEXTURE_2D, 0, internal_format, ai_tex->mWidth, ai_tex->mHeight, 0, GL_BGRA, GL_UNSIGNED_BYTE, ai_tex->pcData);
+
+            return true;
         }
 	}
-	return nullptr;
+	return false;
 }
 
-TextureAsset *createTextureAsset(std::map<std::string, Asset*> &assets, std::string path, GLint internal_format) {
-    auto a = new TextureAsset(path);
-    a->path = path;
-    a->texture_id = loadImage(path, internal_format);
-    return a;
+bool AssetManager::loadTexture(Texture *tex, const std::string &path, GLint internal_format) {
+    auto texture_id = loadImage(path, internal_format);
+    if(texture_id == GL_FALSE) return false;
+
+    tex->id = texture_id;
+    return true;
 }
 
-#include <stb_image.h>
+bool AssetManager::loadCubemapTexture(Texture *tex, const std::array<std::string,FACE_NUM_FACES> &paths, GLint internal_format) {
+    auto texture_id = loadCubemap(paths, internal_format);
+    if(texture_id == GL_FALSE) return false;
 
-CubemapAsset *createCubemapAsset(std::map<std::string, Asset*> &assets, std::array<std::string,FACE_NUM_FACES> paths, GLint internal_format) {
-    // @fix assumes path[0] is unique, maybe just add together all the paths?
-    auto a = new CubemapAsset(paths[0]);
+    tex->id = texture_id;
+    return true;
+}
 
-    glGenTextures(1, &a->texture_id);
-    glBindTexture(GL_TEXTURE_CUBE_MAP, a->texture_id);
+// 
+// -----------------------------------------------------------------------------
+//
 
-    int width, height, nrChannels;
-    for (int i = 0; i < static_cast<int>(FACE_NUM_FACES); ++i) {
-        unsigned char *data = stbi_load(paths[i].c_str(), &width, &height, &nrChannels, 0);
-        if (data) {
-            glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 
-                         0, GL_RGB, width, height, 0, internal_format, GL_UNSIGNED_BYTE, data
-            );
-        } else {
-            printf("Cubemap texture failed to load at path: %s\n", paths[i].c_str());
-        }
-        stbi_image_free(data);
+// These returns nullptr if the asset doesn't exist
+
+Mesh* AssetManager::getMesh(const std::string &path) {
+    auto lu = handle_mesh_map.find(path);
+    if(lu == handle_mesh_map.end()) return nullptr;
+    else                             return &lu->second;
+}
+
+Texture* AssetManager::getTexture(const std::string &path) {
+    auto lu = handle_texture_map.find(path);
+    if(lu == handle_texture_map.end()) return nullptr;
+    else                             return &lu->second;
+}
+
+Texture* AssetManager::getColorTexture(const glm::vec3 &col) {
+    auto lu = color_texture_map.find(col);
+    if (lu == color_texture_map.end()) {
+        unsigned char col256[3];
+        col256[0] = col.x*255;
+        col256[1] = col.x*255;
+        col256[2] = col.x*255;
+
+        auto tex = &color_texture_map.try_emplace(col).first->second;
+        tex->id = create1x1Texture(col256, GL_RGB);
+        return tex;
+    } else {
+        return &lu->second;
     }
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
 
-    return a;
+    return nullptr;
+}
+
+void AssetManager::clear() {
+    handle_mesh_map.clear();
+    handle_texture_map.clear();
+    color_texture_map.clear();
 }

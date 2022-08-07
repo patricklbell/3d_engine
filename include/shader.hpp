@@ -64,4 +64,6 @@ namespace shader {
     } skybox_uniforms;
 }
 
+void loadShader(std::string path, shader::TYPE type);
+
 #endif

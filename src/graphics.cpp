@@ -153,7 +153,7 @@ void updateShadowVP(const Camera &camera){
     glBindBuffer(GL_UNIFORM_BUFFER, 0);
 }
 
-void createShadowFbo(){
+void initShadowFbo(){
     glGenFramebuffers(1, &graphics::shadow_fbo);
     glBindFramebuffer(GL_FRAMEBUFFER, graphics::shadow_fbo);
 
@@ -176,7 +176,7 @@ void createShadowFbo(){
     glReadBuffer(GL_NONE);
 	
     if(glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-	    fprintf(stderr, "Failed to create shadow fbo.\n");	
+        std::cerr << "Failed to create shadow fbo.\n";
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
@@ -215,16 +215,16 @@ void bindDrawShadowMap(const EntityManager &entity_manager, const Camera &camera
     glClear(GL_DEPTH_BUFFER_BIT);
 
     for (int i = 0; i < ENTITY_COUNT; ++i) {
-        auto m_e = (MeshEntity*)entity_manager.entities[i];
-        if(m_e == nullptr || !(m_e->type & EntityType::MESH_ENTITY) || !m_e->casts_shadow) continue;
+        auto m_e = reinterpret_cast<MeshEntity*>(entity_manager.entities[i]);
+        if(m_e == nullptr || m_e->type != EntityType::MESH_ENTITY || m_e->mesh == nullptr || !m_e->casts_shadow) continue;
 
         auto model = createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
         glUniformMatrix4fv(shader::null_uniforms.model, 1, GL_FALSE, &model[0][0]);
 
-        Mesh &mesh = m_e->mesh->mesh;
-        for (int j = 0; j < mesh.num_materials; ++j) {
-            glBindVertexArray(mesh.vao);
-            glDrawElements(mesh.draw_mode, mesh.draw_count[j], mesh.draw_type, (GLvoid*)(sizeof(GLubyte)*mesh.draw_start[j]));
+        auto &mesh = m_e->mesh;
+        for (int j = 0; j < mesh->num_materials; ++j) {
+            glBindVertexArray(mesh->vao);
+            glDrawElements(mesh->draw_mode, mesh->draw_count[j], mesh->draw_type, (GLvoid*)(sizeof(GLubyte)*mesh->draw_start[j]));
         }
     }
     glCullFace(GL_BACK);
@@ -234,7 +234,7 @@ void bindDrawShadowMap(const EntityManager &entity_manager, const Camera &camera
     glViewport(0, 0, window_width, window_height);
 }
 
-void createBloomFbo(bool resize){
+void initBloomFbo(bool resize){
     if(!resize){
         glGenFramebuffers(2, graphics::bloom_fbos);
         glGenTextures(2, graphics::bloom_buffers);
@@ -250,13 +250,13 @@ void createBloomFbo(bool resize){
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, graphics::bloom_buffers[i], 0);
         if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE){
-            printf("Bloom framebuffer not complete.\n");
+            std::cerr << "Bloom framebuffer not complete.\n";
         }
     }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-void createHdrFbo(bool resize){
+void initHdrFbo(bool resize){
     int num_buffers = (int)shader::unified_bloom + 1;
     if(!resize){
         glGenFramebuffers(1, &graphics::hdr_fbo);
@@ -289,7 +289,7 @@ void createHdrFbo(bool resize){
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, graphics::hdr_depth, 0);  
 
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE){
-        printf("Hdr framebuffer not complete.\n");
+        std::cerr << "Hdr framebuffer not complete.\n";
     }
     if(shader::unified_bloom){
         static const GLuint attachments[] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
@@ -301,7 +301,7 @@ void createHdrFbo(bool resize){
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-void initGraphicsPrimitives() {
+void initGraphicsPrimitives(AssetManager &asset_manager) {
     // @hardcoded
     static const float quad_vertices[] = {
         // positions        // texture Coords
@@ -436,7 +436,7 @@ void initGraphicsPrimitives() {
     graphics::cube.draw_start[0] = 0; 
     graphics::cube.draw_count[0] = sizeof(cube_vertices) / (3.0 * sizeof(*cube_vertices));
 
-    readMeshFile(editor::editor_assets, graphics::grid, "./data/models/grid.mesh");
+    asset_manager.loadMeshFile(&graphics::grid, "data/models/grid.mesh");
 }
 void drawCube(){
     glBindVertexArray(graphics::cube.vao);
@@ -477,7 +477,7 @@ void clearFramebuffer(const glm::vec4 &color){
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
-void drawSkybox(const CubemapAsset *skybox, const Camera &camera) {
+void drawSkybox(const Texture* skybox, const Camera &camera) {
     glDepthMask(GL_FALSE);
     glEnable(GL_DEPTH_TEST);
     // Since skybox shader writes maximum depth of 1.0, for skybox to always be we
@@ -490,7 +490,7 @@ void drawSkybox(const CubemapAsset *skybox, const Camera &camera) {
     auto untranslated_view = glm::mat4(glm::mat3(camera.view));
     glUniformMatrix4fv(shader::skybox_uniforms.view,       1, GL_FALSE, &untranslated_view[0][0]);
     glUniformMatrix4fv(shader::skybox_uniforms.projection, 1, GL_FALSE, &camera.projection[0][0]);
-    glBindTexture(GL_TEXTURE_CUBE_MAP, skybox->texture_id);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, skybox->id);
 
     drawCube();
 
@@ -498,7 +498,7 @@ void drawSkybox(const CubemapAsset *skybox, const Camera &camera) {
 	glDepthFunc(GL_LESS); 
 }
 
-void drawUnifiedHdr(const EntityManager &entity_manager, const Camera &camera){
+void drawUnifiedHdr(const EntityManager &entity_manager, const Texture* skybox, const Camera &camera){
     glDepthMask(GL_TRUE);
     glEnable(GL_DEPTH_TEST);
 
@@ -523,48 +523,48 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Camera &camera){
 
     auto vp = camera.projection * camera.view;
     for (int i = 0; i < ENTITY_COUNT; ++i) {
-        auto m_e = (MeshEntity*)entity_manager.entities[i];
+        auto m_e = reinterpret_cast<MeshEntity*>(entity_manager.entities[i]);
         if(m_e == nullptr) continue;
-        if(m_e->type & EntityType::WATER_ENTITY){
+        if(m_e->type == EntityType::WATER_ENTITY){
             water_ids.push_back(i); 
             draw_water = true;
             continue;
         }
-        if(!(m_e->type & EntityType::MESH_ENTITY) || m_e->mesh == nullptr) continue;
+        if(m_e->type != EntityType::MESH_ENTITY || m_e->mesh == nullptr) continue;
 
         auto model = createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
         auto mvp = vp * model;
         glUniformMatrix4fv(shader::unified_uniforms[shader::unified_bloom].mvp, 1, GL_FALSE, &mvp[0][0]);
         glUniformMatrix4fv(shader::unified_uniforms[shader::unified_bloom].model, 1, GL_FALSE, &model[0][0]);
 
-        auto &mesh = m_e->mesh->mesh;
-        for (int j = 0; j < mesh.num_materials; ++j) {
-            auto &mat = mesh.materials[j];
+        auto &mesh = m_e->mesh;
+        for (int j = 0; j < mesh->num_materials; ++j) {
+            auto &mat = mesh->materials[j];
             glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, mat->t_albedo->texture_id);
+            glBindTexture(GL_TEXTURE_2D, mat.t_albedo->id);
 
             glActiveTexture(GL_TEXTURE1);
-            glBindTexture(GL_TEXTURE_2D, mat->t_normal->texture_id);
+            glBindTexture(GL_TEXTURE_2D, mat.t_normal->id);
 
             glActiveTexture(GL_TEXTURE2);
-            glBindTexture(GL_TEXTURE_2D, mat->t_metallic->texture_id);
+            glBindTexture(GL_TEXTURE_2D, mat.t_metallic->id);
 
             glActiveTexture(GL_TEXTURE3);
-            glBindTexture(GL_TEXTURE_2D, mat->t_roughness->texture_id);
+            glBindTexture(GL_TEXTURE_2D, mat.t_roughness->id);
 
             glActiveTexture(GL_TEXTURE4);
-            glBindTexture(GL_TEXTURE_2D, mat->t_ambient->texture_id);
+            glBindTexture(GL_TEXTURE_2D, mat.t_ambient->id);
 
             // Bind VAO and draw
-            glBindVertexArray(mesh.vao);
-            glDrawElements(mesh.draw_mode, mesh.draw_count[j], mesh.draw_type, (GLvoid*)(sizeof(GLubyte)*mesh.draw_start[j]));
+            glBindVertexArray(mesh->vao);
+            glDrawElements(mesh->draw_mode, mesh->draw_count[j], mesh->draw_type, (GLvoid*)(sizeof(GLubyte)*mesh->draw_start[j]));
         }
     }
 
+    drawSkybox(skybox, camera);
+
     if(draw_water){
-        glDepthMask(GL_TRUE);
-        glEnable(GL_DEPTH_TEST);
-        glDepthFunc(GL_ALWAYS);
+        glDepthMask(GL_FALSE);
 
         glUseProgram(       shader::water_programs[shader::unified_bloom]);
         glUniform1fv(       shader::water_uniforms[shader::unified_bloom].shadow_cascade_distances, graphics::shadow_num, graphics::shadow_cascade_distances);

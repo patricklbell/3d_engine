@@ -27,9 +27,9 @@ enum class TransformType : unsigned int{
     ALL = 7
 };
 
-void initEditorGui();
+void initEditorGui(AssetManager &asset_manager);
 
-void drawEditorGui(Camera &camera, EntityManager &entity_manager, std::map<std::string, Asset *> &assets);
+void drawEditorGui(Camera &camera, EntityManager &entity_manager, AssetManager &asset_manager);
 
 bool editorTranslationGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, Camera &camera, const glm::vec3 &snap, bool do_snap);
 bool editorRotationGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, const Camera &camera);
@@ -165,7 +165,7 @@ namespace editor {
     extern bool draw_debug_wireframe;
     extern bool transform_active;
     extern Id sel_e;
-    extern std::map<std::string, Asset*> editor_assets;
+    extern AssetManager editor_assets;
 }
 
 #endif

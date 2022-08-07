@@ -17,10 +17,10 @@ struct Id {
 };
 
 enum EntityType {
-    ENTITY = 0,
-    MESH_ENTITY = 1,
-    WATER_ENTITY = 2,
-    TERRAIN_ENTITY = 4,
+    ENTITY         = 0,
+    MESH_ENTITY    = 1 << 0,
+    WATER_ENTITY   = 1 << 1,
+    TERRAIN_ENTITY = 1 << 2,
 };
 
 struct Entity {
@@ -31,7 +31,7 @@ struct Entity {
 };
 
 struct MeshEntity : Entity {
-    MeshAsset* mesh = nullptr;
+    Mesh* mesh = nullptr;
     glm::vec3 position      = glm::vec3(0.0);
     glm::quat rotation      = glm::quat(0.0,0.0,0.0,1.0);
     glm::mat3 scale         = glm::mat3(1.0);
@@ -57,7 +57,7 @@ struct WaterEntity : Entity {
 struct TerrainEntity : Entity {
     glm::vec3 position = glm::vec3(0.0);
     glm::mat3 scale    = glm::mat3(1.0);
-    TextureAsset *texture;
+    Texture *texture;
 
     TerrainEntity(Id _id=NULLID) : Entity(_id){
         type = (EntityType)(type | EntityType::TERRAIN_ENTITY);
@@ -75,14 +75,16 @@ inline Entity *allocateEntity(Id id, EntityType type){
     return new Entity(id);
 }
 inline constexpr size_t entitySize(EntityType type){
-    if(type & TERRAIN_ENTITY)
-        return sizeof(TerrainEntity);
-    if(type & WATER_ENTITY)
-        return sizeof(WaterEntity);
-    if(type & MESH_ENTITY)
-        return sizeof(MeshEntity);
-
-    return sizeof(Entity);
+    switch (type) {
+        case TERRAIN_ENTITY:
+            return sizeof(TerrainEntity);
+        case MESH_ENTITY:
+            return sizeof(MeshEntity);
+        case WATER_ENTITY:
+            return sizeof(WaterEntity);
+        default:
+            return sizeof(Entity);
+    }
 }
 
 struct EntityManager {
@@ -93,9 +95,9 @@ struct EntityManager {
     int id_counter = 0;
 
     ~EntityManager(){
-        reset();
+        clear();
     }
-    inline void reset(){
+    inline void clear(){
         // Delete entities
         for(int i = 0; i < ENTITY_COUNT; i++){
             if(entities[i] != nullptr) free (entities[i]);

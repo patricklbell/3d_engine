@@ -98,7 +98,7 @@ void handleEditorControls(Camera &camera, EntityManager &entity_manager, float d
                 camera.state = Camera::TYPE::SHOOTER;
 
                 glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-                glfwSetCursorPos(window, window_width/2, window_height/2);
+                glfwSetCursorPos(window, window_width/2.f, window_height/2.f);
 
                 mouse_position = glm::dvec2(window_width/2, window_height/2);
                 delta_mouse_position = glm::dvec2(0,0);
@@ -148,9 +148,9 @@ void handleEditorControls(Camera &camera, EntityManager &entity_manager, float d
                     }
                     continue;
                 }
-                if(!(m_e->type & EntityType::MESH_ENTITY) || m_e->mesh == nullptr) continue;
+                if(m_e->type != EntityType::MESH_ENTITY || m_e->mesh == nullptr) continue;
 
-                const auto mesh = &m_e->mesh->mesh;
+                const auto &mesh = m_e->mesh;
                 const auto trans = createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
                 for(int j = 0; j < mesh->num_indices; j+=3){
                     const auto p1 = mesh->vertices[mesh->indices[j]];

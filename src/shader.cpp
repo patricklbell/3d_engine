@@ -49,7 +49,7 @@ using namespace shader;
 
 GLuint loadShader(std::string vertex_fragment_file_path, std::string macro_prepends="", bool geometry=false) {
 	const char *path = vertex_fragment_file_path.c_str();
-	printf("Loading shader %s.\n", path);
+	std::cout << "Loading shader " << path << ".\n";
 	const char *fragment_macro = "#define COMPILING_FS 1\n";
 	const char *vertex_macro   = "#define COMPILING_VS 1\n";
 	
@@ -59,7 +59,7 @@ GLuint loadShader(std::string vertex_fragment_file_path, std::string macro_prepe
 	FILE *fp = fopen(path, "rb");
 
 	if (fp == NULL) {
-		fprintf(stderr, "Can't open shader file %s.\n", path);
+		std::cerr << "Can't open shader file " << path << ".\n";
 		return 0;
 	}
 	fseek(fp, 0L, SEEK_END);
@@ -77,7 +77,7 @@ GLuint loadShader(std::string vertex_fragment_file_path, std::string macro_prepe
 	GLint result = GL_FALSE;
 	int info_log_length;
 
-	printf("Compiling and linking shader: %s\n", path);
+	std::cout << "Compiling and linking shader: " << path << "\n";
 
     char *vertex_shader_code[] = {(char*)glsl_version.c_str(), (char*)vertex_macro, (char*)macro_prepends.c_str(), shader_code};
 
@@ -89,8 +89,7 @@ GLuint loadShader(std::string vertex_fragment_file_path, std::string macro_prepe
 		GLuint fragment_shader_id = glCreateShader(GL_FRAGMENT_SHADER);
 		char *vertex_shader_error_message = (char *)malloc(sizeof(char) * (info_log_length+1));
 		glGetShaderInfoLog(vertex_shader_id, info_log_length, NULL, vertex_shader_error_message);
-		fprintf(stderr, "Vertex shader:\n%s\n", vertex_shader_error_message);
-		fprintf(stderr, "%s%s%s%s\n", vertex_shader_code[0], vertex_shader_code[1], vertex_shader_code[2], vertex_shader_code[3]);
+		std::cerr << "Vertex shader:\n" << vertex_shader_error_message << "\n";
 		free(vertex_shader_error_message);
     	free(shader_code);
 		return GL_FALSE;
@@ -105,7 +104,7 @@ GLuint loadShader(std::string vertex_fragment_file_path, std::string macro_prepe
 	if ( info_log_length > 0 ){
 		char *fragment_shader_error_message = (char *)malloc(sizeof(char) * (info_log_length+1));
 		glGetShaderInfoLog(fragment_shader_id, info_log_length, NULL, fragment_shader_error_message);
-		fprintf(stderr, "Fragment shader:\n%s\n", fragment_shader_error_message);
+		std::cerr << "Fragment shader:\n" << fragment_shader_error_message << "\n";
 		free(fragment_shader_error_message);
     	free(shader_code);
 		return GL_FALSE;
@@ -125,7 +124,7 @@ GLuint loadShader(std::string vertex_fragment_file_path, std::string macro_prepe
 		if ( info_log_length > 0 ){
 			char *geometry_shader_error_message = (char *)malloc(sizeof(char) * (info_log_length+1));
 			glGetShaderInfoLog(geometry_shader_id, info_log_length, NULL, geometry_shader_error_message);
-			fprintf(stderr, "Geometry shader:\n%s\n", geometry_shader_error_message);
+			std::cerr << "Geometry shader:\n" << geometry_shader_error_message << "\n";
 			free(geometry_shader_error_message);
 			free(shader_code);
 			return GL_FALSE;
@@ -142,7 +141,7 @@ GLuint loadShader(std::string vertex_fragment_file_path, std::string macro_prepe
 	if ( info_log_length > 0 ){
 		char *program_error_message = (char *)malloc(sizeof(char) * (info_log_length+1));
 		glGetProgramInfoLog(program_id, info_log_length, NULL, program_error_message);
-		fprintf(stderr, "%s\n", program_error_message);
+		std::cerr << "Program attaching:\n" << program_error_message << "\n";
 		free(program_error_message);
     	free(shader_code);
 		return GL_FALSE;
@@ -165,7 +164,6 @@ void loadPostShader(std::string path){
 		auto tmp = post_program[i];
 		post_program[i] = loadShader(path, macros[i]);
 		if(post_program[i] == GL_FALSE) {
-			printf("Failed to load post shader\n");
 			post_program[i] = tmp;
 			return;
 		}
@@ -182,7 +180,6 @@ void loadDebugShader(std::string path){
 	// Create and compile our GLSL program from the shaders
 	debug_program = loadShader(path);
 	if(debug_program == GL_FALSE) {
-		printf("Failed to load debug shader\n");
 		debug_program = tmp;
 		return;
 	}
@@ -202,7 +199,6 @@ void loadGaussianBlurShader(std::string path){
 	// Create and compile our GLSL program from the shaders
 	gaussian_blur_program = loadShader(path);
 	if(gaussian_blur_program == GL_FALSE) {
-		printf("Failed to load gaussian blur shader\n");
 		gaussian_blur_program = tmp;
 		return;
 	}
@@ -219,7 +215,6 @@ void loadNullShader(std::string path){
 	// Create and compile our GLSL program from the shaders
 	null_program = loadShader(path, graphics::shadow_invocation_macro, true);
 	if(null_program == GL_FALSE) {
-		printf("Failed to load null shader\n");
 		null_program = tmp;
 		return;
 	}
@@ -319,4 +314,32 @@ void deleteShaderPrograms(){
 	glDeleteProgram(post_program[0]);
 	glDeleteProgram(post_program[1]);
 	glDeleteProgram(skybox_program);
+}
+
+void loadShader(std::string path, TYPE type) {
+    switch (type) {
+        case shader::TYPE::NULL_SHADER:
+            loadNullShader(path);
+            break;
+        case shader::TYPE::UNIFIED_SHADER:
+            loadUnifiedShader(path);
+            break;
+        case shader::TYPE::WATER_SHADER:
+            loadWaterShader(path);
+            break;
+        case shader::TYPE::GAUSSIAN_BLUR_SHADER:
+            loadGaussianBlurShader(path);
+            break;
+        case shader::TYPE::POST_SHADER:
+            loadPostShader(path);
+            break;
+        case shader::TYPE::DEBUG_SHADER:
+            loadDebugShader(path);
+            break;
+        case shader::TYPE::SKYBOX_SHADER:
+            loadSkyboxShader(path);
+            break;
+        default:
+            break;
+    }
 }

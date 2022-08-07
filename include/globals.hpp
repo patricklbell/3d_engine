@@ -8,7 +8,7 @@
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 
-#include "imgui.h"
+#include "assets.hpp"
 
 #define ENTITY_COUNT 1000
 #define PI           3.14159265359
@@ -25,5 +25,7 @@ extern glm::vec3 sun_color;
 extern glm::vec3 sun_direction;
 extern glm::vec4 clear_color;
 extern bool draw_bloom;
+extern AssetManager global_assets;
+extern std::string GL_version, GL_vendor, GL_renderer;
 
 #endif
