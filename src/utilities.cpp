@@ -37,7 +37,7 @@ std::ostream &operator<<(std::ostream &os, const glm::tvec4<T, P> &v) {
     return os << v.x << ", " << v.y << ", " << v.z << ", " << v.w;
 }
 
-void saveLevel(const EntityManager &entity_manager, const std::string &level_path){
+void saveLevel(const EntityManager & entity_manager, const std::string & level_path){
     std::cerr << "----------- Saving Level " << level_path << "----------\n";
 
     std::set<Mesh*> used_meshes;
@@ -119,7 +119,6 @@ bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const
     if (!f) {
         // @debug
         std::cerr << "Error in reading level file at path: " << level_path << ".\n";
-        fclose(f);
         return false;
     }
 
@@ -140,9 +139,9 @@ bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const
 
                 mesh = asset_manager.createMesh(mesh_path);
                 // @todo make this cleaner, either by guaranteeing all models be meshes or having a flag
-                //asset_manager.loadMesh(mesh, mesh_path, endsWith(mesh_path, ".mesh"));
+                asset_manager.loadMesh(mesh, mesh_path, endsWith(mesh_path, ".mesh"));
 
-                //index_to_mesh[mesh_index] = mesh;
+                index_to_mesh[mesh_index] = mesh;
             } else {
                 std::cout << "Using existing asset at path " << mesh_path << ".\n";
                 index_to_mesh[mesh_index] = mesh;
@@ -154,8 +153,6 @@ bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const
             mesh_path += c;
         }
     }
-    fclose(f);
-    return false;
 
     while((c = fgetc(f)) != EOF){
         ungetc(c, f);
@@ -252,7 +249,7 @@ bool rayIntersectsTriangle(const glm::vec3 vertices[3], const glm::vec3 &ray_ori
     double det = glm::dot(edge1, p);
     if(det < epsilon && det > -epsilon) return false;
 
-    float inv_det = 1.0f / det;
+    double inv_det = 1.0f / det;
     
     auto t_vec = ray_origin - vertices[0];
     u = glm::dot(t_vec, p) * inv_det;

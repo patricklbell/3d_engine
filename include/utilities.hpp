@@ -9,7 +9,7 @@
 
 #include "graphics.hpp"
 
-void saveLevel(const EntityManager &entity_manager, const std::string &level_path);
+void saveLevel(const EntityManager& entity_manager, const std::string& level_path);
 bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const std::string &level_path);
 
 glm::mat4x4 createModelMatrix(const glm::vec3 &pos, const glm::quat &rot, const glm::mat3x3 &scl);

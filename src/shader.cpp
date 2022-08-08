@@ -41,7 +41,7 @@ namespace shader {
 	GLuint post_program[2];
 	struct PostUniforms post_uniforms[2];
 
-	GLuint skybox_program;
+	GLuint skybox_programs[2];
 	struct SkyboxUniforms skybox_uniforms;
 }
 
@@ -172,7 +172,8 @@ void loadPostShader(std::string path){
 		glUseProgram(post_program[i]);
 		// Set fixed locations for textures in GL_TEXTUREi
 		glUniform1i(glGetUniformLocation(post_program[i], "pixel_map"), 0);
-		glUniform1i(glGetUniformLocation(post_program[i], "bloom_map"),  1);
+		glUniform1i(glGetUniformLocation(post_program[i], "bloom_map"), 1);
+		glUniform1i(glGetUniformLocation(post_program[i], "depth_map"), 2);
 	}
 }
 void loadDebugShader(std::string path){
@@ -289,21 +290,29 @@ void loadWaterShader(std::string path){
 		// Set fixed locations for textures in GL_TEXTUREi
 		glUniform1i(glGetUniformLocation(water_programs[i], "screen_map"),  0);
 		glUniform1i(glGetUniformLocation(water_programs[i], "depth_map"),   1);
+		glUniform1i(glGetUniformLocation(water_programs[i], "simplex_gradient"), 2);
+		glUniform1i(glGetUniformLocation(water_programs[i], "simplex_value"), 3);
 		glUniform1i(glGetUniformLocation(water_programs[i], "shadow_map"),  5);
 	}
 }
 void loadSkyboxShader(std::string path){
-	// Create and compile our GLSL program from the shaders
-	auto tmp = skybox_program;
-	skybox_program = loadShader(path);
-	if(skybox_program == GL_FALSE) {
-		skybox_program = tmp;
-		return;
-	}
+	static const std::string macros[] = {
+		std::string(""),
+		std::string("#define BLOOM 1\n")
+	};
+	for (int i = 0; i < 2; i++) {
+		// Create and compile our GLSL program from the shaders
+		auto tmp = skybox_programs[i];
+		skybox_programs[i] = loadShader(path, macros[i]);
+		if (skybox_programs[i] == GL_FALSE) {
+			skybox_programs[i] = tmp;
+			return;
+		}
 
-	// Grab uniforms to modify during rendering
-	skybox_uniforms.projection = glGetUniformLocation(skybox_program, "projection");
-	skybox_uniforms.view 	   = glGetUniformLocation(skybox_program, "view");
+		// Grab uniforms to modify during rendering
+		skybox_uniforms.projection = glGetUniformLocation(skybox_programs[i], "projection");
+		skybox_uniforms.view = glGetUniformLocation(skybox_programs[i], "view");
+	}
 }
 void deleteShaderPrograms(){
     glDeleteProgram(null_program);
@@ -313,7 +322,8 @@ void deleteShaderPrograms(){
     glDeleteProgram(gaussian_blur_program);
 	glDeleteProgram(post_program[0]);
 	glDeleteProgram(post_program[1]);
-	glDeleteProgram(skybox_program);
+	glDeleteProgram(skybox_programs[0]);
+	glDeleteProgram(skybox_programs[1]);
 }
 
 void loadShader(std::string path, TYPE type) {

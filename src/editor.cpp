@@ -707,6 +707,9 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, AssetManager &
             auto s_e = entity_manager.getEntity(sel_e);
             if(s_e != nullptr){
                 auto m_e = reinterpret_cast<MeshEntity*>(s_e);
+
+                static const std::vector<std::string> image_file_extensions = { ".jpg", ".png", ".bmp", ".tiff", ".tga" };
+                constexpr int img_w = 128;
                 if(s_e->type == EntityType::MESH_ENTITY && m_e->mesh != nullptr){
                     auto &mesh = m_e->mesh;
 
@@ -716,12 +719,10 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, AssetManager &
                     editor::transform_active = editTransform(camera, m_e->position, m_e->rotation, m_e->scale);
 
                     if (ImGui::CollapsingHeader("Materials")){
-                        static const std::vector<std::string> image_file_extensions = { ".jpg", ".png", ".bmp", ".tiff", ".tga" };
                         for(int i = 0; i < mesh->num_materials; i++) {
                             auto &mat = mesh->materials[i];
                             char buf[128];
                             sprintf(buf, "Material %d", i);
-                            constexpr int img_w = 128;
                             if (ImGui::CollapsingHeader(buf)){
                                 ImGui::Text("Albedo");
                                 ImGui::SameLine();
@@ -800,6 +801,32 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, AssetManager &
                     ImGui::TextWrapped("Foam Color:");
                     ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 10);
                     ImGui::ColorEdit4("##foam_color", (float*)(&w_e->foam_color));
+
+                    if (ImGui::CollapsingHeader("Noise Textures")) {
+                        ImGui::Text("Gradient");
+                        ImGui::SameLine();
+                        auto cursor = ImGui::GetCursorPos();
+                        cursor.x += img_w;
+                        ImGui::SetCursorPos(cursor);
+                        ImGui::Text("Value");
+                        void* tex_albedo = (void*)(intptr_t)graphics::simplex_gradient->id;
+                        if (ImGui::ImageButton(tex_albedo, ImVec2(img_w, img_w))) {
+                            im_file_dialog.SetPwd(exepath + "/data/textures");
+                            im_file_dialog_type = "simplexGradient";
+                            im_file_dialog.SetCurrentTypeFilterIndex(2);
+                            im_file_dialog.SetTypeFilters(image_file_extensions);
+                            im_file_dialog.Open();
+                        }
+                        ImGui::SameLine();
+                        void* tex_ambient = (void*)(intptr_t)graphics::simplex_value->id;
+                        if (ImGui::ImageButton(tex_ambient, ImVec2(img_w, img_w))) {
+                            im_file_dialog.SetPwd(exepath + "/data/textures");
+                            im_file_dialog_type = "simplexValue";
+                            im_file_dialog.SetCurrentTypeFilterIndex(2);
+                            im_file_dialog.SetTypeFilters(image_file_extensions);
+                            im_file_dialog.Open();
+                        }
+                    }
                 }
             }
             auto button_size = ImVec2(ImGui::GetWindowWidth()/2 - pad, 2*pad);
@@ -956,7 +983,7 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, AssetManager &
                 loadLevel(entity_manager, asset_manager, p) ;
                 sel_e = Id(-1, -1);
             } else if(im_file_dialog_type == "saveLevel"){
-                saveLevel(entity_manager, p);
+                //saveLevel(entity_manager, p);
             } else if(im_file_dialog_type == "exportMesh"){
                 asset_manager.writeMeshFile(s_mesh, p);
             } else if(im_file_dialog_type == "loadMesh"){
@@ -965,11 +992,15 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, AssetManager &
             } else if(im_file_dialog_type == "loadModelAssimp"){
                 auto mesh = asset_manager.createMesh(p);
                 asset_manager.loadMeshAssimp(mesh, p);
+            } else if (im_file_dialog_type == "simplexValue") {
+                global_assets.loadTexture(graphics::simplex_value, p, GL_RED);
+            } else if (im_file_dialog_type == "simplexGradient") {
+                global_assets.loadTexture(graphics::simplex_gradient, p, GL_RGB);
             } else if(startsWith(im_file_dialog_type, "asset.mat.t")) {
                 auto s_e = entity_manager.getEntity(sel_e);
                 if (s_e != nullptr && s_e->type == MESH_ENTITY) {
                     auto m_e = static_cast<MeshEntity*>(s_e);
-                    auto mat = m_e->mesh->materials[s_entity_material_index];
+                    auto &mat = m_e->mesh->materials[s_entity_material_index];
 
                     // Assets might already been loaded so just use it
                     auto tex = asset_manager.getTexture(p);

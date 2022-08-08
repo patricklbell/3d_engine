@@ -31,15 +31,15 @@ Material *default_material;
 void initDefaultMaterial(AssetManager &asset_manager){
     default_material = new Material;
    
-    default_material->t_albedo    = asset_manager.getColorTexture(glm::vec3(1,0,1));
-    default_material->t_normal    = asset_manager.getColorTexture(glm::vec3(0.5,0.5,1));
-    default_material->t_metallic  = asset_manager.getColorTexture(glm::vec3(0));
-    default_material->t_roughness = asset_manager.getColorTexture(glm::vec3(1));
-    default_material->t_ambient   = asset_manager.getColorTexture(glm::vec3(1));
+    default_material->t_albedo    = asset_manager.getColorTexture(glm::vec3(1,0,1), GL_SRGB);
+    default_material->t_normal    = asset_manager.getColorTexture(glm::vec3(0.5,0.5,1), GL_RGB);
+    default_material->t_metallic  = asset_manager.getColorTexture(glm::vec3(0), GL_R16F);
+    default_material->t_roughness = asset_manager.getColorTexture(glm::vec3(1), GL_R16F);
+    default_material->t_ambient   = asset_manager.getColorTexture(glm::vec3(1), GL_R16F);
 }
 
 //bool loadAssimp(
-//	std::string path, 
+//	const std::string &path, 
 //	std::vector<std::pair<unsigned int, unsigned int>> & mesh_ranges,
 //	std::vector<std::string> & mesh_materials,
 //	std::vector<unsigned short> & indices,
@@ -197,7 +197,7 @@ void initDefaultMaterial(AssetManager &asset_manager){
 //	return true;
 //}
 //
-//bool loadAssetObj(Mesh * asset, const std::string &objpath, const std::string &mtlpath){
+//bool loadAssetObj(Mesh * asset, std::string objpath, std::string mtlpath){
 //	std::unordered_map<std::string, Material *> material_map;
 //	if(!loadMtl(material_map, mtlpath)){
 //		std::cout << "Could not load MTL: " << mtlpath << "\n";
@@ -421,7 +421,7 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
     fread(&mesh->num_indices, sizeof(mesh->num_indices), 1, f);
     std::cout << "Number of indices " << mesh->num_indices << ".\n";
 
-    mesh->indices = reinterpret_cast<typeof(mesh->indices)>(malloc(sizeof(*mesh->indices)*mesh->num_indices));
+    mesh->indices = reinterpret_cast<decltype(mesh->indices)>(malloc(sizeof(*mesh->indices)*mesh->num_indices));
     fread(mesh->indices, sizeof(*mesh->indices), mesh->num_indices, f);
 
     char attributes;
@@ -431,19 +431,19 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
     fread(&mesh->num_vertices, sizeof(mesh->num_vertices), 1, f);
     std::cout << "Number of vertices " << mesh->num_vertices << ".\n";
 
-    mesh->vertices = reinterpret_cast<typeof(mesh->vertices)>(malloc(sizeof(*mesh->vertices)*mesh->num_vertices));
-    mesh->normals  = reinterpret_cast<typeof(mesh->normals )>(malloc(sizeof(*mesh->normals )*mesh->num_vertices));
-    mesh->tangents = reinterpret_cast<typeof(mesh->tangents)>(malloc(sizeof(*mesh->tangents)*mesh->num_vertices));
+    mesh->vertices = reinterpret_cast<decltype(mesh->vertices)>(malloc(sizeof(*mesh->vertices)*mesh->num_vertices));
+    mesh->normals  = reinterpret_cast<decltype(mesh->normals )>(malloc(sizeof(*mesh->normals )*mesh->num_vertices));
+    mesh->tangents = reinterpret_cast<decltype(mesh->tangents)>(malloc(sizeof(*mesh->tangents)*mesh->num_vertices));
     fread(mesh->vertices, sizeof(*mesh->vertices), mesh->num_vertices, f);
     fread(mesh->normals,  sizeof(*mesh->normals ), mesh->num_vertices, f);
     fread(mesh->tangents, sizeof(*mesh->tangents), mesh->num_vertices, f);
 
-    mesh->uvs = reinterpret_cast<typeof(mesh->uvs)>(malloc(sizeof(*mesh->uvs)*mesh->num_vertices));
+    mesh->uvs = reinterpret_cast<decltype(mesh->uvs)>(malloc(sizeof(*mesh->uvs)*mesh->num_vertices));
     fread(mesh->uvs, sizeof(*mesh->uvs), mesh->num_vertices, f);
 
     // @note this doesn't support embedded materials for binary formats that assimp loads
     fread(&mesh->num_materials, sizeof(mesh->num_materials), 1, f);
-    mesh->materials = reinterpret_cast<typeof(mesh->materials)>(malloc(sizeof(*mesh->materials)*mesh->num_materials));
+    mesh->materials = reinterpret_cast<decltype(mesh->materials)>(malloc(sizeof(*mesh->materials)*mesh->num_materials));
     for(int i = 0; i < mesh->num_materials; ++i){
         auto &mat = mesh->materials[i];
 
@@ -453,12 +453,12 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
         albedo_path.resize(albedo_len);
         fread(&albedo_path[0], sizeof(char), albedo_len, f);
 
-        if (albedo_path == "DEFAULTMATERIAL:albedo") mat.t_albedo = default_material->t_albedo;
-        else {
-            loadTexture(mat.t_albedo, albedo_path);
-            if(mat.t_albedo == nullptr) mat.t_albedo = default_material->t_albedo;
+        if (albedo_path == "DEFAULTMATERIAL:albedo") {
+            mat.t_albedo = default_material->t_albedo;
+        } else {
+            mat.t_albedo = createTexture(albedo_path);
+            if (!loadTexture(mat.t_albedo, albedo_path, GL_SRGB)) mat.t_albedo = default_material->t_albedo;
         }
-        mat.t_albedo = default_material->t_albedo;
 
         int normal_len;
         fread(&normal_len, sizeof(int), 1, f);
@@ -466,10 +466,11 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
         normal_path.resize(normal_len);
         fread(&normal_path[0], sizeof(char), normal_len, f);
 
-        if (normal_path == "DEFAULTMATERIAL:normal") mat.t_normal = default_material->t_normal;
-        else {
-            loadTexture(mat.t_normal, normal_path);
-            if(mat.t_normal == nullptr) mat.t_normal = default_material->t_normal;
+        if (normal_path == "DEFAULTMATERIAL:normal") {
+            mat.t_normal = default_material->t_normal;
+        } else {
+            mat.t_normal = createTexture(normal_path);
+            if (!loadTexture(mat.t_normal, normal_path, GL_RGB)) mat.t_normal = default_material->t_normal;
         }
 
         int ambient_len;
@@ -478,10 +479,11 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
         ambient_path.resize(ambient_len);
         fread(&ambient_path[0], sizeof(char), ambient_len, f);
 
-        if (ambient_path == "DEFAULTMATERIAL:ambient") mat.t_ambient = default_material->t_ambient;
-        else {
-            loadTexture(mat.t_ambient, ambient_path);
-            if(mat.t_ambient == nullptr) mat.t_ambient = default_material->t_ambient;
+        if (ambient_path == "DEFAULTMATERIAL:ambient") {
+            mat.t_ambient = default_material->t_ambient;
+        } else {
+            mat.t_ambient = createTexture(ambient_path);
+            if (!loadTexture(mat.t_ambient, ambient_path, GL_R16F)) mat.t_ambient = default_material->t_ambient;
         }
 
         int metallic_len;
@@ -490,10 +492,11 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
         metallic_path.resize(metallic_len);
         fread(&metallic_path[0], sizeof(char), metallic_len, f);
 
-        if (metallic_path == "DEFAULTMATERIAL:metallic") mat.t_metallic = default_material->t_metallic;
-        else {
-            loadTexture(mat.t_metallic, metallic_path);
-            if(mat.t_metallic == nullptr) mat.t_metallic = default_material->t_metallic;
+        if (metallic_path == "DEFAULTMATERIAL:metallic") {
+            mat.t_metallic = default_material->t_metallic;
+        } else {
+            mat.t_metallic = createTexture(metallic_path);
+            if (!loadTexture(mat.t_metallic, metallic_path, GL_R16F)) mat.t_metallic = default_material->t_metallic;
         }
 
         int roughness_len;
@@ -502,10 +505,11 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
         roughness_path.resize(roughness_len);
         fread(&roughness_path[0], sizeof(char), roughness_len, f);
 
-        if (roughness_path == "DEFAULTMATERIAL:roughness") mat.t_roughness = default_material->t_roughness;
-        else {
-            loadTexture(mat.t_roughness, roughness_path);
-            if(mat.t_roughness == nullptr) mat.t_roughness = default_material->t_roughness;
+        if (roughness_path == "DEFAULTMATERIAL:roughness") {
+            mat.t_roughness = default_material->t_roughness;
+        } else {
+            mat.t_roughness = createTexture(roughness_path);
+            if (!loadTexture(mat.t_roughness, roughness_path, GL_R16F)) mat.t_roughness = default_material->t_roughness;
         }
         
         std::cout << "Material " << i << "\nAlbedo: " << albedo_path << ", Normal: " << normal_path 
@@ -515,8 +519,8 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
 	mesh->draw_mode = GL_TRIANGLES;
 	mesh->draw_type = GL_UNSIGNED_SHORT;
 
-    mesh->draw_start = reinterpret_cast<typeof(mesh->draw_start)>(malloc(sizeof(*mesh->draw_start)*mesh->num_materials));
-    mesh->draw_count = reinterpret_cast<typeof(mesh->draw_count)>(malloc(sizeof(*mesh->draw_count)*mesh->num_materials));
+    mesh->draw_start = reinterpret_cast<decltype(mesh->draw_start)>(malloc(sizeof(*mesh->draw_start)*mesh->num_materials));
+    mesh->draw_count = reinterpret_cast<decltype(mesh->draw_count)>(malloc(sizeof(*mesh->draw_count)*mesh->num_materials));
     fread(mesh->draw_start, sizeof(GLint), mesh->num_materials, f);
     fread(mesh->draw_count, sizeof(GLint), mesh->num_materials, f);
     
@@ -557,9 +561,9 @@ bool AssetManager::loadMeshAssimp(Mesh *mesh, const std::string &path) {
 
 	// Allocate arrays for each mesh 
 	mesh->num_materials = scene->mNumMeshes;
-    mesh->draw_start = reinterpret_cast<typeof(mesh->draw_start)>(malloc(sizeof(*mesh->draw_start)*mesh->num_materials));
-    mesh->draw_count = reinterpret_cast<typeof(mesh->draw_count)>(malloc(sizeof(*mesh->draw_count)*mesh->num_materials));
-    mesh->materials =  reinterpret_cast<typeof(mesh->materials )>(malloc(sizeof(*mesh->materials )*mesh->num_materials));
+    mesh->draw_start = reinterpret_cast<decltype(mesh->draw_start)>(malloc(sizeof(*mesh->draw_start)*mesh->num_materials));
+    mesh->draw_count = reinterpret_cast<decltype(mesh->draw_count)>(malloc(sizeof(*mesh->draw_count)*mesh->num_materials));
+    mesh->materials =  reinterpret_cast<decltype(mesh->materials )>(malloc(sizeof(*mesh->materials )*mesh->num_materials));
 
 	mesh->draw_mode = GL_TRIANGLES;
 	mesh->draw_type = GL_UNSIGNED_SHORT;
@@ -598,12 +602,12 @@ bool AssetManager::loadMeshAssimp(Mesh *mesh, const std::string &path) {
 		loadTextureFromAssimp(mat.t_normal, ai_mat, scene, aiTextureType_NORMALS, GL_RGB);
 		if(mat.t_normal == nullptr) loadTextureFromAssimp(mat.t_normal, ai_mat, scene, aiTextureType_HEIGHT, GL_RGB);
 	}
-    mesh->vertices = reinterpret_cast<typeof(mesh->vertices)>(malloc(sizeof(*mesh->vertices)*mesh->num_vertices));
-    mesh->normals  = reinterpret_cast<typeof(mesh->normals )>(malloc(sizeof(*mesh->normals )*mesh->num_vertices));
-    mesh->tangents = reinterpret_cast<typeof(mesh->tangents)>(malloc(sizeof(*mesh->tangents)*mesh->num_vertices));
-    mesh->uvs      = reinterpret_cast<typeof(mesh->uvs     )>(malloc(sizeof(*mesh->uvs     )*mesh->num_vertices));
+    mesh->vertices = reinterpret_cast<decltype(mesh->vertices)>(malloc(sizeof(*mesh->vertices)*mesh->num_vertices));
+    mesh->normals  = reinterpret_cast<decltype(mesh->normals )>(malloc(sizeof(*mesh->normals )*mesh->num_vertices));
+    mesh->tangents = reinterpret_cast<decltype(mesh->tangents)>(malloc(sizeof(*mesh->tangents)*mesh->num_vertices));
+    mesh->uvs      = reinterpret_cast<decltype(mesh->uvs     )>(malloc(sizeof(*mesh->uvs     )*mesh->num_vertices));
 
-    mesh->indices  = reinterpret_cast<typeof(mesh->indices )>(malloc(sizeof(*mesh->indices )*mesh->num_indices));
+    mesh->indices  = reinterpret_cast<decltype(mesh->indices )>(malloc(sizeof(*mesh->indices )*mesh->num_indices));
 
     int vertices_offset = 0, indices_offset = 0;
     for (int j = 0; j < scene->mNumMeshes; ++j) {
@@ -662,7 +666,7 @@ bool AssetManager::loadMeshAssimp(Mesh *mesh, const std::string &path) {
 
 Mesh* AssetManager::createMesh(const std::string &handle) {
     auto mesh = &handle_mesh_map.try_emplace(handle).first->second;
-    mesh->handle = handle;
+    mesh->handle = std::move(handle);
     return mesh;
 }
 
@@ -711,6 +715,11 @@ bool AssetManager::loadTextureFromAssimp(Texture *tex, aiMaterial *mat, const ai
 			glTexImage2D(GL_TEXTURE_2D, 0, internal_format, ai_tex->mWidth, ai_tex->mHeight, 0, GL_BGRA, GL_UNSIGNED_BYTE, ai_tex->pcData);
 
             return true;
+        } else {
+            auto tex_id = loadImage(p, internal_format);
+            if (tex_id == GL_FALSE) return false;
+
+            tex->id = tex_id;
         }
 	}
 	return false;
@@ -750,16 +759,16 @@ Texture* AssetManager::getTexture(const std::string &path) {
     else                             return &lu->second;
 }
 
-Texture* AssetManager::getColorTexture(const glm::vec3 &col) {
+Texture* AssetManager::getColorTexture(const glm::vec3 &col, GLint internal_format) {
     auto lu = color_texture_map.find(col);
     if (lu == color_texture_map.end()) {
         unsigned char col256[3];
         col256[0] = col.x*255;
-        col256[1] = col.x*255;
-        col256[2] = col.x*255;
+        col256[1] = col.y*255;
+        col256[2] = col.z*255;
 
         auto tex = &color_texture_map.try_emplace(col).first->second;
-        tex->id = create1x1Texture(col256, GL_RGB);
+        tex->id = create1x1Texture(col256, internal_format);
         return tex;
     } else {
         return &lu->second;

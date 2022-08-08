@@ -16,12 +16,12 @@ uniform mat4 shadow_mvp;
 uniform float time;
 
 vec3 gwaves(in vec3 v) {
-    const int wn = 1;
-    const vec2  d[wn] = {normalize(vec2(0.2f, 0.4f))};
-    const float a[wn] = {0.08};
-    const float q[wn] = {0.7};
-    const float p[wn] = {0.7};
-    const float w[wn] = {20.0};
+    const int wn = 2;
+     const vec2  d[wn] = {normalize(vec2(0.2, 0.4)), normalize(vec2(0.3, 0.2))};
+     const float a[wn] = {0.08, 0.03};
+     const float q[wn] = {0.7, 0.3};
+     const float p[wn] = {0.7, 0.6};
+     const float w[wn] = {20.0, 10.0};
 
     vec3 res = v;
     for(int i = 0; i < wn; i++){
@@ -166,13 +166,15 @@ in VS_FS
     vec3 vertex;
 } vs_in;
 
+layout (depth_less) out float gl_FragDepth;
 layout (location = 0) out vec4 out_color;
 
 #ifdef BLOOM
 layout (location = 1) out vec4 out_bloom_color; 
 #endif
 
-layout (depth_less) out float gl_FragDepth;
+uniform sampler2D simplex_gradient;
+uniform sampler2D simplex_value;
 
 uniform sampler2DArray shadow_map;
 layout(std140, binding=0) uniform ShadowVP 
@@ -594,24 +596,34 @@ float calcDepthFade(float scene_depth, float screen_depth){
 	return depth_fade;
 }
 
+//float noise(vec2 v){
+//   return layeredSimplexNoise2(v, 2, 80.0, 0.5, 4.0);
+//}
+//vec3 normalNoise(vec2 v){
+//   return layeredNormalSimplexNoise2(v, 3, 80.0, 0.8, 5.0);
+//}
+
+// Use pre generated noise from
+// https://www.shadertoy.com/view/XdXBRH
 float noise(vec2 v){
-   return layeredSimplexNoise2(v, 2, 80.0, 0.5, 4.0);
+   return texture(simplex_value, v).r;
 }
 vec3 normalNoise(vec2 v){
-   return layeredNormalSimplexNoise2(v, 3, 80.0, 0.8, 5.0);
+   return texture(simplex_gradient, v).rgb;
 }
+
 float depthToDist(float d){
   float z = 2.0*d - 1.0;
   return 2.0*NEAR*FAR/(FAR + NEAR - z*(FAR - NEAR));
 }
 
 vec3 dgwaves(in vec3 v) {
-  const int wn = 1;
-  const vec2  d[wn] = {normalize(vec2(0.2, 0.4))};
-  const float a[wn] = {0.01};
-  const float q[wn] = {0.7};
-  const float p[wn] = {0.7};
-  const float w[wn] = {20.0};
+  const int wn = 2;
+  const vec2  d[wn] = {normalize(vec2(0.2, 0.4)), normalize(vec2(0.3, 0.2))};
+  const float a[wn] = {0.1*0.08, 0.1*0.03};
+  const float q[wn] = {0.7, 0.3};
+  const float p[wn] = {0.7, 0.6};
+  const float w[wn] = {20.0, 10.0};
 
   vec3 n = vec3(0.0, 1.0, 0.0);
   for(int i = 0; i < wn; i++){
@@ -631,16 +643,15 @@ void main(){
   float t = time * SPEED;
   vec2 screencoord = gl_FragCoord.xy / resolution.xy;
 
-  vec3 n1 = normalNoise(30.0*vs_in.texcoord + t);
-
   float screen_d = texture(depth_map, screencoord).x;
   float scene_d  = gl_FragCoord.z;
 
   vec4 alpha = texture(screen_map, screencoord);
   if (scene_d >= screen_d) {
     out_color = alpha;
-    gl_FragDepth = screen_d;
   } else {
+    vec3 n1 = normalNoise(10.0*vs_in.texcoord + t);
+
     float screen_z = depthToDist(screen_d);
     float scene_z = depthToDist(scene_d);
     float dif = screen_z - scene_z;
@@ -650,11 +661,11 @@ void main(){
     float rad = exp(-dif*BEER_LAW_FACTOR);
 
     vec4 mat = 0.6*mix(deep_color, shallow_color, 3.0*rad + 2.0*noise(vs_in.texcoord + t*0.12));
-    mat.g += 0.09*noise(0.5*vs_in.vertex.xz - t*0.12 + 0.3);
+    mat.g += 0.09*noise(vs_in.vertex.xz - t*0.12 + 0.3);
 
     vec4 col = mix(mat, alpha, min(rad*0.7 + 0.08, 0.8));
 
-    col = mix(col, foam_color, foam_dif + foam_dif*simplexNoise2(18.0*vs_in.texcoord + (-1.0+screen_z - scene_z)*t*0.1 + t));
+    col = mix(col, foam_color, foam_dif + foam_dif*noise(18.0*vs_in.texcoord + (-1.0+screen_z - scene_z)*t*0.1 + t));
 
     vec3 albedo = col.xyz;
     vec3 normal = dgwaves(vs_in.vertex);
@@ -674,13 +685,13 @@ void main(){
     vec3 hdr_color = ambient + brdfSchlickGGX(vs_in.position, normal, albedo, -sun_direction, sun_color);
     
     out_color = vec4(hdr_color, 1.0);
-    //out_color = mix(vec4(1,0,0,1), vec4(0,0,1,1), screen_d);
+
     gl_FragDepth = scene_d;
   }
 
 #ifdef BLOOM
     // If we are doing bloom write to second buffer
-    float brightness = dot(vec3(out_color), vec3(0.2126, 0.7152, 0.0722));
+    float brightness = dot(out_color.rgb, 0.5*vec3(0.2126, 0.7152, 0.0722));
     if(brightness > 1.0)
         out_bloom_color = out_color;
     else

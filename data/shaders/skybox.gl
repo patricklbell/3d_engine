@@ -19,12 +19,20 @@ void main()
 
 in vec3 texcoords;
 
-out vec4 out_color;
+layout (location = 0) out vec4 out_color;
+
+#ifdef BLOOM
+layout (location = 1) out vec4 out_bloom_color; 
+#endif
 
 uniform samplerCube skybox;
 
 void main()
 {
     out_color = texture(skybox, texcoords);
+
+#ifdef BLOOM
+    out_bloom_color = vec4(0.0, 0.0, 0.0, 1.0);
+#endif
 } 
 #endif

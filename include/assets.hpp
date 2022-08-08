@@ -118,7 +118,7 @@ struct AssetManager {
     static bool writeMeshFile(const Mesh *mesh, const std::string &path);
 
     //bool loadMtl(std::unordered_map<std::string, Material *> &material_map, const std::string &path);
-    //bool loadAssetObj(Mesh *asset, const std::string &objpath, const std::string &mtlpath);
+    //bool loadAssetObj(Mesh *asset, std::string objpath, std::string mtlpath);
 
     // @note that this function could cause you to "lose" a texture if the path is the same
     Texture* createTexture(const std::string &handle);
@@ -129,7 +129,7 @@ struct AssetManager {
     // This returns nullptr if the asset doesn't exist
     Mesh*    getMesh(const std::string &path);
     Texture* getTexture(const std::string &path);
-    Texture* getColorTexture(const glm::vec3 &col);
+    Texture* getColorTexture(const glm::vec3 &col, GLint internal_format=GL_RGB);
 
     void clear();
 };

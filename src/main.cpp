@@ -204,7 +204,7 @@ int main() {
             last_filesystem_hotswap_check = current_time;
 
             for (auto &shader: shader_update_times) {
-                if(shader.update_time != std::filesystem::last_write_time(shader.path)){
+                if(std::filesystem::exists(shader.path) && shader.update_time != std::filesystem::last_write_time(shader.path)){
                     shader.update_time = std::filesystem::last_write_time(shader.path);
 
                     loadShader(shader.path, shader.type);

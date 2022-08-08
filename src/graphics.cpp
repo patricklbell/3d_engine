@@ -39,6 +39,8 @@ namespace graphics{
     Mesh quad;
     Mesh cube;
     Mesh grid;
+    Texture * simplex_gradient;
+    Texture * simplex_value;
 }
 // @hardcoded
 static const int SHADOW_SIZE = 4096;
@@ -437,6 +439,12 @@ void initGraphicsPrimitives(AssetManager &asset_manager) {
     graphics::cube.draw_count[0] = sizeof(cube_vertices) / (3.0 * sizeof(*cube_vertices));
 
     asset_manager.loadMeshFile(&graphics::grid, "data/models/grid.mesh");
+
+    graphics::simplex_gradient = asset_manager.createTexture("data/textures/2d_simplex_gradient_seamless.png");
+    asset_manager.loadTexture(graphics::simplex_gradient, "data/textures/2d_simplex_gradient_seamless.png", GL_RGB);
+    graphics::simplex_value = asset_manager.createTexture("data/textures/2d_simplex_value_seamless.png");
+    asset_manager.loadTexture(graphics::simplex_value, "data/textures/2d_simplex_value_seamless.png", GL_RED);
+
 }
 void drawCube(){
     glBindVertexArray(graphics::cube.vao);
@@ -486,7 +494,7 @@ void drawSkybox(const Texture* skybox, const Camera &camera) {
 
     glDisable(GL_CULL_FACE);
 
-    glUseProgram(shader::skybox_program);
+    glUseProgram(shader::skybox_programs[shader::unified_bloom]);
     auto untranslated_view = glm::mat4(glm::mat3(camera.view));
     glUniformMatrix4fv(shader::skybox_uniforms.view,       1, GL_FALSE, &untranslated_view[0][0]);
     glUniformMatrix4fv(shader::skybox_uniforms.projection, 1, GL_FALSE, &camera.projection[0][0]);
@@ -583,6 +591,10 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Texture* skybox, 
         glBindTexture(GL_TEXTURE_2D, graphics::hdr_buffers[0]);
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_2D, graphics::hdr_depth);
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, graphics::simplex_gradient->id);
+        glActiveTexture(GL_TEXTURE3);
+        glBindTexture(GL_TEXTURE_2D, graphics::simplex_value->id);
     
         // @note Sort by depth
         for(auto &id : water_ids){
@@ -618,9 +630,13 @@ void drawPost(int bloom_buffer_index=0){
     
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, graphics::hdr_buffers[0]);
+
     if(shader::unified_bloom){
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_2D, graphics::bloom_buffers[bloom_buffer_index]);
     }
+
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, graphics::hdr_depth);
     drawQuad();
 }

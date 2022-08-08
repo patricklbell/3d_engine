@@ -58,7 +58,7 @@ namespace shader {
         GLuint resolution;
     } post_uniforms[2];
 
-    extern GLuint skybox_program;
+    extern GLuint skybox_programs[2];
     extern struct SkyboxUniforms {
         GLuint view, projection;
     } skybox_uniforms;

@@ -80,6 +80,8 @@ namespace graphics {
     extern Mesh quad;
     extern Mesh cube;
     extern Mesh grid;
+    extern Texture * simplex_gradient;
+    extern Texture * simplex_value;
 }
     
 #endif

@@ -38,9 +38,10 @@ in vec2 v_rgbM;
 out vec4 out_color;
 
 uniform vec2 resolution;
-uniform sampler2D   screen_map;
+uniform sampler2D screen_map;
+uniform sampler2D depth_map;
 #ifdef BLOOM
-uniform sampler2D   bloom_map;
+uniform sampler2D bloom_map;
 #endif
 
 // from: https://github.com/mattdesl/glsl-fxaa/blob/master/fxaa.glsl
@@ -103,7 +104,7 @@ vec4 fxaa(sampler2D tex, vec2 coord) {
 
 void main()
 {
-    //vec3 hdr_color = texture(screen_map, texcoord).xyz;
+    float depth = texture(depth_map, texcoord).r;
     vec3 hdr_color = fxaa(screen_map, gl_FragCoord.xy).xyz;
 
 #ifdef BLOOM
@@ -111,6 +112,13 @@ void main()
     vec3 bloom_color = texture(bloom_map, texcoord).xyz;
     hdr_color += bloom_color; // additive blending 
 #endif
+
+    const vec3 fog_col = vec3(0.8, 0.9, 1.0);
+    const float fog_near = 0.5;
+    const float fog_far = 5.0;
+    float fog_amount = smoothstep(fog_near, fog_far, depth);
+    hdr_color = mix(hdr_color, fog_col, fog_amount);
+
     const float gamma = 1.6;
 
     // reinhard tone mapping
