@@ -2,23 +2,27 @@
 layout (location = 0) in vec3 in_position;
 layout (location = 1) in vec2 in_texcoord;
 
-out vec2 texcoord;
 out vec2 v_rgbNW;
 out vec2 v_rgbNE;
 out vec2 v_rgbSW;
 out vec2 v_rgbSE;
 out vec2 v_rgbM;
+out vec3 position;
 
 uniform vec2 resolution;
+uniform mat4 view;
+uniform mat4 projection;
 
 void main()
 {
-    texcoord = in_texcoord;
-    gl_Position = vec4(in_position.xyz, 1.0);
+    position = in_position;
+    gl_Position = projection * view * vec4(in_position, 1.0);
+    // @optimize? because part of multiplication is not needed
+    gl_Position.z = gl_Position.w;
 
     //compute the texture coords and send them to fragment 
 	vec2 inverse_vp = 1.0 / resolution.xy;
-    vec2 fragcoord = texcoord * resolution;
+    vec2 fragcoord = in_texcoord * resolution;
 	v_rgbNW = (fragcoord + vec2(-1.0, -1.0)) * inverse_vp;
 	v_rgbNE = (fragcoord + vec2(1.0, -1.0)) * inverse_vp;
 	v_rgbSW = (fragcoord + vec2(-1.0, 1.0)) * inverse_vp;
@@ -29,12 +33,13 @@ void main()
 
 #ifdef COMPILING_FS
 
-in vec2 texcoord;
 in vec2 v_rgbNW;
 in vec2 v_rgbNE;
 in vec2 v_rgbSW;
 in vec2 v_rgbSE;
 in vec2 v_rgbM;
+in vec3 position;
+
 out vec4 out_color;
 
 uniform vec2 resolution;
@@ -43,6 +48,8 @@ uniform sampler2D depth_map;
 #ifdef BLOOM
 uniform sampler2D bloom_map;
 #endif
+
+uniform samplerCube skybox;
 
 // from: https://github.com/mattdesl/glsl-fxaa/blob/master/fxaa.glsl
 #ifndef FXAA_REDUCE_MIN
@@ -102,22 +109,29 @@ vec4 fxaa(sampler2D tex, vec2 coord) {
     return color;
 }
 
+vec4 texsample(sampler2D tex, vec2 coord) {
+    mediump vec2 inverse_vp = vec2(1.0 / resolution.x, 1.0 / resolution.y);
+    
+    return texture(tex, coord * inverse_vp);
+}
+
+#define NEAR            0.1
+#define FAR             100.0
+float depthToDist(float d){
+  float z = 2.0*d - 1.0;
+  return 2.0*NEAR*FAR/(FAR + NEAR - z*(FAR - NEAR));
+}
+
 void main()
 {
-    float depth = texture(depth_map, texcoord).r;
+    float depth = depthToDist(texsample(depth_map, gl_FragCoord.xy).r);
     vec3 hdr_color = fxaa(screen_map, gl_FragCoord.xy).xyz;
 
 #ifdef BLOOM
     // Don't fxaa bloom since it is blurred
-    vec3 bloom_color = texture(bloom_map, texcoord).xyz;
+    vec3 bloom_color = texsample(bloom_map, gl_FragCoord.xy).xyz;
     hdr_color += bloom_color; // additive blending 
 #endif
-
-    const vec3 fog_col = vec3(0.8, 0.9, 1.0);
-    const float fog_near = 0.5;
-    const float fog_far = 5.0;
-    float fog_amount = smoothstep(fog_near, fog_far, depth);
-    hdr_color = mix(hdr_color, fog_col, fog_amount);
 
     const float gamma = 1.6;
 
@@ -126,7 +140,14 @@ void main()
 
     // gamma correction 
     mapped = pow(mapped, vec3(1.0 / gamma));
+
+    vec3 skybox_color = texture(skybox, position).xyz;
+    
+    const float fog_near = 4.0;
+    const float fog_far = 10.0;
+    float fog_amount = smoothstep(fog_near, fog_far, depth);
+    vec3 blended = mix(mapped, skybox_color, fog_amount);
   
-    out_color = vec4(mapped, 1.0);
+    out_color = vec4(blended, 1.0);
 } 
 #endif

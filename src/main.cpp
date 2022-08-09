@@ -226,7 +226,7 @@ int main() {
         }
 
         bindBackbuffer();
-        drawPost(blur_buffer_index);
+        drawPost(blur_buffer_index, skybox, camera);
 
         drawEditorGui(camera, entity_manager, asset_manager);
 

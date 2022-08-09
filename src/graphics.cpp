@@ -569,10 +569,10 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Texture* skybox, 
         }
     }
 
-    drawSkybox(skybox, camera);
+    //drawSkybox(skybox, camera);
 
     if(draw_water){
-        glDepthMask(GL_FALSE);
+        //glDepthMask(GL_FALSE);
 
         glUseProgram(       shader::water_programs[shader::unified_bloom]);
         glUniform1fv(       shader::water_uniforms[shader::unified_bloom].shadow_cascade_distances, graphics::shadow_num, graphics::shadow_cascade_distances);
@@ -618,7 +618,7 @@ void bindBackbuffer(){
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-void drawPost(int bloom_buffer_index=0){
+void drawPost(int bloom_buffer_index, Texture *skybox, const Camera &camera){
     // Draw screen space quad so clearing is unnecessary
     //glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glDepthMask(GL_FALSE);
@@ -638,5 +638,13 @@ void drawPost(int bloom_buffer_index=0){
 
     glActiveTexture(GL_TEXTURE2);
     glBindTexture(GL_TEXTURE_2D, graphics::hdr_depth);
-    drawQuad();
+
+    auto untranslated_view = glm::mat4(glm::mat3(camera.view));
+    glUniformMatrix4fv(shader::post_uniforms[shader::unified_bloom].view, 1, GL_FALSE, &untranslated_view[0][0]);
+    glUniformMatrix4fv(shader::post_uniforms[shader::unified_bloom].projection, 1, GL_FALSE, &camera.projection[0][0]);
+
+    glActiveTexture(GL_TEXTURE3);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, skybox->id);
+
+    drawCube();
 }

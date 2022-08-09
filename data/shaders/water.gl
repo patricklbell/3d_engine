@@ -649,6 +649,8 @@ void main(){
   vec4 alpha = texture(screen_map, screencoord);
   if (scene_d >= screen_d) {
     out_color = alpha;
+
+    gl_FragDepth = screen_d;
   } else {
     vec3 n1 = normalNoise(10.0*vs_in.texcoord + t);
 

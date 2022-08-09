@@ -62,7 +62,7 @@ void drawSkybox(const Texture* skybox, const Camera &camera);
 void drawUnifiedHdr(const EntityManager &entity_manager, const Texture* skybox, const Camera &camera);
 
 void bindBackbuffer();
-void drawPost(int bloom_buffer_index);
+void drawPost(int bloom_buffer_index, Texture *skybox, const Camera& camera);
 
 int blurBloomFbo();
 void initBloomFbo(bool resize=false);

@@ -168,12 +168,15 @@ void loadPostShader(std::string path){
 			return;
 		}
 		post_uniforms[i].resolution = glGetUniformLocation(post_program[i], "resolution");
+		post_uniforms[i].projection = glGetUniformLocation(post_program[i], "projection");
+		post_uniforms[i].view		= glGetUniformLocation(post_program[i], "view");
 
 		glUseProgram(post_program[i]);
 		// Set fixed locations for textures in GL_TEXTUREi
 		glUniform1i(glGetUniformLocation(post_program[i], "pixel_map"), 0);
 		glUniform1i(glGetUniformLocation(post_program[i], "bloom_map"), 1);
 		glUniform1i(glGetUniformLocation(post_program[i], "depth_map"), 2);
+		glUniform1i(glGetUniformLocation(post_program[i], "skybox"),    3);
 	}
 }
 void loadDebugShader(std::string path){
