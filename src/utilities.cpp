@@ -37,6 +37,77 @@ std::ostream &operator<<(std::ostream &os, const glm::tvec4<T, P> &v) {
     return os << v.x << ", " << v.y << ", " << v.z << ", " << v.w;
 }
 
+// Based on:
+// https://www.codeproject.com/Tips/1263121/Copy-a-GL-Texture-to-Another-GL-Texture-or-to-a-GL
+/// Check and report details for known GL error types.
+/// </summary>
+/// <param name="className">The class wherein the error occurs.</param>
+/// <param name="methodName">The method name wherein the error occurs.</param>
+/// <param name="callName">The call that causes the error.</param>
+/// <remarks>
+/// With .NET 4.5 it is possible to use equivalents for C/C++ <c>__FILE__</c> and <c>__LINE__</c>.
+/// On older .NET versions we use <c>className</c>, <c>methodName</c> and <c>callName</c> instead.
+/// </remarks>
+void checkGLError(std::string identifier)
+{
+    int error_code = (int)glGetError();
+    if(error_code == 0)
+        return;
+
+    std::string error = "Unknown error";
+    std::string description = "No description";
+
+    if (error_code == GL_INVALID_ENUM)
+    {
+        error = "GL_INVALID_ENUM";
+        description = "An unacceptable value has been specified for an enumerated argument.";
+    }
+    else if (error_code == GL_INVALID_VALUE)
+    {
+        error = "GL_INVALID_VALUE";
+        description = "A numeric argument is out of range.";
+    }
+    else if (error_code == GL_INVALID_OPERATION)
+    {
+        error = "GL_INVALID_OPERATION";
+        description = "The specified operation is not allowed in the current state.";
+    }
+    else if (error_code == GL_STACK_OVERFLOW)
+    {
+        error = "GL_STACK_OVERFLOW";
+        description = "This command would cause a stack overflow.";
+    }
+    else if (error_code == GL_STACK_UNDERFLOW)
+    {
+        error = "GL_STACK_UNDERFLOW";
+        description = "This command would cause a stack underflow.";
+    }
+    else if (error_code == GL_OUT_OF_MEMORY)
+    {
+        error = "GL_OUT_OF_MEMORY";
+        description = "There is not enough memory left to execute the command.";
+    }
+    else if (error_code == GL_INVALID_FRAMEBUFFER_OPERATION)
+    {
+        error = "GL_INVALID_FRAMEBUFFER_OPERATION";
+        description = "The object bound to FRAMEBUFFER_BINDING is not 'framebuffer complete'.";
+    }
+    else if (error_code == GL_CONTEXT_LOST)
+    {
+        error = "GL_CONTEXT_LOST";
+        description = "The context has been lost, due to a graphics card reset.";
+    }
+    else if (error_code == GL_TABLE_TOO_LARGE)
+    {
+        error = "GL_TABLE_TOO_LARGE";
+        description = std::string("The exceeds the size limit. This is part of the ") +
+                      "(Architecture Review Board) ARB_imaging extension.";
+    }
+
+    std::cerr << "An internal OpenGL call failed in at '" + identifier + "' " +
+                       "Error '" + error + "' description: " + description + "\n";
+}
+
 void saveLevel(const EntityManager & entity_manager, const std::string & level_path){
     std::cerr << "----------- Saving Level " << level_path << "----------\n";
 

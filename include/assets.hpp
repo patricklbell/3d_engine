@@ -49,7 +49,13 @@ struct Mesh {
 
 struct Texture {
     std::string handle;
-    GLuint id;
+    GLuint id = GL_FALSE;
+
+    // @debug
+    // just used by editor (for now, probably check)
+    bool is_color = false;
+    glm::vec3 color;
+
 };
 
 //enum AssetType {

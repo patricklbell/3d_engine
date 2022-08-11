@@ -124,7 +124,7 @@ float depthToDist(float d){
 
 void main()
 {
-    float depth = depthToDist(texsample(depth_map, gl_FragCoord.xy).r);
+    float dist = depthToDist(texsample(depth_map, gl_FragCoord.xy).r);
     vec3 hdr_color = fxaa(screen_map, gl_FragCoord.xy).xyz;
 
 #ifdef BLOOM
@@ -143,9 +143,9 @@ void main()
 
     vec3 skybox_color = texture(skybox, position).xyz;
     
-    const float fog_near = 4.0;
-    const float fog_far = 10.0;
-    float fog_amount = smoothstep(fog_near, fog_far, depth);
+    const float fog_near = FAR - 30.0;
+    const float fog_far = FAR;
+    float fog_amount = smoothstep(fog_near, fog_far, dist);
     vec3 blended = mix(mapped, skybox_color, fog_amount);
   
     out_color = vec4(blended, 1.0);

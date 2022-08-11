@@ -709,7 +709,7 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, AssetManager &
                 auto m_e = reinterpret_cast<MeshEntity*>(s_e);
 
                 static const std::vector<std::string> image_file_extensions = { ".jpg", ".png", ".bmp", ".tiff", ".tga" };
-                constexpr int img_w = 128;
+                constexpr int img_w = 100;
                 if(s_e->type == EntityType::MESH_ENTITY && m_e->mesh != nullptr){
                     auto &mesh = m_e->mesh;
 
@@ -724,65 +724,41 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, AssetManager &
                             char buf[128];
                             sprintf(buf, "Material %d", i);
                             if (ImGui::CollapsingHeader(buf)){
-                                ImGui::Text("Albedo");
-                                ImGui::SameLine();
-                                auto cursor = ImGui::GetCursorPos();
-                                cursor.x += img_w;
-                                ImGui::SetCursorPos(cursor);
-                                ImGui::Text("Ambient");
-                                void * tex_albedo = (void *)(intptr_t)mat.t_albedo->id;
-                                if(ImGui::ImageButton(tex_albedo, ImVec2(img_w,img_w))){
-                                    im_file_dialog.SetPwd(exepath+"/data/textures");
-                                    s_entity_material_index = i;
-                                    im_file_dialog_type = "asset.mat.tAlbedo";
-                                    im_file_dialog.SetCurrentTypeFilterIndex(2);
-                                    im_file_dialog.SetTypeFilters(image_file_extensions);
-                                    im_file_dialog.Open();
-                                }
-                                ImGui::SameLine();
-                                void * tex_ambient = (void *)(intptr_t)mat.t_ambient->id;
-                                if(ImGui::ImageButton(tex_ambient, ImVec2(img_w,img_w))){
-                                    im_file_dialog.SetPwd(exepath+"/data/textures");
-                                    s_entity_material_index = i;
-                                    im_file_dialog_type = "asset.mat.tAmbient";
-                                    im_file_dialog.SetCurrentTypeFilterIndex(2);
-                                    im_file_dialog.SetTypeFilters(image_file_extensions);
-                                    im_file_dialog.Open();
-                                }
-                                ImGui::Text("Metallic");
-                                ImGui::SameLine();
-                                cursor = ImGui::GetCursorPos();
-                                cursor.x += img_w;
-                                ImGui::SetCursorPos(cursor);
-                                ImGui::Text("Normal");
-                                void * tex_metallic = (void *)(intptr_t)mat.t_metallic->id;
-                                if(ImGui::ImageButton(tex_metallic, ImVec2(img_w,img_w))){
-                                    s_entity_material_index = i;
-                                    im_file_dialog_type = "asset.mat.tMetallic";
-                                    im_file_dialog.SetCurrentTypeFilterIndex(2);
-                                    im_file_dialog.SetTypeFilters(image_file_extensions);
-                                    im_file_dialog.Open();
-                                }
-                                ImGui::SameLine();
-                                void * tex_normal = (void *)(intptr_t)mat.t_normal->id;
-                                if(ImGui::ImageButton(tex_normal, ImVec2(img_w,img_w))){
-                                    im_file_dialog.SetPwd(exepath+"/data/textures");
-                                    s_entity_material_index = i;
-                                    im_file_dialog_type = "asset.mat.tNormal";
-                                    im_file_dialog.SetCurrentTypeFilterIndex(2);
-                                    im_file_dialog.SetTypeFilters(image_file_extensions);
-                                    im_file_dialog.Open();
-                                }
-                                ImGui::Text("Roughness");
-                                void * tex_roughness = (void *)(intptr_t)mat.t_roughness->id;
-                                if(ImGui::ImageButton(tex_roughness, ImVec2(img_w,img_w))){
-                                    im_file_dialog.SetPwd(exepath+"/data/textures");
-                                    s_entity_material_index = i;
-                                    im_file_dialog_type = "asset.mat.tRoughness";
-                                    im_file_dialog.SetCurrentTypeFilterIndex(2);
-                                    im_file_dialog.SetTypeFilters(image_file_extensions);
-                                    im_file_dialog.Open();
-                                }
+                                static const auto create_button = [&mat, &i, &asset_manager] 
+                                    (Texture **tex, std::string &&type, bool same_line=false) {
+                                    auto cursor = ImGui::GetCursorPos();
+                                    ImGui::SetNextItemWidth(img_w);
+                                    ImGui::Text("%s", type.c_str());
+
+                                    void * tex_id = (void *)(intptr_t)(*tex)->id;
+                                    ImGui::SetNextItemWidth(img_w);
+                                    if(ImGui::ImageButton(tex_id, ImVec2(img_w,img_w))){
+                                        im_file_dialog.SetPwd(exepath+"/data/textures");
+                                        s_entity_material_index = i;
+                                        im_file_dialog_type = "asset.mat.t"+type;
+                                        im_file_dialog.SetCurrentTypeFilterIndex(2);
+                                        im_file_dialog.SetTypeFilters(image_file_extensions);
+                                        im_file_dialog.Open();
+                                    }
+
+                                    glm::vec3 &col = (*tex)->color;
+                                    ImGui::SetNextItemWidth(img_w);
+                                    if(ImGui::ColorEdit3(("###"+type).c_str(), &col.x)) {
+                                        // @note maybe you want more specific format
+                                        // and color picker may make many unnecessary textures
+                                        (*tex) = asset_manager.getColorTexture(col, GL_RGBA);
+                                    }
+                                };
+                                
+                                ImGui::Columns(2, "locations");
+                                create_button(&mat.t_albedo, "Albedo");
+                                create_button(&mat.t_ambient, "Ambient");
+                                create_button(&mat.t_metallic, "Metallic");
+
+                                ImGui::NextColumn();
+                                create_button(&mat.t_normal, "Normal");
+                                create_button(&mat.t_roughness, "Roughness");
+                                ImGui::Columns();
                             }
                         }
                     }

@@ -112,13 +112,13 @@ int main() {
     glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
     glfwSwapInterval(0);
 
-    glEnable(GL_MULTISAMPLE);
+    // We implement FXAA so multisampling should be unnecessary
+    glDisable(GL_MULTISAMPLE);
 
     GL_version = std::string((char*)glGetString(GL_VERSION));
     GL_vendor = std::string((char*)glGetString(GL_VENDOR));
     GL_renderer = std::string((char*)glGetString(GL_RENDERER));
     std::cout << "OpenGL Info:\nVersion: \t" << GL_version << "\nVendor: \t" << GL_vendor << "\nRenderer: \t" << GL_renderer << "\n";
-
     initDefaultMaterial(global_assets);
     initGraphicsPrimitives(global_assets);
     initShadowFbo();
@@ -181,6 +181,9 @@ int main() {
                                               "data/textures/cloudy/bluecloud_rt.jpg", "data/textures/cloudy/bluecloud_lf.jpg"};
     auto skybox = global_assets.createTexture("skybox");
     AssetManager::loadCubemapTexture(skybox, skybox_paths);
+#ifndef NDEBUG 
+    checkGLError("Pre-loop");
+#endif
 
     double last_time = glfwGetTime();
     double last_filesystem_hotswap_check = last_time;
@@ -194,6 +197,7 @@ int main() {
         if (window_resized){
             updateCameraProjection(camera);
             initHdrFbo(true);
+
             if(shader::unified_bloom){
                 initBloomFbo(true);
             }
@@ -211,9 +215,7 @@ int main() {
                 } 
             }
         }
-
         bindDrawShadowMap(entity_manager, camera);
-
         bindHdr();
         clearFramebuffer(glm::vec4(0.1,0.1,0.1,1.0));
         drawUnifiedHdr(entity_manager, skybox, camera);
@@ -229,20 +231,24 @@ int main() {
         drawPost(blur_buffer_index, skybox, camera);
 
         drawEditorGui(camera, entity_manager, asset_manager);
-
         // Swap backbuffer with front buffer
         glfwSwapBuffers(window);
         window_resized = false;
         glfwPollEvents();
 
         entity_manager.propogateChanges();
+
+#ifndef NDEBUG
+        checkGLError("main loop");
+        // Should catch any other errors but the message may be less descriptive
         static GLenum code;
         static const GLubyte* string;
+        code = glGetError();
         if(code != GL_NO_ERROR){
-            code = glGetError();
             string = gluErrorString(code);
             std::cerr << "<--------------------OpenGL ERROR-------------------->\n" << string << "\n";
         }
+#endif
     } // Check if the ESC key was pressed or the window was closed
     while( glfwGetKey(window, GLFW_KEY_ESCAPE ) != GLFW_PRESS && glfwWindowShouldClose(window) == 0 );
 

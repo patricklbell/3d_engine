@@ -769,6 +769,8 @@ Texture* AssetManager::getColorTexture(const glm::vec3 &col, GLint internal_form
 
         auto tex = &color_texture_map.try_emplace(col).first->second;
         tex->id = create1x1Texture(col256, internal_format);
+        tex->is_color = true;
+        tex->color = col;
         return tex;
     } else {
         return &lu->second;

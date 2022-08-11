@@ -27,6 +27,8 @@ namespace graphics{
     GLuint hdr_fbo;
     GLuint hdr_buffers[2];
     GLuint hdr_depth;
+    // Used by water pass to write and read from same depth buffer
+    GLuint hdr_depth_copy;
     const int shadow_num = 4;
     float shadow_cascade_distances[shadow_num];
     const char * shadow_macro = "#define CASCADE_NUM 4\n";
@@ -171,7 +173,6 @@ void initShadowFbo(){
     glTexParameterfv(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_BORDER_COLOR, border_col); 
 	//glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
 	//glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
-    glFramebufferTexture(GL_FRAMEBUFFER, GL_TEXTURE_2D_ARRAY, graphics::shadow_buffer, 0);
 
 	glFramebufferTexture(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, graphics::shadow_buffer, 0);
     glDrawBuffer(GL_NONE);
@@ -260,11 +261,14 @@ void initBloomFbo(bool resize){
 
 void initHdrFbo(bool resize){
     int num_buffers = (int)shader::unified_bloom + 1;
+
     if(!resize){
         glGenFramebuffers(1, &graphics::hdr_fbo);
         glBindFramebuffer(GL_FRAMEBUFFER, graphics::hdr_fbo);
 
         glGenTextures(num_buffers, graphics::hdr_buffers);
+    } else {
+        glBindFramebuffer(GL_FRAMEBUFFER, graphics::hdr_fbo);
     }
     for (unsigned int i = 0; i < num_buffers; i++){
         glBindTexture(GL_TEXTURE_2D, graphics::hdr_buffers[i]);
@@ -280,7 +284,15 @@ void initHdrFbo(bool resize){
     if(!resize){
         // create and attach depth buffer
         glGenTextures(1, &graphics::hdr_depth);
+        glGenTextures(1, &graphics::hdr_depth_copy);
     }
+    glBindTexture(GL_TEXTURE_2D, graphics::hdr_depth_copy);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH24_STENCIL8, window_width, window_height, 0, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8, NULL);
+    //glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, 4, GL_DEPTH24_STENCIL8, window_width, window_height, GL_TRUE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glBindTexture(GL_TEXTURE_2D, graphics::hdr_depth);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH24_STENCIL8, window_width, window_height, 0, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8, NULL);
     //glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, 4, GL_DEPTH24_STENCIL8, window_width, window_height, GL_TRUE);
@@ -298,7 +310,7 @@ void initHdrFbo(bool resize){
         glDrawBuffers(2, attachments);
     } else {
         static const GLuint attachments[] = { GL_COLOR_ATTACHMENT0 };
-        glDrawBuffers(2, attachments);
+        glDrawBuffers(1, attachments);
     }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
@@ -482,7 +494,7 @@ void bindHdr(){
 
 void clearFramebuffer(const glm::vec4 &color){
     glClearColor(color.x, color.y, color.z, color.w);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 }
 
 void drawSkybox(const Texture* skybox, const Camera &camera) {
@@ -528,7 +540,6 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Texture* skybox, 
 
     glUniform1fv(shader::unified_uniforms[shader::unified_bloom].shadow_cascade_distances, graphics::shadow_num, graphics::shadow_cascade_distances);
     glUniform1f(shader::unified_uniforms[shader::unified_bloom].far_plane, camera.far_plane);
-
     auto vp = camera.projection * camera.view;
     for (int i = 0; i < ENTITY_COUNT; ++i) {
         auto m_e = reinterpret_cast<MeshEntity*>(entity_manager.entities[i]);
@@ -572,8 +583,6 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Texture* skybox, 
     //drawSkybox(skybox, camera);
 
     if(draw_water){
-        //glDepthMask(GL_FALSE);
-
         glUseProgram(       shader::water_programs[shader::unified_bloom]);
         glUniform1fv(       shader::water_uniforms[shader::unified_bloom].shadow_cascade_distances, graphics::shadow_num, graphics::shadow_cascade_distances);
         glUniform1f(        shader::water_uniforms[shader::unified_bloom].far_plane, camera.far_plane);
@@ -583,14 +592,16 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Texture* skybox, 
         glUniform2f(        shader::water_uniforms[shader::unified_bloom].resolution, window_width, window_height);
         glUniform1f(        shader::water_uniforms[shader::unified_bloom].time, glfwGetTime());
         glUniformMatrix4fv( shader::water_uniforms[shader::unified_bloom].view, 1, GL_FALSE, &camera.view[0][0]);
-
         // @debug the geometry shader and tesselation
         //glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
+        // Copy depth buffer
+        //glReadBuffer(GL_DEPTH_STENCIL_ATTACHMENT);
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, graphics::hdr_depth_copy);
+        glCopyTextureSubImage2D(graphics::hdr_depth_copy, 0, 0, 0, 0, 0, window_width, window_height);
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, graphics::hdr_buffers[0]);
-        glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_2D, graphics::hdr_depth);
         glActiveTexture(GL_TEXTURE2);
         glBindTexture(GL_TEXTURE_2D, graphics::simplex_gradient->id);
         glActiveTexture(GL_TEXTURE3);
@@ -611,6 +622,7 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Texture* skybox, 
             glDrawElements(graphics::grid.draw_mode, graphics::grid.draw_count[0], graphics::grid.draw_type, (GLvoid*)(sizeof(GLubyte)*graphics::grid.draw_start[0]));
         }
         //glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+        glDepthFunc(GL_LESS);
     }
 }
 
