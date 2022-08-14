@@ -7,6 +7,7 @@
 #include <array>
 #include <map>
 #include <filesystem>
+#include <thread>
 
 // Include GLEW
 #include <GL/glew.h>
@@ -42,6 +43,8 @@ glm::vec3 sun_color;
 glm::vec3 sun_direction;
 AssetManager global_assets;
 std::string GL_version, GL_vendor, GL_renderer;
+std::string level_path = "";
+ThreadPool *global_thread_pool;
 
 int main() {
     exepath = getexepath();
@@ -83,7 +86,7 @@ int main() {
     // to prevent 1200x800 from becoming 2400x1600
     glfwWindowHint(GLFW_COCOA_RETINA_FRAMEBUFFER, GLFW_FALSE);
 #endif
-    std::ios_base::sync_with_stdio(false);
+    //std::ios_base::sync_with_stdio(false);
 
     // Open a window and create its OpenGL context
     window = glfwCreateWindow(1024, 700, "Window", NULL, NULL);
@@ -119,6 +122,11 @@ int main() {
     GL_vendor = std::string((char*)glGetString(GL_VENDOR));
     GL_renderer = std::string((char*)glGetString(GL_RENDERER));
     std::cout << "OpenGL Info:\nVersion: \t" << GL_version << "\nVendor: \t" << GL_vendor << "\nRenderer: \t" << GL_renderer << "\n";
+
+    ThreadPool thread_pool;
+    thread_pool.start();
+    global_thread_pool = &thread_pool;
+
     initDefaultMaterial(global_assets);
     initGraphicsPrimitives(global_assets);
     initShadowFbo();
@@ -170,7 +178,8 @@ int main() {
     AssetManager asset_manager;
     EntityManager entity_manager;
 
-    loadLevel(entity_manager, asset_manager, "data/levels/water_test.level");
+    level_path = "data/levels/water_test.level";
+    loadLevel(entity_manager, asset_manager, level_path);
 
     //auto t_e = new TerrainEntity();
     //t_e->texture = createTextureAsset(assets, "data/textures/iceland_heightmap.png");
@@ -251,6 +260,8 @@ int main() {
 #endif
     } // Check if the ESC key was pressed or the window was closed
     while( glfwGetKey(window, GLFW_KEY_ESCAPE ) != GLFW_PRESS && glfwWindowShouldClose(window) == 0 );
+
+    thread_pool.stop();
 
     deleteShaderPrograms();    
 

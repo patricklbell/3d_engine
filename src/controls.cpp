@@ -25,6 +25,8 @@ namespace controls {
     bool scrolled;
     bool left_mouse_click_press;
     bool left_mouse_click_release;
+    bool right_mouse_click_press;
+    bool right_mouse_click_release;
 
     glm::dvec2 mouse_position;
     glm::dvec2 delta_mouse_position;
@@ -52,7 +54,9 @@ void handleEditorControls(Camera &camera, EntityManager &entity_manager, float d
     static int c_key_state = GLFW_RELEASE;
     static int d_key_state = GLFW_RELEASE;
     static int mouse_left_state = GLFW_RELEASE;
+    static int mouse_right_state = GLFW_RELEASE;
     static int ctrl_v_state = GLFW_RELEASE;
+    static int backtick_key_state = GLFW_RELEASE;
     static double mouse_left_press_time = glfwGetTime();
     static glm::vec3 shooter_camera_velocity = glm::vec3(0.0);
     static float shooter_camera_deceleration = 0.8;
@@ -61,16 +65,20 @@ void handleEditorControls(Camera &camera, EntityManager &entity_manager, float d
 
     bool camera_movement_active = !editor::transform_active;
     ImGuiIO& io = ImGui::GetIO();
-    controls::left_mouse_click_press   = !io.WantCaptureMouse && glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS && mouse_left_state == GLFW_RELEASE;
-    controls::left_mouse_click_release = !io.WantCaptureMouse && glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_RELEASE && mouse_left_state == GLFW_PRESS;
+    controls::left_mouse_click_press   = !io.WantCaptureMouse && glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT ) == GLFW_PRESS   && mouse_left_state == GLFW_RELEASE;
+    controls::left_mouse_click_release = !io.WantCaptureMouse && glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT ) == GLFW_RELEASE && mouse_left_state == GLFW_PRESS;
+    controls::right_mouse_click_press  = !io.WantCaptureMouse && glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS   && mouse_right_state == GLFW_RELEASE;
+    controls::right_mouse_click_release= !io.WantCaptureMouse && glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_RELEASE && mouse_right_state == GLFW_PRESS;
 
     // Unlike other inputs, calculate delta but update mouse position immediately
     glm::dvec2 delta_mouse_position = mouse_position;
     glfwGetCursorPos(window, &mouse_position.x, &mouse_position.y);
     delta_mouse_position = mouse_position - delta_mouse_position;
 
+    if(backtick_key_state == GLFW_RELEASE && glfwGetKey(window, GLFW_KEY_GRAVE_ACCENT) == GLFW_PRESS) {
+        editor::do_terminal = !editor::do_terminal;
+    }
     if(!io.WantCaptureKeyboard){
-        glfwGetKey(window, GLFW_KEY_DELETE);
         if(sel_e.i != -1 && glfwGetKey(window, GLFW_KEY_DELETE) == GLFW_PRESS){
             entity_manager.deleteEntity(editor::sel_e);
             sel_e = NULLID;
@@ -82,7 +90,7 @@ void handleEditorControls(Camera &camera, EntityManager &entity_manager, float d
             auto e = entity_manager.duplicateEntity(copy_id);
             copy_id = e->id;
             if((e->type & MESH_ENTITY)){
-                ((MeshEntity*)e)->position += glm::vec3(0.1);
+                ((MeshEntity*)e)->position.x += editor::translation_snap.x;
                 if(camera.state == Camera::TYPE::TRACKBALL){
                     sel_e = e->id;
                     camera.target = ((MeshEntity*)e)->position;
@@ -122,6 +130,9 @@ void handleEditorControls(Camera &camera, EntityManager &entity_manager, float d
     }
 
     if(camera.state == Camera::TYPE::TRACKBALL){
+        if (right_mouse_click_release) {
+            sel_e = NULLID;
+        }
         if (left_mouse_click_release && (glfwGetTime() - mouse_left_press_time) < 0.2) {
             glm::vec3 out_origin;
             glm::vec3 out_direction;
@@ -287,9 +298,12 @@ void handleEditorControls(Camera &camera, EntityManager &entity_manager, float d
         glfwGetCursorPos(window, &mouse_position.x, &mouse_position.y);
     }
 
-    ctrl_v_state    = glfwGetKey(window, GLFW_KEY_V) == GLFW_PRESS & glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS;
-    c_key_state = glfwGetKey(window, GLFW_KEY_C);
-    d_key_state     = glfwGetKey(window, GLFW_KEY_D);
+    ctrl_v_state        = glfwGetKey(window, GLFW_KEY_V) == GLFW_PRESS & glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) == GLFW_PRESS;
+    backtick_key_state  = glfwGetKey(window, GLFW_KEY_GRAVE_ACCENT);
+    c_key_state         = glfwGetKey(window, GLFW_KEY_C);
+    d_key_state         = glfwGetKey(window, GLFW_KEY_D);
+
     if(mouse_left_state == GLFW_RELEASE && glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT)) mouse_left_press_time = glfwGetTime();
-    mouse_left_state = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT);
+    mouse_left_state    = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT);
+    mouse_right_state   = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT);
 }

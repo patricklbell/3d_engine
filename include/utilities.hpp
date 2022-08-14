@@ -2,6 +2,12 @@
 #define UTILITIES_HPP
 
 #include <string>
+#include <functional>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <queue>
+
 #include <glm/glm.hpp>
 
 #include <GL/glew.h>
@@ -31,5 +37,20 @@ float closestDistanceBetweenLineCircle(const glm::vec3 &line_origin, const glm::
 bool startsWith(std::string_view str, std::string_view prefix);
 bool endsWith(std::string_view str, std::string_view suffix);
 std::string getexepath();
+
+// @note Just copied this so it might be bad
+struct ThreadPool {
+    void start();
+    void queueJob(const std::function<void()>& job);
+    void stop();
+    bool busy();
+    void threadLoop();
+
+    bool should_terminate = false;           // Tells threads to stop looking for jobs
+    std::mutex queue_mutex;                  // Prevents data races to the job queue
+    std::condition_variable mutex_condition; // Allows threads to wait on new jobs or termination 
+    std::vector<std::thread> threads;
+    std::queue<std::function<void()>> jobs;
+};
 
 #endif /* ifndef UTILITIES_HPP */

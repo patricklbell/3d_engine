@@ -10,6 +10,7 @@
 
 #include "assets.hpp"
 
+#define DO_MULTITHREAD 1
 #define ENTITY_COUNT 1000
 #define PI           3.14159265359
 
@@ -27,5 +28,9 @@ extern glm::vec4 clear_color;
 extern bool draw_bloom;
 extern AssetManager global_assets;
 extern std::string GL_version, GL_vendor, GL_renderer;
+extern std::string level_path;
+
+struct ThreadPool;
+extern ThreadPool *global_thread_pool;
 
 #endif

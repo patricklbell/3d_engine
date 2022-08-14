@@ -3,6 +3,7 @@
 #include <stack>
 #include <limits>
 #include <algorithm>
+#include <filesystem>
 
 // Include GLEW
 #include <GL/glew.h>
@@ -16,9 +17,9 @@
 #include "glm/fwd.hpp"
 #include "glm/gtc/quaternion.hpp"
 #include "imgui.h"
-#include "ImGuizmo.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
+#include "imgui_stdlib.h"
 #include "imfilebrowser.hpp"
 
 #include <glm/glm.hpp>
@@ -39,12 +40,14 @@
 namespace editor {
     std::string im_file_dialog_type;
     bool draw_debug_wireframe = true;
+    bool do_terminal = false;
     bool transform_active = false;
     GizmoMode gizmo_mode = GIZMO_MODE_NONE;
     ImGui::FileBrowser im_file_dialog(ImGuiFileBrowserFlags_EnterNewFilename | ImGuiFileBrowserFlags_NoTitleBar);
     Mesh arrow_mesh;
     Mesh block_arrow_mesh;
     Mesh ring_mesh;
+    glm::vec3 translation_snap = glm::vec3(1.0);
     Id sel_e(-1, -1);
 }
 using namespace editor;
@@ -61,13 +64,18 @@ void initEditorGui(AssetManager &asset_manager){
     // create a file browser instance
     im_file_dialog_type = "";
 
+    auto &style = ImGui::GetStyle();
+
     // Setup Dear ImGui style
-    ImGui::GetStyle().FrameRounding = 4.0f;
-    ImGui::GetStyle().GrabRounding = 4.0f;
-    ImGui::GetStyle().FramePadding = ImVec2(3.0, 3.0);
-    ImGui::GetStyle().ItemSpacing  = ImVec2(2.0, 4.0);
+    style.FrameRounding = 4.0f;
+    style.GrabRounding = 4.0f;
+    style.FramePadding = ImVec2(3.0, 4.0);
+    style.ItemSpacing  = ImVec2(2.0, 8.0);
+    style.ItemInnerSpacing = ImVec2(1.0, 1.0);
+    style.CellPadding = ImVec2(1.0, 6.0);
+    style.Alpha = 0.9;
     
-    ImVec4* colors = ImGui::GetStyle().Colors;
+    ImVec4* colors = style.Colors;
     colors[ImGuiCol_Text] = ImVec4(0.95f, 0.96f, 0.98f, 1.00f);
     colors[ImGuiCol_TextDisabled] = ImVec4(0.36f, 0.42f, 0.47f, 1.00f);
     colors[ImGuiCol_WindowBg] = ImVec4(0.11f, 0.15f, 0.17f, 1.00f);
@@ -128,10 +136,206 @@ void initEditorGui(AssetManager &asset_manager){
     asset_manager.loadMeshFile(&ring_mesh, "data/models/ring.mesh");
 }
 
+// for string delimiter
+static std::vector<std::string> split (std::string s, std::string delimiter) {
+    size_t pos_start = 0, pos_end, delim_len = delimiter.length();
+    std::string token;
+    std::vector<std::string> res;
+
+    while ((pos_end = s.find (delimiter, pos_start)) != std::string::npos) {
+        token = s.substr (pos_start, pos_end - pos_start);
+        pos_start = pos_end + delim_len;
+        res.push_back (token);
+    }
+
+    res.push_back(s.substr(pos_start));
+    return res;
+}
+
+void ImTerminal(EntityManager &entity_manager, AssetManager &asset_manager, bool is_active) {
+    constexpr int pad = 10;
+    constexpr float open_time_total = 0.6; // s
+    constexpr float close_time_total = 0.3; // s
+    const float height = std::min(window_height / 2.5f, 250.f);
+
+    static bool prev_is_active = false;
+    static float height_offset = 0;
+    static float change_time = glfwGetTime();
+    if(prev_is_active != is_active) change_time = glfwGetTime();
+    
+    bool is_opening = is_active && (height_offset != height);
+    bool is_closing = !is_active && (height_offset != 0);
+
+    if(is_opening) {
+        float t = glm::smoothstep(0.0f, open_time_total, (float)glfwGetTime() - change_time);
+        height_offset = glm::mix(height, height_offset, 1-t);
+    } else if (is_closing) {
+        float t = glm::smoothstep(0.0f, close_time_total, (float)glfwGetTime() - change_time);
+        height_offset = glm::mix(height_offset, 0.0f, t);
+    }
+
+    static std::vector<std::string> command_history = {"Terminals are cool"};
+    static std::vector<std::string> result_history = {"Maybe?"};
+
+    static bool update_input_contents = false;
+    static int history_position = -1;
+    static std::string saved_input_line{""};
+    static std::string input_line{""};
+    const char prompt[] = "> ";
+    if(is_active || is_closing) {
+        ImGui::SetNextWindowPos(ImVec2(0, window_height - height_offset));
+        ImGui::SetNextWindowSize(ImVec2(window_width, height));
+
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, IM_COL32(0,0,0,200));
+        ImGui::Begin("Terminal", NULL, ImGuiWindowFlags_NoDecoration);
+        ImGui::PopStyleColor();
+
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0,5));
+
+        auto len = std::min(command_history.size(), result_history.size());
+        for(int i = 0; i < len; ++i) {
+            if(command_history[i] != "") ImGui::TextWrapped("%s%s\n", prompt, command_history[i].c_str());
+            if(result_history[i] != "")  ImGui::TextWrapped("%s", result_history[i].c_str());
+        }
+
+        ImGui::Text(prompt);
+        ImGui::SameLine();
+
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0,0));
+        ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(0,0));
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, IM_COL32(0,0,0,0));
+
+        static bool edit_made = false;
+        static bool up_press = false;
+        static bool down_press = false;
+        struct Callbacks { 
+            static int callback(ImGuiInputTextCallbackData* data) { 
+                if (data->EventFlag == ImGuiInputTextFlags_CallbackHistory) {
+                    if (data->EventKey == ImGuiKey_UpArrow) {
+                        up_press = true;
+                    } else if (data->EventKey == ImGuiKey_DownArrow) {
+                        down_press = true;
+                    }
+                } else if (data->EventFlag == ImGuiInputTextFlags_CallbackCharFilter) {
+                    edit_made = true;
+                    if (data->EventChar == '`') {
+                        return 1;
+                    }
+                }
+                if(update_input_contents) {
+                    data->DeleteChars(0, data->BufTextLen);
+                    data->InsertChars(0, input_line.c_str());
+                    update_input_contents = false;
+                }
+                return 0; 
+            } 
+        };
+        ImGui::SetNextItemWidth(window_width);
+        ImGui::SetKeyboardFocusHere(0);
+        auto flags = ImGuiInputTextFlags_NoHorizontalScroll | ImGuiInputTextFlags_CallbackAlways | ImGuiInputTextFlags_CallbackCharFilter | ImGuiInputTextFlags_CallbackHistory | ImGuiInputTextFlags_EnterReturnsTrue;
+        bool enter_pressed = ImGui::InputTextWithHint("###input_line", "Enter Command", &input_line, flags, Callbacks::callback);
+        if(enter_pressed) {
+            auto &output = result_history.emplace_back ("");
+
+            // Hack to make empty lines visible
+            if(input_line == "") {
+                command_history.emplace_back(" ");
+            } else {
+                auto &input  = command_history.emplace_back(input_line);
+
+                auto tokens = split(input_line, " ");
+                if(tokens.size() > 0) {
+                    auto &command = tokens[0];
+                    if(command == "clear") {
+                        command_history.clear();
+                        result_history.clear();
+                    } else if(command == "echo") {
+                        for(int i = 1; i < tokens.size(); ++i) {
+                            if(i != 1) output.append(" ");
+                            output.append(tokens[i]);
+                        }
+                    } else if(command == "list_levels") {
+                        for (const auto & entry : std::filesystem::directory_iterator("data/levels/")) {
+
+                            auto filename = entry.path().filename();
+                            if(filename.extension() == ".level") {
+                                std::string name  = filename.stem();
+                                output += name + "   ";
+                            }
+                        }
+                    } else if(command == "load_level") {
+                        if(tokens.size() >= 2) {
+                            auto filename = "data/levels/" + tokens[1] + ".level";
+                            std::cout << filename << "\n";
+                            if(loadLevel(entity_manager, asset_manager, "data/levels/" + tokens[1] + ".level")) {
+                                output += "Loaded level " + tokens[1];
+                                sel_e = NULLID;
+                            } else {
+                                output += "Failed to loaded level " + tokens[1];
+                            }
+                        }
+                    } else {
+                        output += "Unknown Command";
+                    }
+                }
+
+            }
+            input_line = "";
+        }
+
+        if(edit_made || enter_pressed) {
+            history_position = -1;
+        }
+        if(command_history.size() > 0) {
+            if(up_press && history_position < (int)command_history.size() - 1) {
+                if(history_position == -1) {
+                    saved_input_line = input_line;
+                    history_position = 0;
+                } else {
+                    history_position++;
+                }
+                input_line = command_history[(int)command_history.size() - history_position - 1];
+                update_input_contents = true;
+            } else if(down_press) {
+                if(history_position == 0) {
+                    history_position = -1;
+                    input_line = saved_input_line;
+                    update_input_contents = true;
+                } else if(history_position > 0) {
+                    history_position--;
+                    input_line = command_history[(int)command_history.size() - history_position - 1];
+                    update_input_contents = true;
+                }
+            }
+        }
+
+        ImGui::PopStyleVar(3);
+        ImGui::PopStyleColor();
+
+        if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY())
+            ImGui::SetScrollHereY(1.0f);
+        if (edit_made)
+            ImGui::SetScrollY(ImGui::GetScrollMaxY());
+
+        ImGui::End();
+
+        up_press = false;
+        down_press = false;
+        edit_made = false;
+
+        // Extra scrolling is happening in editor 
+        // @fix?
+        controls::scroll_offset = glm::vec2(0);
+    }
+
+    prev_is_active = is_active;
+}
+
 bool editTransform(Camera &camera, glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, TransformType type=TransformType::ALL){
     static bool key_t = false, key_r = false, key_s = false, key_n = false;
-    static bool use_snap = false;
-    static glm::vec3 snap = glm::vec3( 1.f, 1.f, 1.f );
+    static bool use_trans_snap = true, use_rot_snap = true, use_scl_snap = false;
+    static glm::vec3 scale_snap = glm::vec3(1.0);
+    static float rotation_snap = 90;
     bool change_occured = false;
 
     bool do_p = (bool)((unsigned int)type & (unsigned int)TransformType::POS);
@@ -191,22 +395,27 @@ bool editTransform(Camera &camera, glm::vec3 &pos, glm::quat &rot, glm::mat3 &sc
     {
     case GIZMO_MODE_TRANSLATE:
         if (!io.WantCaptureKeyboard && glfwGetKey(window, GLFW_KEY_N) && !key_n)
-            use_snap = !use_snap;
-        ImGui::Checkbox("", &use_snap);
+            use_trans_snap = !use_trans_snap;
+        ImGui::Checkbox("", &use_trans_snap);
         ImGui::SameLine();
-        ImGui::InputFloat3("Snap", &snap[0]);
-        change_occured |= editorTranslationGizmo(pos, rot, scl, camera, snap, use_snap);
+        ImGui::InputFloat3("Snap", &translation_snap[0]);
+        change_occured |= editorTranslationGizmo(pos, rot, scl, camera, translation_snap, use_trans_snap);
         break;
     case GIZMO_MODE_ROTATE:
-        change_occured |= editorRotationGizmo(pos, rot, scl, camera);
+        if (!io.WantCaptureKeyboard && glfwGetKey(window, GLFW_KEY_N) && !key_n)
+            use_rot_snap = !use_rot_snap;
+        ImGui::Checkbox("", &use_rot_snap);
+        ImGui::SameLine();
+        ImGui::InputFloat("Snap", &rotation_snap);
+        change_occured |= editorRotationGizmo(pos, rot, scl, camera, (rotation_snap / 180.f) * PI, use_rot_snap);
         break;
     case GIZMO_MODE_SCALE:
         if (!io.WantCaptureKeyboard && glfwGetKey(window, GLFW_KEY_N) && !key_n)
-            use_snap = !use_snap;
-        ImGui::Checkbox("", &use_snap);
+            use_scl_snap = !use_scl_snap;
+        ImGui::Checkbox("", &use_scl_snap);
         ImGui::SameLine();
-        ImGui::InputFloat3("Snap", &snap[0]);
-        change_occured |= editorScalingGizmo(pos, rot, scl, camera, snap, use_snap);
+        ImGui::InputFloat3("Snap", &scale_snap[0]);
+        change_occured |= editorScalingGizmo(pos, rot, scl, camera, scale_snap, use_scl_snap);
         break;
     default:
         break;
@@ -219,7 +428,7 @@ bool editTransform(Camera &camera, glm::vec3 &pos, glm::quat &rot, glm::mat3 &sc
     return change_occured;
 }
 
-bool editorRotationGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, const Camera &camera){
+bool editorRotationGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, const Camera &camera, float snap=1.0, bool do_snap=false){
     static int selected_ring = -1;
     static glm::vec3 rot_dir_initial;
     static glm::vec3 rot_dir_prev;
@@ -302,9 +511,17 @@ bool editorRotationGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, const C
         
         const glm::fvec3 rotation_axis(selected_ring==0, selected_ring==1, selected_ring==2);
 
-        rot = glm::rotate(rot, angle, rotation_axis);
-
-        rot_dir_prev = rot_dir;
+        if(do_snap) {
+            drawEditor3DArrow(pos, pp, camera, glm::vec4(0.5), glm::vec3(distance*0.02, 0.3*radius, distance*0.02), false);
+            if(angle >= snap || angle <= -snap) {
+                angle = glm::floor(angle / snap) * snap;
+                rot = glm::rotate(rot, angle, rotation_axis);
+                rot_dir_prev = rot_dir;
+            }
+        } else {
+            rot = glm::rotate(rot, angle, rotation_axis);
+            rot_dir_prev = rot_dir;
+        }
     }
 
     for (int i = 0; i < 3; ++i) {
@@ -689,27 +906,38 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, AssetManager &
     ImGui::NewFrame();
 
     constexpr int pad = 10;
+    const static float sidebar_open_len = 0.8; // s
+    static float sidebar_pos_right = 0;
+    static float sidebar_open_time = glfwGetTime();
     {
         if(sel_e.i != -1) {
-            constexpr int sidebar_w = 300;
+            // Just opened
+            if(sidebar_pos_right == 0) {
+                sidebar_open_time = glfwGetTime();
+            }
+            const float sidebar_w = std::min(210.0f, window_width/2.0f);
+            auto mix_t = glm::smoothstep(0.0f, sidebar_open_len, (float)glfwGetTime() - sidebar_open_time);
+            sidebar_pos_right = glm::mix(sidebar_pos_right, sidebar_w, mix_t);
 
-            ImGui::SetNextWindowPos(ImVec2(window_width-sidebar_w,0), ImGuiCond_Appearing);
-            ImGui::SetNextWindowSize(ImVec2(sidebar_w,window_height), ImGuiCond_Appearing);
-            if(window_resized){
-                ImGui::SetNextWindowPos(ImVec2(window_width-sidebar_w,0));
+            if(window_resized || sidebar_pos_right != sidebar_w){
+                ImGui::SetNextWindowPos(ImVec2(window_width-sidebar_pos_right,0));
                 ImGui::SetNextWindowSize(ImVec2(sidebar_w,window_height));
+            } else {
+                ImGui::SetNextWindowPos(ImVec2(window_width-sidebar_pos_right,0), ImGuiCond_Appearing);
+                ImGui::SetNextWindowSize(ImVec2(sidebar_w,window_height), ImGuiCond_Appearing);
             }
             ImGui::SetNextWindowSizeConstraints(ImVec2(sidebar_w, window_height), ImVec2(window_width / 2.0, window_height));
 
-            ImGui::Begin("Entity Properties", NULL, ImGuiWindowFlags_NoMove);
-            ImGui::Text("Entity Index: %d Version: %d", sel_e.i, sel_e.v);
+            ImGui::Begin("###entity", NULL, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar);
+            ImGui::TextWrapped("Entity Index: %d Version: %d", sel_e.i, sel_e.v);
 
             auto s_e = entity_manager.getEntity(sel_e);
             if(s_e != nullptr){
                 auto m_e = reinterpret_cast<MeshEntity*>(s_e);
 
+                const float img_w = ImGui::GetWindowWidth()/2.0f - 2.0*pad;
                 static const std::vector<std::string> image_file_extensions = { ".jpg", ".png", ".bmp", ".tiff", ".tga" };
-                constexpr int img_w = 100;
+
                 if(s_e->type == EntityType::MESH_ENTITY && m_e->mesh != nullptr){
                     auto &mesh = m_e->mesh;
 
@@ -718,13 +946,14 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, AssetManager &
 
                     editor::transform_active = editTransform(camera, m_e->position, m_e->rotation, m_e->scale);
 
+                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + ImGui::GetTextLineHeight());
                     if (ImGui::CollapsingHeader("Materials")){
                         for(int i = 0; i < mesh->num_materials; i++) {
                             auto &mat = mesh->materials[i];
                             char buf[128];
                             sprintf(buf, "Material %d", i);
                             if (ImGui::CollapsingHeader(buf)){
-                                static const auto create_button = [&mat, &i, &asset_manager] 
+                                static const auto create_button = [&img_w, &mat, &i, &asset_manager] 
                                     (Texture **tex, std::string &&type, bool same_line=false) {
                                     auto cursor = ImGui::GetCursorPos();
                                     ImGui::SetNextItemWidth(img_w);
@@ -769,13 +998,13 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, AssetManager &
                     glm::quat _r = glm::quat();
                     editor::transform_active = editTransform(camera, w_e->position, _r, w_e->scale, TransformType::POS_SCL);
                     ImGui::TextWrapped("Shallow Color:");
-                    ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 10);
+                    ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - pad);
                     ImGui::ColorEdit4("##shallow_color", (float*)(&w_e->shallow_color));
                     ImGui::TextWrapped("Deep Color:");
-                    ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 10);
+                    ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - pad);
                     ImGui::ColorEdit4("##deep_color", (float*)(&w_e->deep_color));
                     ImGui::TextWrapped("Foam Color:");
-                    ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 10);
+                    ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - pad);
                     ImGui::ColorEdit4("##foam_color", (float*)(&w_e->foam_color));
 
                     if (ImGui::CollapsingHeader("Noise Textures")) {
@@ -805,12 +1034,14 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, AssetManager &
                     }
                 }
             }
-            auto button_size = ImVec2(ImGui::GetWindowWidth()/2 - pad, 2*pad);
+
+            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + ImGui::GetTextLineHeight());
+            auto button_size = ImVec2(ImGui::GetWindowWidth()/2.0f - pad, 2.0f*pad);
             if(ImGui::Button("Duplicate", button_size)){
                 if(s_e != nullptr){
                     auto e = entity_manager.duplicateEntity(sel_e);
-                    if(e->type & MESH_ENTITY){
-                        ((MeshEntity*)e)->position += glm::vec3(0.1);
+                    if(e->type == MESH_ENTITY){
+                        ((MeshEntity*)e)->position.x += translation_snap.x;
                         if(camera.state == Camera::TYPE::TRACKBALL){
                             sel_e = e->id;
                             camera.target = ((MeshEntity*)e)->position;
@@ -827,137 +1058,148 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, AssetManager &
                 sel_e = Id(-1, -1);
             }
             ImGui::End();
+        } else if(sidebar_pos_right != 0) {
+            sidebar_pos_right = 0;
         }
     }
+    // Information shared with file browser
+    static Mesh* s_mesh = nullptr;
+
+    //{
+    //    constexpr int true_win_width = 250;
+    //    int win_width = true_win_width - pad;
+    //    auto button_size = ImVec2(win_width, 2*pad);
+    //    auto half_button_size = ImVec2(win_width / 2.f, 2*pad);
+
+    //    ImGui::SetNextWindowPos(ImVec2(0,0));
+    //    ImGui::SetNextWindowSize(ImVec2(true_win_width, window_height));
+    //    ImGui::SetNextWindowSizeConstraints(ImVec2(true_win_width, window_height), ImVec2(window_width/2.f, window_height));
+
+    //    ImGui::Begin("Global Properties", NULL, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse);
+    //    //if (ImGui::CollapsingHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen)) {
+    //    //    float distance = glm::length(camera.position - camera.target);
+    //    //    if (ImGui::SliderFloat("Distance", &distance, 1.f, 100.f)) {
+    //    //        camera.position = camera.target + glm::normalize(camera.position - camera.target)*distance;
+    //    //        updateCameraView(camera);
+    //    //    }
+    //    //}
+
+    //    if (ImGui::CollapsingHeader("Levels")){
+    //        static char level_name[256] = "";
+    //        if (ImGui::Button("Save Level", half_button_size)){
+    //            im_file_dialog_type = "saveLevel";
+    //            im_file_dialog.SetPwd(exepath+"/data/levels");
+    //            im_file_dialog.SetCurrentTypeFilterIndex(4);
+    //            im_file_dialog.SetTypeFilters({".level"});
+    //            im_file_dialog.Open();
+    //        }
+    //        ImGui::SameLine();
+    //        if (ImGui::Button("Load Level", half_button_size)){
+    //            im_file_dialog_type = "loadLevel";
+    //            im_file_dialog.SetPwd(exepath+"/data/levels");
+    //            im_file_dialog.SetCurrentTypeFilterIndex(4);
+    //            im_file_dialog.SetTypeFilters({ ".level" });
+    //            im_file_dialog.Open();
+    //        }
+    //        if (ImGui::Button("Clear Level", button_size)) {
+    //            entity_manager.clear();
+    //            asset_manager.clear();
+    //        }
+    //    }
+    //    if (ImGui::CollapsingHeader("Meshes", ImGuiTreeNodeFlags_DefaultOpen)){
+    //        auto &mmap = asset_manager.handle_mesh_map;
+    //        if (mmap.size() > 0){
+    //            if(s_mesh == nullptr) s_mesh = &mmap.begin()->second;
+
+    //            ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - pad);
+    //            if (ImGui::BeginCombo("##asset-combo", s_mesh->handle.c_str())){
+    //                for(auto &a : mmap){
+    //                    bool is_selected = (s_mesh == &a.second); 
+    //                    if (ImGui::Selectable(a.first.c_str(), is_selected))
+    //                        s_mesh = &a.second;
+    //                    if (is_selected)
+    //                        ImGui::SetItemDefaultFocus(); 
+    //                }
+    //                ImGui::EndCombo();
+    //            }
+
+    //            if(s_mesh != nullptr) {
+    //                if(ImGui::Button("Add Instance", button_size)){
+    //                    auto e = new MeshEntity();
+    //                    e->mesh = s_mesh;
+    //                    entity_manager.setEntity(entity_manager.getFreeId().i, e);
+    //                }
+    //                if(ImGui::Button("Export Mesh", button_size)){
+    //                    im_file_dialog_type = "exportMesh";
+    //                    im_file_dialog.SetPwd(exepath+"/data/models");
+    //                    im_file_dialog.SetCurrentTypeFilterIndex(1);
+    //                    im_file_dialog.SetTypeFilters({ ".mesh" });
+    //                    im_file_dialog.Open();
+    //                }
+    //            }
+    //        }
+    //        if(ImGui::Button("Load Mesh", button_size)){
+    //            im_file_dialog_type = "loadMesh";
+    //            im_file_dialog.SetPwd(exepath+"/data/models");
+    //            im_file_dialog.SetCurrentTypeFilterIndex(1);
+    //            im_file_dialog.SetTypeFilters({ ".mesh" });
+    //            im_file_dialog.Open();
+    //        }
+    //        if(ImGui::Button("Load Model (Assimp)", button_size)){
+    //            im_file_dialog_type = "loadModelAssimp";
+    //            im_file_dialog.SetPwd(exepath+"/data/models");
+    //            im_file_dialog.SetCurrentTypeFilterIndex(3);
+    //            im_file_dialog.SetTypeFilters({ ".obj", ".fbx" });
+    //            im_file_dialog.Open();
+    //        }
+    //    }
+    //    if (ImGui::CollapsingHeader("Graphics", ImGuiTreeNodeFlags_DefaultOpen)){
+    //        if (ImGui::Checkbox("Bloom", &shader::unified_bloom)){
+    //            initHdrFbo();
+    //            initBloomFbo();
+    //        }
+
+    //        ImGui::Text("Sun Color:");
+    //        ImGui::SetNextItemWidth(win_width);
+    //        ImGui::ColorEdit3("", (float*)&sun_color); // Edit 3 floats representing a color
+    //        ImGui::Text("Sun Direction:");
+    //        ImGui::SetNextItemWidth(win_width);
+    //        if(ImGui::InputFloat3("", (float*)&sun_direction)){
+    //            sun_direction = glm::normalize(sun_direction);
+    //            // Casts shadows from sun direction
+    //            updateShadowVP(camera);
+    //        }
+    //    }
+    //    ImGui::End();
+    //}
+    
     {
-        constexpr int true_win_width = 250;
-        int win_width = true_win_width - pad;
-        auto button_size = ImVec2(win_width, 2*pad);
-        auto half_button_size = ImVec2(win_width / 2.f, 2*pad);
-
         ImGui::SetNextWindowPos(ImVec2(0,0));
-        ImGui::SetNextWindowSize(ImVec2(true_win_width, window_height));
-        ImGui::SetNextWindowSizeConstraints(ImVec2(true_win_width, window_height), ImVec2(window_width/2.f, window_height));
-
-        ImGui::Begin("Global Properties", NULL, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse);
-        //if (ImGui::CollapsingHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen)) {
-        //    float distance = glm::length(camera.position - camera.target);
-        //    if (ImGui::SliderFloat("Distance", &distance, 1.f, 100.f)) {
-        //        camera.position = camera.target + glm::normalize(camera.position - camera.target)*distance;
-        //        updateCameraView(camera);
-        //    }
-        //}
-
-        if (ImGui::CollapsingHeader("Levels")){
-            static char level_name[256] = "";
-            if (ImGui::Button("Save Level", half_button_size)){
-                im_file_dialog_type = "saveLevel";
-                im_file_dialog.SetPwd(exepath+"/data/levels");
-                im_file_dialog.SetCurrentTypeFilterIndex(4);
-                im_file_dialog.SetTypeFilters({".level"});
-                im_file_dialog.Open();
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Load Level", half_button_size)){
-                im_file_dialog_type = "loadLevel";
-                im_file_dialog.SetPwd(exepath+"/data/levels");
-                im_file_dialog.SetCurrentTypeFilterIndex(4);
-                im_file_dialog.SetTypeFilters({ ".level" });
-                im_file_dialog.Open();
-            }
-            if (ImGui::Button("Clear Level", button_size)) {
-                entity_manager.clear();
-                asset_manager.clear();
-            }
-        }
-        static Mesh* s_mesh = nullptr;
-        if (ImGui::CollapsingHeader("Meshes", ImGuiTreeNodeFlags_DefaultOpen)){
-            auto &mmap = asset_manager.handle_mesh_map;
-            if (mmap.size() > 0){
-                if(s_mesh == nullptr) s_mesh = &mmap.begin()->second;
-
-                ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - pad);
-                if (ImGui::BeginCombo("##asset-combo", s_mesh->handle.c_str())){
-                    for(auto &a : mmap){
-                        bool is_selected = (s_mesh == &a.second); 
-                        if (ImGui::Selectable(a.first.c_str(), is_selected))
-                            s_mesh = &a.second;
-                        if (is_selected)
-                            ImGui::SetItemDefaultFocus(); 
-                    }
-                    ImGui::EndCombo();
-                }
-
-                if(s_mesh != nullptr) {
-                    if(ImGui::Button("Add Instance", button_size)){
-                        auto e = new MeshEntity();
-                        e->mesh = s_mesh;
-                        entity_manager.setEntity(entity_manager.getFreeId().i, e);
-                    }
-                    if(ImGui::Button("Export Mesh", button_size)){
-                        im_file_dialog_type = "exportMesh";
-                        im_file_dialog.SetPwd(exepath+"/data/models");
-                        im_file_dialog.SetCurrentTypeFilterIndex(1);
-                        im_file_dialog.SetTypeFilters({ ".mesh" });
-                        im_file_dialog.Open();
-                    }
-                }
-            }
-            if(ImGui::Button("Load Mesh", button_size)){
-                im_file_dialog_type = "loadMesh";
-                im_file_dialog.SetPwd(exepath+"/data/models");
-                im_file_dialog.SetCurrentTypeFilterIndex(1);
-                im_file_dialog.SetTypeFilters({ ".mesh" });
-                im_file_dialog.Open();
-            }
-            if(ImGui::Button("Load Model (Assimp)", button_size)){
-                im_file_dialog_type = "loadModelAssimp";
-                im_file_dialog.SetPwd(exepath+"/data/models");
-                im_file_dialog.SetCurrentTypeFilterIndex(3);
-                im_file_dialog.SetTypeFilters({ ".obj", ".fbx" });
-                im_file_dialog.Open();
-            }
-        }
-        if (ImGui::CollapsingHeader("Graphics", ImGuiTreeNodeFlags_DefaultOpen)){
-            if (ImGui::Checkbox("Bloom", &shader::unified_bloom)){
-                initHdrFbo();
-                initBloomFbo();
-            }
-
-            ImGui::Text("Sun Color:");
-            ImGui::SetNextItemWidth(win_width);
-            ImGui::ColorEdit3("", (float*)&sun_color); // Edit 3 floats representing a color
-            ImGui::Text("Sun Direction:");
-            ImGui::SetNextItemWidth(win_width);
-            if(ImGui::InputFloat3("", (float*)&sun_direction)){
-                sun_direction = glm::normalize(sun_direction);
-                // Casts shadows from sun direction
-                updateShadowVP(camera);
-            }
-        }
-        ImGui::SetCursorPosY(window_height - ImGui::GetTextLineHeightWithSpacing()*4);
-        ImGui::Text("%s\n", GL_version.c_str());
-        ImGui::Text("%s\n", GL_renderer.c_str());
-        ImGui::TextWrapped("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
-        ImGui::End();
+        ImGui::Begin("Perf Counter", NULL, ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoDecoration);
+        ImGui::TextWrapped("%s\n%.3f ms/frame (%.1f FPS)", 
+                GL_renderer.c_str(),1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
         
-        //{
-        //    ImGui::Begin("GBuffers");
-        //    ImGui::Image((void *)(intptr_t)graphics::shadow_buffer, ImVec2((int)1024/8, (int)1024/8), ImVec2(0, 1), ImVec2(1, 0));
-        //    ImGui::End();
-        //}
+        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255,0,0,255));
+        ImGui::TextWrapped("%s\n", level_path.c_str());
+        ImGui::PopStyleColor();
 
+        ImGui::End();
+    }
+
+    ImTerminal(entity_manager, asset_manager, do_terminal);
+
+    // Handle imfile dialog browser
+    {
         im_file_dialog.Display();
         if(im_file_dialog.HasSelected())
         {
             auto p = im_file_dialog.GetSelected().string().erase(0, exepath.length() + 1);
             std::replace(p.begin(), p.end(), '\\', '/');
-            printf("Selected filename: %s\n", p.c_str());
+            std::cout << "Selected filename at path " << p << ".\n";
             if(im_file_dialog_type == "loadLevel"){
-                entity_manager.clear();
                 // @note accumulates assets
-                loadLevel(entity_manager, asset_manager, p) ;
-                sel_e = Id(-1, -1);
+                if(loadLevel(entity_manager, asset_manager, p))
+                    sel_e = NULLID;
             } else if(im_file_dialog_type == "saveLevel"){
                 //saveLevel(entity_manager, p);
             } else if(im_file_dialog_type == "exportMesh"){
@@ -1000,7 +1242,7 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, AssetManager &
                     }
                 }
             } else {
-                fprintf(stderr, "Unhandled imgui file dialog type %s.\n", p.c_str());
+                std::cerr << "Unhandled imgui file dialog type at path " + p + ".\n";
             }
 
             im_file_dialog.ClearSelected();

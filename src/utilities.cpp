@@ -1,6 +1,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <limits>
+#include <thread>
 #include <vector>
 #include <cstdint>
 #include <set>
@@ -36,6 +37,8 @@ template<typename T, glm::precision P>
 std::ostream &operator<<(std::ostream &os, const glm::tvec4<T, P> &v) {
     return os << v.x << ", " << v.y << ", " << v.z << ", " << v.w;
 }
+
+
 
 // Based on:
 // https://www.codeproject.com/Tips/1263121/Copy-a-GL-Texture-to-Another-GL-Texture-or-to-a-GL
@@ -193,6 +196,8 @@ bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const
         return false;
     }
 
+    entity_manager.clear();
+
     std::string mesh_path;
     uint64_t mesh_index = 0;
     std::unordered_map<uint64_t, Mesh*> index_to_mesh;
@@ -208,8 +213,8 @@ bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const
             if(mesh == nullptr){
                 std::cout << "Loading new mesh at path " << mesh_path << ".\n";
 
-                mesh = asset_manager.createMesh(mesh_path);
-                // @todo make this cleaner, either by guaranteeing all models be meshes or having a flag
+                // In future this should probably be true for all meshes
+                bool is_mesh_file = endsWith(mesh_path, ".mesh");
                 asset_manager.loadMesh(mesh, mesh_path, endsWith(mesh_path, ".mesh"));
 
                 index_to_mesh[mesh_index] = mesh;
@@ -508,5 +513,67 @@ std::string getexepath() {
     auto p = std::filesystem::path(std::string(result, (count > 0) ? count : 0));
     return p.parent_path().string();
 }
+
+// ThreadPool
+#include <thread>
+#include <functional>
+
+void ThreadPool::start() {
+    const uint32_t num_threads = std::max((int)std::thread::hardware_concurrency() - 2, 4);
+    threads.resize(num_threads);
+    for (uint32_t i = 0; i < num_threads; i++) {
+        // @note This lambda may be unnecessary
+        threads.at(i) = std::thread(&ThreadPool::threadLoop, this);
+    }
+}
+
+void ThreadPool::threadLoop() {
+    while (true) {
+        std::function<void()> job;
+        {
+            std::unique_lock<std::mutex> lock(queue_mutex);
+            mutex_condition.wait(lock, [this] {
+                return !jobs.empty() || should_terminate;
+            });
+            if (should_terminate) {
+                return;
+            }
+            job = jobs.front();
+            jobs.pop();
+        }
+        job();
+    }
+}
+
+void ThreadPool::queueJob(const std::function<void()>& job) {
+    std::cout << "Queueing job\n";
+    {
+        std::unique_lock<std::mutex> lock(queue_mutex);
+        jobs.push(job);
+    }
+    mutex_condition.notify_one();
+}
+
+bool ThreadPool::busy() {
+    bool poolbusy;
+    {
+        std::unique_lock<std::mutex> lock(queue_mutex);
+        poolbusy = !jobs.empty();
+    }
+    return poolbusy;
+}
+
+void ThreadPool::stop() {
+    {
+        std::unique_lock<std::mutex> lock(queue_mutex);
+        should_terminate = true;
+    }
+    mutex_condition.notify_all();
+    for (std::thread& active_thread : threads) {
+        active_thread.join();
+    }
+    threads.clear();
+}
+
 #endif
 

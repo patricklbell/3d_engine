@@ -26,6 +26,7 @@
 #include "shader.hpp"
 #include "graphics.hpp"
 #include "utilities.hpp"
+#include "globals.hpp"
 
 Material *default_material;
 void initDefaultMaterial(AssetManager &asset_manager){
@@ -417,6 +418,7 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
         std::cerr << "Invalid mesh file version, was " << version << " expected " << MESH_FILE_VERSION << ".\n";
         return false;
     }
+    std::cout << "No error in mesh file version \n";
 
     fread(&mesh->num_indices, sizeof(mesh->num_indices), 1, f);
     std::cout << "Number of indices " << mesh->num_indices << ".\n";
@@ -444,6 +446,7 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
     // @note this doesn't support embedded materials for binary formats that assimp loads
     fread(&mesh->num_materials, sizeof(mesh->num_materials), 1, f);
     mesh->materials = reinterpret_cast<decltype(mesh->materials)>(malloc(sizeof(*mesh->materials)*mesh->num_materials));
+
     for(int i = 0; i < mesh->num_materials; ++i){
         auto &mat = mesh->materials[i];
 
@@ -457,7 +460,19 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
             mat.t_albedo = default_material->t_albedo;
         } else {
             mat.t_albedo = createTexture(albedo_path);
-            if (!loadTexture(mat.t_albedo, albedo_path, GL_SRGB)) mat.t_albedo = default_material->t_albedo;
+#if DO_MULTITHREAD 
+            std::cout << "Do multithread albedo\n";
+            auto tex_job = [&](){
+                if (!loadTexture(mat.t_albedo, mat.t_albedo->handle, GL_SRGB)) 
+                    mat.t_albedo = default_material->t_albedo;
+            };
+            std::cout << "Do multithread albedo\n";
+            global_thread_pool->queueJob(tex_job);
+            std::cout << "Queued albedo\n";
+#else
+            if (!loadTexture(mat.t_albedo, albedo_path, GL_SRGB)) 
+                mat.t_albedo = default_material->t_albedo;
+#endif
         }
 
         int normal_len;
@@ -470,7 +485,16 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
             mat.t_normal = default_material->t_normal;
         } else {
             mat.t_normal = createTexture(normal_path);
-            if (!loadTexture(mat.t_normal, normal_path, GL_RGB)) mat.t_normal = default_material->t_normal;
+#if DO_MULTITHREAD 
+            auto tex_job = [&](){
+                if (!loadTexture(mat.t_normal, mat.t_normal->handle, GL_SRGB)) 
+                    mat.t_normal = default_material->t_normal;
+            };
+            global_thread_pool->queueJob(tex_job);
+#else
+            if (!loadTexture(mat.t_normal, normal_path, GL_SRGB)) 
+                mat.t_normal = default_material->t_normal;
+#endif
         }
 
         int ambient_len;
@@ -483,7 +507,16 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
             mat.t_ambient = default_material->t_ambient;
         } else {
             mat.t_ambient = createTexture(ambient_path);
-            if (!loadTexture(mat.t_ambient, ambient_path, GL_R16F)) mat.t_ambient = default_material->t_ambient;
+#if DO_MULTITHREAD 
+            auto tex_job = [&](){
+                if (!loadTexture(mat.t_ambient, mat.t_ambient->handle, GL_SRGB)) 
+                    mat.t_ambient = default_material->t_ambient;
+            };
+            global_thread_pool->queueJob(tex_job);
+#else
+            if (!loadTexture(mat.t_ambient, ambient_path, GL_SRGB)) 
+                mat.t_ambient = default_material->t_ambient;
+#endif
         }
 
         int metallic_len;
@@ -496,7 +529,16 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
             mat.t_metallic = default_material->t_metallic;
         } else {
             mat.t_metallic = createTexture(metallic_path);
-            if (!loadTexture(mat.t_metallic, metallic_path, GL_R16F)) mat.t_metallic = default_material->t_metallic;
+#if DO_MULTITHREAD 
+            auto tex_job = [&](){
+                if (!loadTexture(mat.t_metallic, mat.t_metallic->handle, GL_SRGB)) 
+                    mat.t_metallic = default_material->t_metallic;
+            };
+            global_thread_pool->queueJob(tex_job);
+#else
+            if (!loadTexture(mat.t_metallic, metallic_path, GL_SRGB)) 
+                mat.t_metallic = default_material->t_metallic;
+#endif
         }
 
         int roughness_len;
@@ -509,12 +551,27 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
             mat.t_roughness = default_material->t_roughness;
         } else {
             mat.t_roughness = createTexture(roughness_path);
-            if (!loadTexture(mat.t_roughness, roughness_path, GL_R16F)) mat.t_roughness = default_material->t_roughness;
+#if DO_MULTITHREAD 
+            auto tex_job = [&](){
+                if (!loadTexture(mat.t_roughness, mat.t_roughness->handle, GL_SRGB)) 
+                    mat.t_roughness = default_material->t_roughness;
+            };
+            global_thread_pool->queueJob(tex_job);
+#else
+            if (!loadTexture(mat.t_roughness, roughness_path, GL_SRGB)) 
+                mat.t_roughness = default_material->t_roughness;
+#endif
         }
         
         std::cout << "Material " << i << "\nAlbedo: " << albedo_path << ", Normal: " << normal_path 
             << ", Ambient: " << ambient_path << ", Metallic: " << metallic_path << ", Roughness: " << roughness_path << "\n";
     }
+
+    // Block main thread until texture loading is finished
+    while(global_thread_pool->busy()){
+        std::cout << "Waiting for threads to finish\n";
+    }
+
     // @hardcoded
 	mesh->draw_mode = GL_TRIANGLES;
 	mesh->draw_type = GL_UNSIGNED_SHORT;
