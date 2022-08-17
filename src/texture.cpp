@@ -22,31 +22,37 @@ GLuint create1x1Texture(const unsigned char color[3], const GLint internal_forma
 	return texture_id;
 }
 
-GLuint loadImage(const std::string &imagepath, const GLint internal_format) {
-	std::cout << "Loading texture at path " << imagepath << "\n";
+bool loadImageData(ImageData *img, const std::string& imagepath, const GLint internal_format) {
+	std::cout << "Loading texture (no GL) at path " << imagepath << "\n";
 
-	int x, y, n;
-	unsigned char* data;
-	if      (internal_format == GL_RGB)  data = stbi_load(imagepath.c_str(), &x, &y, &n, STBI_rgb);
-	else if (internal_format == GL_R16F) data = stbi_load(imagepath.c_str(), &x, &y, &n, STBI_grey);
-	else								 data = stbi_load(imagepath.c_str(), &x, &y, &n, STBI_rgb_alpha);
+	if (internal_format == GL_RGB)		 img->data = stbi_load(imagepath.c_str(), &img->x, &img->y, &img->n, STBI_rgb);
+	else if (internal_format == GL_R16F) img->data = stbi_load(imagepath.c_str(), &img->x, &img->y, &img->n, STBI_grey);
+	else								 img->data = stbi_load(imagepath.c_str(), &img->x, &img->y, &img->n, STBI_rgb_alpha);
 
-	if(data == NULL){
-		std::cerr << "Failed to load texture.\n";
+	if (img->data == NULL) {
+		std::cerr << "Failed to load image at path " << imagepath << "\n";
+		return false;
+	}
+
+	return true;
+}
+
+GLuint createGLTextureFromData(ImageData *img, const GLint internal_format) {
+	// @note mostly redundant
+	if (img->data == NULL) 
 		return GL_FALSE;
-	} 
 
 	GLuint texture_id;
 	glGenTextures(1, &texture_id);
-	
+
 	glBindTexture(GL_TEXTURE_2D, texture_id);
 	// @note not needed if image is in correct format
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-	if (internal_format == GL_RGB)		 glTexImage2D(GL_TEXTURE_2D, 0, internal_format, x, y, 0, GL_RGB , GL_UNSIGNED_BYTE, data);
-	else if (internal_format == GL_R16F) glTexImage2D(GL_TEXTURE_2D, 0, internal_format, x, y, 0, GL_RED , GL_UNSIGNED_BYTE, data);
-	else								 glTexImage2D(GL_TEXTURE_2D, 0, internal_format, x, y, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
-	
-	stbi_image_free(data);
+	if (internal_format == GL_RGB)		 glTexImage2D(GL_TEXTURE_2D, 0, internal_format, img->x, img->y, 0, GL_RGB,  GL_UNSIGNED_BYTE, img->data);
+	else if (internal_format == GL_R16F) glTexImage2D(GL_TEXTURE_2D, 0, internal_format, img->x, img->y, 0, GL_RED,  GL_UNSIGNED_BYTE, img->data);
+	else								 glTexImage2D(GL_TEXTURE_2D, 0, internal_format, img->x, img->y, 0, GL_RGBA, GL_UNSIGNED_BYTE, img->data);
+
+	stbi_image_free(img->data);
 
 	// Poor filtering, or ...
 	//glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
@@ -62,6 +68,13 @@ GLuint loadImage(const std::string &imagepath, const GLint internal_format) {
 	glBindTexture(GL_TEXTURE_2D, 0);
 
 	return texture_id;
+}
+
+GLuint loadImage(const std::string &imagepath, const GLint internal_format) {
+	auto img = ImageData();
+	loadImageData(&img, imagepath, internal_format);
+
+	return createGLTextureFromData(&img, internal_format);
 }
 
 GLuint loadCubemap(const std::array<std::string, FACE_NUM_FACES> &paths, const GLint internal_format) {

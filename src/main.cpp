@@ -123,9 +123,11 @@ int main() {
     GL_renderer = std::string((char*)glGetString(GL_RENDERER));
     std::cout << "OpenGL Info:\nVersion: \t" << GL_version << "\nVendor: \t" << GL_vendor << "\nRenderer: \t" << GL_renderer << "\n";
 
+#if DO_MULTITHREAD
     ThreadPool thread_pool;
     thread_pool.start();
     global_thread_pool = &thread_pool;
+#endif
 
     initDefaultMaterial(global_assets);
     initGraphicsPrimitives(global_assets);
@@ -178,8 +180,8 @@ int main() {
     AssetManager asset_manager;
     EntityManager entity_manager;
 
-    level_path = "data/levels/water_test.level";
-    loadLevel(entity_manager, asset_manager, level_path);
+    //level_path = "data/levels/water_test.level";
+    //loadLevel(entity_manager, asset_manager, level_path);
 
     //auto t_e = new TerrainEntity();
     //t_e->texture = createTextureAsset(assets, "data/textures/iceland_heightmap.png");
@@ -261,7 +263,9 @@ int main() {
     } // Check if the ESC key was pressed or the window was closed
     while( glfwGetKey(window, GLFW_KEY_ESCAPE ) != GLFW_PRESS && glfwWindowShouldClose(window) == 0 );
 
+#if DO_MULTITHREAD
     thread_pool.stop();
+#endif
 
     deleteShaderPrograms();    
 

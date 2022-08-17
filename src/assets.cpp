@@ -37,6 +37,12 @@ void initDefaultMaterial(AssetManager &asset_manager){
     default_material->t_metallic  = asset_manager.getColorTexture(glm::vec3(0), GL_R16F);
     default_material->t_roughness = asset_manager.getColorTexture(glm::vec3(1), GL_R16F);
     default_material->t_ambient   = asset_manager.getColorTexture(glm::vec3(1), GL_R16F);
+
+    default_material->t_albedo->handle    = "DEFAULT:albedo";
+    default_material->t_normal->handle    = "DEFAULT:normal";
+    default_material->t_metallic->handle  = "DEFAULT:metallic";
+    default_material->t_roughness->handle = "DEFAULT:roughness";
+    default_material->t_ambient->handle   = "DEFAULT:ambient";
 }
 
 //bool loadAssimp(
@@ -306,7 +312,7 @@ enum class MeshAttributes : char {
     ALL      = VERTICES | NORMALS | TANGENTS | UVS,
 };
 
-constexpr unsigned int MESH_FILE_VERSION = 1;
+constexpr uint8_t MESH_FILE_VERSION = 2U;
 // For now dont worry about size of types on different platforms
 bool AssetManager::writeMeshFile(const Mesh *mesh, const std::string &path){
     std::cout << "--------------------Save Mesh " << path << "--------------------\n";
@@ -314,46 +320,52 @@ bool AssetManager::writeMeshFile(const Mesh *mesh, const std::string &path){
     FILE *f;
     f=fopen(path.c_str(), "wb");
 
-    fwrite(&MESH_FILE_VERSION, sizeof(unsigned int), 1, f);
+    if (!f) {
+        std::cerr << "Error in writing mesh file to path " << path << ".\n";
+        return false;
+    }
 
-    fwrite(&mesh->num_indices, sizeof(int), 1, f);
-    fwrite(mesh->indices, sizeof(unsigned short), mesh->num_indices, f);
+    fwrite(&MESH_FILE_VERSION, sizeof(MESH_FILE_VERSION), 1, f);
+
+    fwrite(&mesh->num_indices, sizeof(mesh->num_indices), 1, f);
+    fwrite(mesh->indices, sizeof(*mesh->indices), mesh->num_indices, f);
 
     // @todo For now just assume every mesh has every attribute
     char attributes = (char)MeshAttributes::VERTICES | (char)MeshAttributes::NORMALS | (char)MeshAttributes::TANGENTS | (char)MeshAttributes::UVS;
-    fwrite(&attributes, sizeof(char), 1, f);
+    fwrite(&attributes, sizeof(attributes), 1, f);
 
     fwrite(&mesh->num_vertices, sizeof(int), 1, f);
 
-    fwrite(mesh->vertices, sizeof(glm::fvec3), mesh->num_vertices, f);
-    fwrite(mesh->normals,  sizeof(glm::fvec3), mesh->num_vertices, f);
-    fwrite(mesh->tangents, sizeof(glm::fvec3), mesh->num_vertices, f);
+    fwrite(mesh->vertices, sizeof(*mesh->vertices), mesh->num_vertices, f);
+    fwrite(mesh->normals,  sizeof(*mesh->normals ), mesh->num_vertices, f);
+    fwrite(mesh->tangents, sizeof(*mesh->tangents), mesh->num_vertices, f);
 
-    fwrite(mesh->uvs,      sizeof(glm::fvec2), mesh->num_vertices, f);
+    fwrite(mesh->uvs,      sizeof(*mesh->uvs     ), mesh->num_vertices, f);
 
     // Write materials as list of image paths
     fwrite(&mesh->num_materials, sizeof(int), 1, f);
+
+    const auto write_texture = [&f](Texture* tex) {
+        char is_color = tex->is_color;
+        fwrite(&is_color, sizeof(is_color), 1, f);
+        if (tex->is_color) {
+            fwrite(&tex->color, sizeof(tex->color), 1, f);
+        }
+        else {
+            uint8_t len = tex->handle.size();
+            fwrite(&len, sizeof(len), 1, f);
+            fwrite(tex->handle.c_str(), tex->handle.size(), 1, f);
+            fwrite(tex->handle.c_str(), tex->handle.size(), 1, f);
+        }
+    };
     for(int i = 0; i < mesh->num_materials; i++){
         auto &mat = mesh->materials[i];
-        int albedo_len = mat.t_albedo->handle.size();
-        fwrite(&albedo_len, sizeof(int), 1, f);
-        fwrite(mat.t_albedo->handle.c_str(), mat.t_albedo->handle.size(), 1, f);
 
-        int normal_len = mat.t_normal->handle.size();
-        fwrite(&normal_len, sizeof(int), 1, f);
-        fwrite(mat.t_normal->handle.c_str(), mat.t_normal->handle.size(), 1, f);
-
-        int ambient_len = mat.t_ambient->handle.size();
-        fwrite(&ambient_len, sizeof(int), 1, f);
-        fwrite(mat.t_ambient->handle.c_str(), mat.t_ambient->handle.size(), 1, f);
-
-        int metallic_len = mat.t_metallic->handle.size();
-        fwrite(&metallic_len, sizeof(int), 1, f);
-        fwrite(mat.t_metallic->handle.c_str(), mat.t_metallic->handle.size(), 1, f);
-
-        int roughness_len = mat.t_roughness->handle.size();
-        fwrite(&roughness_len, sizeof(int), 1, f);
-        fwrite(mat.t_roughness->handle.c_str(), mat.t_roughness->handle.size(), 1, f);
+        write_texture(mat.t_albedo);
+        write_texture(mat.t_normal);
+        write_texture(mat.t_ambient);
+        write_texture(mat.t_metallic);
+        write_texture(mat.t_roughness);
     }
 
     // Write material indice ranges
@@ -412,13 +424,12 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
         return false;
     }
 
-    unsigned int version;
-    fread(&version, sizeof(unsigned int), 1, f);
+    std::remove_cv_t<decltype(MESH_FILE_VERSION)> version;
+    fread(&version, sizeof(version), 1, f);
     if(version!=MESH_FILE_VERSION){
         std::cerr << "Invalid mesh file version, was " << version << " expected " << MESH_FILE_VERSION << ".\n";
         return false;
     }
-    std::cout << "No error in mesh file version \n";
 
     fread(&mesh->num_indices, sizeof(mesh->num_indices), 1, f);
     std::cout << "Number of indices " << mesh->num_indices << ".\n";
@@ -447,130 +458,81 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
     fread(&mesh->num_materials, sizeof(mesh->num_materials), 1, f);
     mesh->materials = reinterpret_cast<decltype(mesh->materials)>(malloc(sizeof(*mesh->materials)*mesh->num_materials));
 
+#if DO_MULTITHREAD
+    using tpl_t = std::tuple<Texture**, ImageData*, Texture*>;
+    std::vector<tpl_t> texture_imagedata_default_list;
+#endif
+
+    const auto read_texture = [&f, 
+#if DO_MULTITHREAD
+        &texture_imagedata_default_list, 
+#endif
+        this](Texture* &tex, Texture *default_tex) {
+        char is_color;
+        fread(&is_color, sizeof(is_color), 1, f);
+        if (is_color) {
+            glm::vec3 color;
+            fread(&color, sizeof(color), 1, f);
+            // @note this writes the color fields again
+            tex = this->getColorTexture(color);
+        }
+        else {
+            uint8_t len;
+            fread(&len, sizeof(len), 1, f);
+            std::string path;
+            path.resize(len);
+            fread(&path[0], sizeof(char), len, f);
+
+            if (path == default_tex->handle) {
+                tex = default_tex;
+            }
+            else {
+                tex = createTexture(path);
+#if DO_MULTITHREAD 
+                auto& tpl = texture_imagedata_default_list.emplace_back(tpl_t{ &tex, new ImageData(), default_tex });
+#else
+                if (!this->loadTexture(tex, path, GL_SRGB))
+                    tex = default_tex;
+#endif
+            }
+        }
+    };
     for(int i = 0; i < mesh->num_materials; ++i){
         auto &mat = mesh->materials[i];
 
-        int albedo_len;
-        fread(&albedo_len, sizeof(int), 1, f);
-        std::string albedo_path;
-        albedo_path.resize(albedo_len);
-        fread(&albedo_path[0], sizeof(char), albedo_len, f);
+        read_texture(mat.t_albedo, default_material->t_albedo);
+        read_texture(mat.t_normal, default_material->t_normal);
+        read_texture(mat.t_ambient, default_material->t_ambient);
+        read_texture(mat.t_metallic, default_material->t_metallic);
+        read_texture(mat.t_roughness, default_material->t_roughness);
 
-        if (albedo_path == "DEFAULTMATERIAL:albedo") {
-            mat.t_albedo = default_material->t_albedo;
-        } else {
-            mat.t_albedo = createTexture(albedo_path);
+        std::cout << "Material " << i << "\nAlbedo: " << mat.t_albedo->handle << ", Normal: " << mat.t_normal->handle 
+            << ", Ambient: " << mat.t_ambient->handle << ", Metallic: " << mat.t_metallic->handle << ", Roughness: " << mat.t_roughness->handle << "\n";
+    }
+
 #if DO_MULTITHREAD 
-            std::cout << "Do multithread albedo\n";
-            auto tex_job = [&](){
-                if (!loadTexture(mat.t_albedo, mat.t_albedo->handle, GL_SRGB)) 
-                    mat.t_albedo = default_material->t_albedo;
-            };
-            std::cout << "Do multithread albedo\n";
-            global_thread_pool->queueJob(tex_job);
-            std::cout << "Queued albedo\n";
-#else
-            if (!loadTexture(mat.t_albedo, albedo_path, GL_SRGB)) 
-                mat.t_albedo = default_material->t_albedo;
-#endif
-        }
-
-        int normal_len;
-        fread(&normal_len, sizeof(int), 1, f);
-        std::string normal_path;
-        normal_path.resize(normal_len);
-        fread(&normal_path[0], sizeof(char), normal_len, f);
-
-        if (normal_path == "DEFAULTMATERIAL:normal") {
-            mat.t_normal = default_material->t_normal;
-        } else {
-            mat.t_normal = createTexture(normal_path);
-#if DO_MULTITHREAD 
-            auto tex_job = [&](){
-                if (!loadTexture(mat.t_normal, mat.t_normal->handle, GL_SRGB)) 
-                    mat.t_normal = default_material->t_normal;
-            };
-            global_thread_pool->queueJob(tex_job);
-#else
-            if (!loadTexture(mat.t_normal, normal_path, GL_SRGB)) 
-                mat.t_normal = default_material->t_normal;
-#endif
-        }
-
-        int ambient_len;
-        fread(&ambient_len, sizeof(int), 1, f);
-        std::string ambient_path;
-        ambient_path.resize(ambient_len);
-        fread(&ambient_path[0], sizeof(char), ambient_len, f);
-
-        if (ambient_path == "DEFAULTMATERIAL:ambient") {
-            mat.t_ambient = default_material->t_ambient;
-        } else {
-            mat.t_ambient = createTexture(ambient_path);
-#if DO_MULTITHREAD 
-            auto tex_job = [&](){
-                if (!loadTexture(mat.t_ambient, mat.t_ambient->handle, GL_SRGB)) 
-                    mat.t_ambient = default_material->t_ambient;
-            };
-            global_thread_pool->queueJob(tex_job);
-#else
-            if (!loadTexture(mat.t_ambient, ambient_path, GL_SRGB)) 
-                mat.t_ambient = default_material->t_ambient;
-#endif
-        }
-
-        int metallic_len;
-        fread(&metallic_len, sizeof(int), 1, f);
-        std::string metallic_path;
-        metallic_path.resize(metallic_len);
-        fread(&metallic_path[0], sizeof(char), metallic_len, f);
-
-        if (metallic_path == "DEFAULTMATERIAL:metallic") {
-            mat.t_metallic = default_material->t_metallic;
-        } else {
-            mat.t_metallic = createTexture(metallic_path);
-#if DO_MULTITHREAD 
-            auto tex_job = [&](){
-                if (!loadTexture(mat.t_metallic, mat.t_metallic->handle, GL_SRGB)) 
-                    mat.t_metallic = default_material->t_metallic;
-            };
-            global_thread_pool->queueJob(tex_job);
-#else
-            if (!loadTexture(mat.t_metallic, metallic_path, GL_SRGB)) 
-                mat.t_metallic = default_material->t_metallic;
-#endif
-        }
-
-        int roughness_len;
-        fread(&roughness_len, sizeof(int), 1, f);
-        std::string roughness_path;
-        roughness_path.resize(roughness_len);
-        fread(&roughness_path[0], sizeof(char), roughness_len, f);
-
-        if (roughness_path == "DEFAULTMATERIAL:roughness") {
-            mat.t_roughness = default_material->t_roughness;
-        } else {
-            mat.t_roughness = createTexture(roughness_path);
-#if DO_MULTITHREAD 
-            auto tex_job = [&](){
-                if (!loadTexture(mat.t_roughness, mat.t_roughness->handle, GL_SRGB)) 
-                    mat.t_roughness = default_material->t_roughness;
-            };
-            global_thread_pool->queueJob(tex_job);
-#else
-            if (!loadTexture(mat.t_roughness, roughness_path, GL_SRGB)) 
-                mat.t_roughness = default_material->t_roughness;
-#endif
-        }
-        
-        std::cout << "Material " << i << "\nAlbedo: " << albedo_path << ", Normal: " << normal_path 
-            << ", Ambient: " << ambient_path << ", Metallic: " << metallic_path << ", Roughness: " << roughness_path << "\n";
+    for (auto& tpl : texture_imagedata_default_list) {
+        ImageData* img_ptr = std::get<1>(tpl);
+        std::string path = (*std::get<0>(tpl))->handle;
+        global_thread_pool->queueJob(std::bind(loadImageData, img_ptr, path, GL_SRGB));
     }
 
     // Block main thread until texture loading is finished
-    while(global_thread_pool->busy()){
-        std::cout << "Waiting for threads to finish\n";
+    while(global_thread_pool->busy()){}
+
+    // Now transfer loaded data into actual textures
+    for (auto& tpl : texture_imagedata_default_list) {
+        auto& tex     = std::get<0>(tpl);
+        auto& img     = std::get<1>(tpl);
+        auto& def_tex = std::get<2>(tpl);
+
+        (*tex)->id = createGLTextureFromData(img, GL_SRGB);
+        if ((*tex)->id == GL_FALSE) {
+            (*tex) = def_tex;
+        }
+        free(img);
     }
+#endif
 
     // @hardcoded
 	mesh->draw_mode = GL_TRIANGLES;
@@ -605,14 +567,13 @@ static constexpr auto ai_import_flags = aiProcess_JoinIdenticalVertices |
     aiProcess_OptimizeGraph |
     aiProcess_Debone;
 bool AssetManager::loadMeshAssimp(Mesh *mesh, const std::string &path) {
-    std::cout << "--------------------Loading Mesh " << path.c_str() << "--------------------\n";
+    std::cout << "-------------------- Loading Model " << path.c_str() << " With Assimp --------------------\n";
 
 	Assimp::Importer importer;
 
 	const aiScene* scene = importer.ReadFile(path, ai_import_flags);
 	if( !scene) {
         std::cerr << "Error loading mesh: " << importer.GetErrorString() << "\n";
-		getchar();
 		return false;
 	}
 
@@ -637,27 +598,69 @@ bool AssetManager::loadMeshAssimp(Mesh *mesh, const std::string &path) {
 
         // Load material from assimp
 		auto ai_mat = scene->mMaterials[scene->mMeshes[i]->mMaterialIndex];
-		memcpy(&mesh->materials[i], default_material, sizeof(*default_material));
 		auto &mat = mesh->materials[i];
 
-        // @speed move default intialisation outside loop
-		loadTextureFromAssimp(mat.t_ambient, ai_mat, scene, aiTextureType_AMBIENT_OCCLUSION, GL_SRGB);
-        if(mat.t_ambient == nullptr) loadTextureFromAssimp(mat.t_ambient, ai_mat, scene, aiTextureType_AMBIENT, GL_SRGB);
+        if (!loadTextureFromAssimp(mat.t_ambient, ai_mat, scene, aiTextureType_AMBIENT_OCCLUSION, GL_SRGB)) {
+            if (!loadTextureFromAssimp(mat.t_ambient, ai_mat, scene, aiTextureType_AMBIENT, GL_SRGB)) {
+                mat.t_ambient = default_material->t_ambient;
+            }
+        }
 
-		loadTextureFromAssimp(mat.t_albedo, ai_mat, scene, aiTextureType_BASE_COLOR, GL_SRGB);
-        // If base color isnt present assume diffuse is really an albedo
-		if(mat.t_albedo == nullptr) loadTextureFromAssimp(mat.t_albedo, ai_mat, scene, aiTextureType_DIFFUSE, GL_SRGB);
+        if (!loadTextureFromAssimp(mat.t_albedo, ai_mat, scene, aiTextureType_BASE_COLOR, GL_SRGB)) {
+            // If base color isnt present assume diffuse is really an albedo
+            if (!loadTextureFromAssimp(mat.t_albedo, ai_mat, scene, aiTextureType_DIFFUSE, GL_SRGB)) {
+                aiColor3D col(0.f, 0.f, 0.f);
+                if (ai_mat->Get(AI_MATKEY_COLOR_DIFFUSE, col) != AI_SUCCESS) {
+                    mat.t_albedo = default_material->t_albedo;
+                }
+                else {
+                    auto color = glm::vec3(col.r, col.g, col.b);
+                    mat.t_albedo = getColorTexture(color);
+                    mat.t_albedo->is_color = true;
+                    mat.t_albedo->color = color;
+                }
+            }
+        }        
 
-		loadTextureFromAssimp(mat.t_metallic, ai_mat, scene, aiTextureType_METALNESS, GL_RGB);
-        if(mat.t_metallic == nullptr) loadTextureFromAssimp(mat.t_metallic, ai_mat, scene, aiTextureType_REFLECTION, GL_RGB);
-        if(mat.t_metallic == nullptr) loadTextureFromAssimp(mat.t_metallic, ai_mat, scene, aiTextureType_SPECULAR, GL_RGB);
 
-		loadTextureFromAssimp(mat.t_roughness, ai_mat, scene, aiTextureType_DIFFUSE_ROUGHNESS, GL_RGB);
-        if(mat.t_roughness == nullptr) loadTextureFromAssimp(mat.t_roughness, ai_mat, scene, aiTextureType_SHININESS, GL_RGB);
+        if (!loadTextureFromAssimp(mat.t_metallic, ai_mat, scene, aiTextureType_METALNESS, GL_RGB)) {
+            if (!loadTextureFromAssimp(mat.t_metallic, ai_mat, scene, aiTextureType_REFLECTION, GL_RGB)) {
+                if (!loadTextureFromAssimp(mat.t_metallic, ai_mat, scene, aiTextureType_SPECULAR, GL_RGB)) {
+                    float shininess;
+                    if (ai_mat->Get(AI_MATKEY_SHININESS_STRENGTH, shininess) != AI_SUCCESS) {
+                        mat.t_metallic = default_material->t_metallic;
+                    }
+                    else {
+                        auto color = glm::vec3(shininess);
+                        mat.t_metallic = getColorTexture(color);
+                        mat.t_metallic->is_color = true;
+                        mat.t_metallic->color = color;
+                    }
+                }
+            }
+        }
+
+        if (!loadTextureFromAssimp(mat.t_roughness, ai_mat, scene, aiTextureType_DIFFUSE_ROUGHNESS, GL_RGB)) {
+            if (!loadTextureFromAssimp(mat.t_roughness, ai_mat, scene, aiTextureType_SHININESS, GL_RGB)) {
+                float roughness;
+                if (ai_mat->Get(AI_MATKEY_SHININESS, roughness) != AI_SUCCESS) {
+                    mat.t_roughness = default_material->t_roughness;
+                }
+                else {
+                    auto color = glm::vec3(roughness);
+                    mat.t_roughness = getColorTexture(color);
+                    mat.t_roughness->is_color = true;
+                    mat.t_roughness->color = color;
+                }
+            }
+        }
 
 		// @note Since mtl files specify normals as bump maps assume all bump maps are really normals
-		loadTextureFromAssimp(mat.t_normal, ai_mat, scene, aiTextureType_NORMALS, GL_RGB);
-		if(mat.t_normal == nullptr) loadTextureFromAssimp(mat.t_normal, ai_mat, scene, aiTextureType_HEIGHT, GL_RGB);
+        if (!loadTextureFromAssimp(mat.t_normal, ai_mat, scene, aiTextureType_NORMALS, GL_RGB)) {
+            if (!loadTextureFromAssimp(mat.t_normal, ai_mat, scene, aiTextureType_HEIGHT, GL_RGB)) {
+                mat.t_normal = default_material->t_normal;
+            }
+        }
 	}
     mesh->vertices = reinterpret_cast<decltype(mesh->vertices)>(malloc(sizeof(*mesh->vertices)*mesh->num_vertices));
     mesh->normals  = reinterpret_cast<decltype(mesh->normals )>(malloc(sizeof(*mesh->normals )*mesh->num_vertices));
@@ -776,7 +779,9 @@ bool AssetManager::loadTextureFromAssimp(Texture *tex, aiMaterial *mat, const ai
             auto tex_id = loadImage(p, internal_format);
             if (tex_id == GL_FALSE) return false;
 
+            tex = createTexture(p);
             tex->id = tex_id;
+            return true;
         }
 	}
 	return false;

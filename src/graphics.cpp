@@ -450,7 +450,7 @@ void initGraphicsPrimitives(AssetManager &asset_manager) {
     graphics::cube.draw_start[0] = 0; 
     graphics::cube.draw_count[0] = sizeof(cube_vertices) / (3.0 * sizeof(*cube_vertices));
 
-    asset_manager.loadMeshFile(&graphics::grid, "data/models/grid.mesh");
+    asset_manager.loadMeshAssimp(&graphics::grid, "data/models/grid.obj");
 
     graphics::simplex_gradient = asset_manager.createTexture("data/textures/2d_simplex_gradient_seamless.png");
     asset_manager.loadTexture(graphics::simplex_gradient, "data/textures/2d_simplex_gradient_seamless.png", GL_RGB);

@@ -22,17 +22,20 @@ struct Material;
 struct Mesh {
     std::string handle;
 
+    // Serialised Section
     unsigned short *indices = nullptr;
-    int             num_materials = 0;
-    int             num_vertices = 0;
-    int             num_indices = 0;
-    bool            transparent = false;
+    uint32_t        num_materials = 0;
+    uint32_t        num_vertices = 0;
+    uint32_t        num_indices = 0;
     // @note Mesh is not responsible for material's pointers
     Material       *materials = nullptr;
     glm::fvec3*     vertices; 
     glm::fvec3*     normals;
     glm::fvec3*     tangents;
     glm::fvec2*     uvs;
+
+    bool            transparent = false;
+
     GLuint          indices_vbo;
     GLuint 	        vertices_vbo;
     GLuint 	        uvs_vbo;
@@ -128,7 +131,7 @@ struct AssetManager {
 
     // @note that this function could cause you to "lose" a texture if the path is the same
     Texture* createTexture(const std::string &handle);
-    static bool loadTextureFromAssimp(Texture *tex, aiMaterial* mat, const aiScene* scene, aiTextureType texture_type, GLint internal_format=GL_SRGB);
+    bool loadTextureFromAssimp(Texture *tex, aiMaterial* mat, const aiScene* scene, aiTextureType texture_type, GLint internal_format=GL_SRGB);
     static bool loadTexture(Texture *tex, const std::string &path, GLint internal_format=GL_SRGB);
     static bool loadCubemapTexture(Texture *tex, const std::array<std::string,FACE_NUM_FACES> &paths, GLint internal_format=GL_SRGB);
 

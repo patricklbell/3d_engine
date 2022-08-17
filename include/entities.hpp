@@ -32,6 +32,7 @@ struct Entity {
 
 struct MeshEntity : Entity {
     Mesh* mesh = nullptr;
+
     glm::vec3 position      = glm::vec3(0.0);
     glm::quat rotation      = glm::quat(0.0,0.0,0.0,1.0);
     glm::mat3 scale         = glm::mat3(1.0);

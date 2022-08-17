@@ -131,9 +131,9 @@ void initEditorGui(AssetManager &asset_manager){
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init(glsl_version.c_str());
 
-    asset_manager.loadMeshFile(&arrow_mesh, "data/models/arrow.mesh");
-    asset_manager.loadMeshFile(&block_arrow_mesh, "data/models/block_arrow.mesh");
-    asset_manager.loadMeshFile(&ring_mesh, "data/models/ring.mesh");
+    asset_manager.loadMeshAssimp(&arrow_mesh, "data/models/arrow.obj");
+    asset_manager.loadMeshAssimp(&block_arrow_mesh, "data/models/block_arrow.obj");
+    asset_manager.loadMeshAssimp(&ring_mesh, "data/models/ring.obj");
 }
 
 // for string delimiter
@@ -150,6 +150,220 @@ static std::vector<std::string> split (std::string s, std::string delimiter) {
 
     res.push_back(s.substr(pos_start));
     return res;
+}
+
+static bool echoCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
+    for (int i = 1; i < input_tokens.size(); ++i) {
+        if (i != 1) output.append(" ");
+        output.append(input_tokens[i]);
+    }
+    return true;
+}
+
+static bool listLevelsCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
+    for (const auto& entry : std::filesystem::directory_iterator("data/levels/")) {
+        auto filename = entry.path().filename();
+        if (filename.extension() == ".level") {
+            std::string name = filename.stem().generic_string();
+            output += name + "   ";
+        }
+    }
+    return true;
+}
+
+static bool listMeshCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
+    for (const auto& entry : std::filesystem::directory_iterator("data/mesh/")) {
+        auto filename = entry.path().filename();
+        if (filename.extension() == ".mesh") {
+            std::string name = filename.stem().generic_string();
+            output += name + "   ";
+        }
+    }
+    return true;
+}
+
+static bool loadLevelCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
+    if (input_tokens.size() >= 2) {
+        auto filename = "data/levels/" + input_tokens[1] + ".level";
+        if (loadLevel(entity_manager, asset_manager, filename)) {
+            level_path = filename;
+            output += "Loaded level " + input_tokens[1];
+            sel_e = NULLID;
+            return true;
+        }
+
+        output += "Failed to loaded level " + input_tokens[1];
+        return false;
+    }
+    
+    output += "Please provide a level name, see list_levels";
+    return false;
+}
+
+static bool saveLevelCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
+    std::string filename;
+    if (input_tokens.size() == 1) {
+        if (level_path == "") {
+            output += "Current level path not set";
+            return false;
+        }
+        filename = level_path;
+    }
+    else if (input_tokens.size() >= 2) {
+        filename = "data/levels/" + input_tokens[1] + ".level";
+    }
+    saveLevel(entity_manager, filename);
+
+    output += "Saved current level at path " + filename;
+    return true;
+}
+
+static bool loadModelCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
+    if (input_tokens.size() >= 3) {
+        auto model_filename = input_tokens[1];
+        auto mesh_filename = "data/mesh/" + input_tokens[2] + ".mesh";
+        auto mesh = asset_manager.createMesh(mesh_filename);
+        
+        if (asset_manager.loadMeshAssimp(mesh, model_filename)) {
+            output += "Loaded model " + model_filename + "\n";
+            if (asset_manager.writeMeshFile(mesh, mesh_filename)) {
+                output += "Wrote mesh file at path " + mesh_filename + "\n";
+                return true;
+            }
+
+            output += "Failed to write mesh file at path " + mesh_filename + "\n";
+        }
+        return false;
+    }
+    
+    output += "Please provide a relative path to a model (obj, gltf, fbx, ...) and a name for the new mesh";
+    return false;
+}
+
+static bool addMeshCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
+    if (input_tokens.size() >= 2) {
+        auto filename = "data/mesh/" + input_tokens[1] + ".mesh";
+        auto mesh = asset_manager.getMesh(filename);
+
+        if (mesh == nullptr) {
+            mesh = asset_manager.createMesh(filename);
+            if (asset_manager.loadMeshFile(mesh, filename)) {
+                output += "Loaded mesh at path " + filename + "\n";
+            } 
+            else {
+                output += "Failed to loaded mesh at path " + filename + " maybe it doesn't exist\n";
+                return false;
+            }
+        }
+        else {
+            output += "Mesh has already been loaded, using program memory\n";
+        }
+
+        auto id = entity_manager.getFreeId();
+        auto new_mesh_entity = new MeshEntity(id);
+        new_mesh_entity->mesh = mesh;
+        new_mesh_entity->casts_shadow = true;
+        entity_manager.setEntity(id.i, new_mesh_entity);
+        sel_e = new_mesh_entity->id;
+
+        output += "Added mesh entity with provided mesh to level\n";
+        return true;
+    }
+    
+    output += "Please provide a mesh name, see list_mesh\n";
+    return false;
+}
+
+static bool saveMeshCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
+    if (input_tokens.size() >= 2) {
+        auto filename = "data/mesh/" + input_tokens[1] + ".mesh";
+        auto mesh = asset_manager.getMesh(filename);
+
+        if (mesh != nullptr) {
+            if (asset_manager.writeMeshFile(mesh, filename)) {
+                output += "Wrote mesh file to path " + filename + "\n";
+                return true;
+            }
+            
+            output += "Failed to write mesh file to path " + filename + "\n";
+            return false;
+        }
+
+        output += "A Mesh with handle '" + filename + "' hasn't been loaded\n";
+        return false;
+    }
+
+    output += "Please provide a mesh name, see list_mesh\n";
+    return false;
+}
+
+static bool listModelsCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
+    for (const auto& entry : std::filesystem::directory_iterator("data/models/")) {
+        auto filename = entry.path().filename();
+        if (filename.extension() == ".obj") {
+            std::string name = filename.stem().generic_string();
+            output += name + "   ";
+        }
+    }
+    return true;
+}
+
+static bool convertModelsToMeshCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
+    for (const auto& entry : std::filesystem::directory_iterator("data/models/")) {
+        auto filename = entry.path().filename();
+        if (filename.extension() == ".obj") {
+            auto model_filename = "data/models/" + filename.generic_string();
+            auto mesh_filename  = "data/mesh/"   + filename.stem().generic_string() + ".mesh";
+            auto mesh = asset_manager.createMesh(mesh_filename);
+
+            if (asset_manager.loadMeshAssimp(mesh, model_filename)) {
+                output += "Loaded model " + model_filename + "\n";
+                if (asset_manager.writeMeshFile(mesh, mesh_filename)) {
+                    output += "Wrote mesh file at path " + mesh_filename + "\n";
+                }
+                else {
+                    output += "Failed to write mesh file at path " + mesh_filename + "\n";
+                }
+            }
+        }
+    }
+    return true;
+}
+
+static bool addWaterCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
+    auto id = entity_manager.getFreeId();
+    auto water = new WaterEntity(id);
+    entity_manager.setEntity(id.i, water);
+    sel_e = water->id;
+    return true;
+}
+
+static bool helpCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager);
+
+const std::map
+<
+    std::string,
+    std::function<bool(std::vector<std::string> &, std::string &output, EntityManager&, AssetManager&)>
+> command_to_func = {
+    {"echo", echoCommand},
+    {"help", helpCommand},
+    {"list_levels", listLevelsCommand},
+    {"load_level", loadLevelCommand},
+    {"list_mesh", listMeshCommand},
+    {"add_mesh", addMeshCommand},
+    {"load_model", loadModelCommand},
+    {"list_models", listModelsCommand},
+    {"save_level", saveLevelCommand},
+    {"convert_models_to_mesh", convertModelsToMeshCommand},
+    {"add_water", addWaterCommand},
+};
+
+static bool helpCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
+    output += "Commands are: clear ";
+    for (const auto& pair : command_to_func) {
+        output += pair.first + " ";
+    }
+    return true;
 }
 
 void ImTerminal(EntityManager &entity_manager, AssetManager &asset_manager, bool is_active) {
@@ -174,8 +388,8 @@ void ImTerminal(EntityManager &entity_manager, AssetManager &asset_manager, bool
         height_offset = glm::mix(height_offset, 0.0f, t);
     }
 
-    static std::vector<std::string> command_history = {"Terminals are cool"};
-    static std::vector<std::string> result_history = {"Maybe?"};
+    static std::vector<std::string> command_history = {};
+    static std::vector<std::string> result_history = {};
 
     static bool update_input_contents = false;
     static int history_position = -1;
@@ -246,36 +460,19 @@ void ImTerminal(EntityManager &entity_manager, AssetManager &asset_manager, bool
                 auto tokens = split(input_line, " ");
                 if(tokens.size() > 0) {
                     auto &command = tokens[0];
-                    if(command == "clear") {
+
+                    // Clear is a special case as it modifies history
+                    if (command == "clear") {
                         command_history.clear();
                         result_history.clear();
-                    } else if(command == "echo") {
-                        for(int i = 1; i < tokens.size(); ++i) {
-                            if(i != 1) output.append(" ");
-                            output.append(tokens[i]);
-                        }
-                    } else if(command == "list_levels") {
-                        for (const auto & entry : std::filesystem::directory_iterator("data/levels/")) {
-
-                            auto filename = entry.path().filename();
-                            if(filename.extension() == ".level") {
-                                std::string name  = filename.stem();
-                                output += name + "   ";
-                            }
-                        }
-                    } else if(command == "load_level") {
-                        if(tokens.size() >= 2) {
-                            auto filename = "data/levels/" + tokens[1] + ".level";
-                            std::cout << filename << "\n";
-                            if(loadLevel(entity_manager, asset_manager, "data/levels/" + tokens[1] + ".level")) {
-                                output += "Loaded level " + tokens[1];
-                                sel_e = NULLID;
-                            } else {
-                                output += "Failed to loaded level " + tokens[1];
-                            }
-                        }
                     } else {
-                        output += "Unknown Command";
+                        auto lu = command_to_func.find(command);
+                        if (lu != command_to_func.end()) {
+                            lu->second(tokens, output, entity_manager, asset_manager);
+                        }
+                        else {
+                            output = "Unknown Command '" + tokens[0] + "', try 'help' to see a list of commands";
+                        }
                     }
                 }
 
@@ -905,7 +1102,7 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, AssetManager &
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
-    constexpr int pad = 10;
+    constexpr float pad = 10;
     const static float sidebar_open_len = 0.8; // s
     static float sidebar_pos_right = 0;
     static float sidebar_open_time = glfwGetTime();
@@ -934,8 +1131,7 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, AssetManager &
             auto s_e = entity_manager.getEntity(sel_e);
             if(s_e != nullptr){
                 auto m_e = reinterpret_cast<MeshEntity*>(s_e);
-
-                const float img_w = ImGui::GetWindowWidth()/2.0f - 2.0*pad;
+                const float img_w = glm::min(sidebar_w - pad, 70.0f);
                 static const std::vector<std::string> image_file_extensions = { ".jpg", ".png", ".bmp", ".tiff", ".tga" };
 
                 if(s_e->type == EntityType::MESH_ENTITY && m_e->mesh != nullptr){
@@ -946,48 +1142,63 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, AssetManager &
 
                     editor::transform_active = editTransform(camera, m_e->position, m_e->rotation, m_e->scale);
 
+                    ImGui::Checkbox("Casts Shadows", &m_e->casts_shadow);
+
                     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + ImGui::GetTextLineHeight());
                     if (ImGui::CollapsingHeader("Materials")){
+                        const auto create_tex_ui = [&img_w, &asset_manager] (Texture** tex, int i, std::string&& type, bool is_float = false) {
+                            ImGui::Text("%s", type.c_str());
+
+                            std::string id = type + std::to_string(i);
+                            bool is_color = (*tex)->is_color;
+                            if (ImGui::Checkbox(("###is_color" + type).c_str(), &is_color)) {
+                                (*tex)->is_color = is_color;
+                                std::cout << id << "\n";
+                                if ((*tex)->is_color) {
+                                    (*tex) = asset_manager.getColorTexture((*tex)->color, GL_RGBA);
+                                }
+                            }
+                            if ((*tex)->is_color) {
+                                glm::vec3& col = (*tex)->color;
+                                ImGui::SameLine();
+
+                                if (is_float) {
+                                    float val = col.x;
+                                    if (ImGui::InputFloat(("###color" + id).c_str(), &val)) {
+                                        (*tex) = asset_manager.getColorTexture(glm::vec3(val), GL_RGBA);
+                                    }
+                                }
+                                else {
+                                    if (ImGui::ColorEdit3(("###color" + id).c_str(), &col.x)) {
+                                        // @note maybe you want more specific format
+                                        // and color picker may make many unnecessary textures
+                                        (*tex) = asset_manager.getColorTexture(col, GL_RGBA);
+                                    }
+                                }
+                            }
+                            else {
+                                void* tex_id = (void*)(intptr_t)(*tex)->id;
+                                ImGui::SetNextItemWidth(img_w);
+                                if (ImGui::ImageButton(tex_id, ImVec2(img_w, img_w))) {
+                                    im_file_dialog.SetPwd(exepath + "/data/textures");
+                                    s_entity_material_index = i;
+                                    im_file_dialog_type = "asset.mat.t" + type;
+                                    im_file_dialog.SetCurrentTypeFilterIndex(2);
+                                    im_file_dialog.SetTypeFilters(image_file_extensions);
+                                    im_file_dialog.Open();
+                                }
+                            }
+                        };
                         for(int i = 0; i < mesh->num_materials; i++) {
                             auto &mat = mesh->materials[i];
                             char buf[128];
                             sprintf(buf, "Material %d", i);
                             if (ImGui::CollapsingHeader(buf)){
-                                static const auto create_button = [&img_w, &mat, &i, &asset_manager] 
-                                    (Texture **tex, std::string &&type, bool same_line=false) {
-                                    auto cursor = ImGui::GetCursorPos();
-                                    ImGui::SetNextItemWidth(img_w);
-                                    ImGui::Text("%s", type.c_str());
-
-                                    void * tex_id = (void *)(intptr_t)(*tex)->id;
-                                    ImGui::SetNextItemWidth(img_w);
-                                    if(ImGui::ImageButton(tex_id, ImVec2(img_w,img_w))){
-                                        im_file_dialog.SetPwd(exepath+"/data/textures");
-                                        s_entity_material_index = i;
-                                        im_file_dialog_type = "asset.mat.t"+type;
-                                        im_file_dialog.SetCurrentTypeFilterIndex(2);
-                                        im_file_dialog.SetTypeFilters(image_file_extensions);
-                                        im_file_dialog.Open();
-                                    }
-
-                                    glm::vec3 &col = (*tex)->color;
-                                    ImGui::SetNextItemWidth(img_w);
-                                    if(ImGui::ColorEdit3(("###"+type).c_str(), &col.x)) {
-                                        // @note maybe you want more specific format
-                                        // and color picker may make many unnecessary textures
-                                        (*tex) = asset_manager.getColorTexture(col, GL_RGBA);
-                                    }
-                                };
-                                
-                                ImGui::Columns(2, "locations");
-                                create_button(&mat.t_albedo, "Albedo");
-                                create_button(&mat.t_ambient, "Ambient");
-                                create_button(&mat.t_metallic, "Metallic");
-
-                                ImGui::NextColumn();
-                                create_button(&mat.t_normal, "Normal");
-                                create_button(&mat.t_roughness, "Roughness");
-                                ImGui::Columns();
+                                create_tex_ui(&mat.t_albedo, i,    "Albedo");
+                                create_tex_ui(&mat.t_ambient, i,   "Ambient", true);
+                                create_tex_ui(&mat.t_metallic, i,  "Metallic", true);
+                                create_tex_ui(&mat.t_normal, i,    "Normal");
+                                create_tex_ui(&mat.t_roughness, i, "Roughness", true);
                             }
                         }
                     }
@@ -1175,6 +1386,7 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, AssetManager &
     
     {
         ImGui::SetNextWindowPos(ImVec2(0,0));
+        ImGui::SetNextWindowSize(ImVec2(window_width, window_height));
         ImGui::Begin("Perf Counter", NULL, ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoDecoration);
         ImGui::TextWrapped("%s\n%.3f ms/frame (%.1f FPS)", 
                 GL_renderer.c_str(),1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
@@ -1201,7 +1413,7 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, AssetManager &
                 if(loadLevel(entity_manager, asset_manager, p))
                     sel_e = NULLID;
             } else if(im_file_dialog_type == "saveLevel"){
-                //saveLevel(entity_manager, p);
+                saveLevel(entity_manager, p);
             } else if(im_file_dialog_type == "exportMesh"){
                 asset_manager.writeMeshFile(s_mesh, p);
             } else if(im_file_dialog_type == "loadMesh"){

@@ -15,7 +15,7 @@
 
 #include "graphics.hpp"
 
-void saveLevel(const EntityManager& entity_manager, const std::string& level_path);
+void saveLevel(EntityManager& entity_manager, const std::string& level_path);
 bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const std::string &level_path);
 
 void checkGLError(std::string identifier="");
@@ -51,6 +51,7 @@ struct ThreadPool {
     std::condition_variable mutex_condition; // Allows threads to wait on new jobs or termination 
     std::vector<std::thread> threads;
     std::queue<std::function<void()>> jobs;
+    std::atomic<int> jobs_in_progress = 0;
 };
 
 #endif /* ifndef UTILITIES_HPP */

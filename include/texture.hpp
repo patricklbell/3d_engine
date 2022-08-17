@@ -18,7 +18,15 @@ enum CubemapFaces : unsigned int {
     FACE_NUM_FACES,
 };
 
-GLuint create1x1Texture(const unsigned char color[3], const GLint internal_format=GL_RGB);
+struct ImageData {
+	unsigned char* data;
+	int x, y, n;
+};
+
+
+GLuint create1x1Texture(const unsigned char color[3], const GLint internal_format = GL_RGB);
+bool loadImageData(ImageData  *img, const std::string& imagepath, const GLint internal_format=GL_RGBA);
+GLuint createGLTextureFromData(ImageData *img, const GLint internal_format=GL_RGBA);
 GLuint loadImage(const std::string &imagepath, const GLint internal_format=GL_RGBA);
 GLuint loadCubemap(const std::array<std::string, FACE_NUM_FACES> &paths, const GLint internal_format=GL_RGB);
 

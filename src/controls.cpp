@@ -262,27 +262,25 @@ void handleEditorControls(Camera &camera, EntityManager &entity_manager, float d
             camera_direction_rotated = glm::vec3(rotation_y * (rotation_x * glm::vec4(camera_direction, 1)));
         }
 
-        // Move forward
-        if (glfwGetKey( window, GLFW_KEY_W ) == GLFW_PRESS){
-            shooter_camera_velocity += camera_direction * camera_movement_acceleration;
-        }
-        // Move backward
-        if (glfwGetKey( window, GLFW_KEY_S ) == GLFW_PRESS){
-            shooter_camera_velocity -= camera_direction * camera_movement_acceleration;
-        }
-        // Strafe right
-        if (glfwGetKey( window, GLFW_KEY_D ) == GLFW_PRESS){
-            shooter_camera_velocity += camera_right * camera_movement_acceleration;
-        }
-        // Strafe left
-        if (glfwGetKey( window, GLFW_KEY_A ) == GLFW_PRESS){
-            shooter_camera_velocity -= camera_right * camera_movement_acceleration;
-        }
-        if (glfwGetKey( window, GLFW_KEY_SPACE ) == GLFW_PRESS){
-            shooter_camera_velocity += camera.up * camera_movement_acceleration;
-        }
-        if (glfwGetKey( window, GLFW_KEY_LEFT_SHIFT ) == GLFW_PRESS){
-            shooter_camera_velocity -= camera.up * camera_movement_acceleration;
+        if (!io.WantCaptureKeyboard) {
+            if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
+                shooter_camera_velocity += camera_direction * camera_movement_acceleration;
+            }
+            if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
+                shooter_camera_velocity -= camera_direction * camera_movement_acceleration;
+            }
+            if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
+                shooter_camera_velocity += camera_right * camera_movement_acceleration;
+            }
+            if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
+                shooter_camera_velocity -= camera_right * camera_movement_acceleration;
+            }
+            if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
+                shooter_camera_velocity += camera.up * camera_movement_acceleration;
+            }
+            if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
+                shooter_camera_velocity -= camera.up * camera_movement_acceleration;
+            }
         }
         camera.position += shooter_camera_velocity*dt;
         shooter_camera_velocity *= shooter_camera_deceleration;

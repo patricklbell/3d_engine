@@ -1,0 +1,12 @@
+# Blender MTL File: 'pillar1.blend'
+# Material Count: 1
+
+newmtl Material.001
+Ns 9.508742
+Ka 1.000000 1.000000 1.000000
+Kd 0.002579 0.002093 0.001575
+Ks 0.367596 0.367596 0.367596
+Ke 0.0 0.0 0.0
+Ni 1.450000
+d 1.000000
+illum 2

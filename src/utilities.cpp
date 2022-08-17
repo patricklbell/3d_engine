@@ -111,7 +111,7 @@ void checkGLError(std::string identifier)
                        "Error '" + error + "' description: " + description + "\n";
 }
 
-void saveLevel(const EntityManager & entity_manager, const std::string & level_path){
+void saveLevel(EntityManager & entity_manager, const std::string & level_path){
     std::cerr << "----------- Saving Level " << level_path << "----------\n";
 
     std::set<Mesh*> used_meshes;
@@ -214,7 +214,7 @@ bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const
                 std::cout << "Loading new mesh at path " << mesh_path << ".\n";
 
                 // In future this should probably be true for all meshes
-                bool is_mesh_file = endsWith(mesh_path, ".mesh");
+                mesh = asset_manager.createMesh(mesh_path);
                 asset_manager.loadMesh(mesh, mesh_path, endsWith(mesh_path, ".mesh"));
 
                 index_to_mesh[mesh_index] = mesh;
@@ -513,6 +513,7 @@ std::string getexepath() {
     auto p = std::filesystem::path(std::string(result, (count > 0) ? count : 0));
     return p.parent_path().string();
 }
+#endif
 
 // ThreadPool
 #include <thread>
@@ -539,14 +540,15 @@ void ThreadPool::threadLoop() {
                 return;
             }
             job = jobs.front();
+            jobs_in_progress++;
             jobs.pop();
         }
         job();
+        jobs_in_progress--;
     }
 }
 
 void ThreadPool::queueJob(const std::function<void()>& job) {
-    std::cout << "Queueing job\n";
     {
         std::unique_lock<std::mutex> lock(queue_mutex);
         jobs.push(job);
@@ -555,12 +557,8 @@ void ThreadPool::queueJob(const std::function<void()>& job) {
 }
 
 bool ThreadPool::busy() {
-    bool poolbusy;
-    {
-        std::unique_lock<std::mutex> lock(queue_mutex);
-        poolbusy = !jobs.empty();
-    }
-    return poolbusy;
+    std::unique_lock<std::mutex> lock(queue_mutex);
+    return !(jobs.empty() && jobs_in_progress == 0);
 }
 
 void ThreadPool::stop() {
@@ -574,6 +572,3 @@ void ThreadPool::stop() {
     }
     threads.clear();
 }
-
-#endif
-
