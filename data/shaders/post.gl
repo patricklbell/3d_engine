@@ -4,11 +4,6 @@ layout (location = 1) in vec2 in_texcoord;
 
 
 out VS_FS {
-    vec2 rgbNW;
-    vec2 rgbNE;
-    vec2 rgbSW;
-    vec2 rgbSE;
-    vec2 rgbM;
     vec3 position;
 } vs_out;
 
@@ -22,26 +17,12 @@ void main()
     gl_Position = projection * view * vec4(in_position, 1.0);
     // @optimize? because part of multiplication is not needed
     gl_Position.z = gl_Position.w;
-
-    //compute the texture coords and send them to fragment 
-	vec2 inverse_vp = 1.0 / resolution.xy;
-    vec2 fragcoord = in_texcoord * resolution;
-	vs_out.rgbNW = (fragcoord + vec2(-1.0, -1.0)) * inverse_vp;
-	vs_out.rgbNE = (fragcoord + vec2(1.0, -1.0)) * inverse_vp;
-	vs_out.rgbSW = (fragcoord + vec2(-1.0, 1.0)) * inverse_vp;
-	vs_out.rgbSE = (fragcoord + vec2(1.0, 1.0)) * inverse_vp;
-	vs_out.rgbM = in_texcoord;
 }
 #endif
 
 #ifdef COMPILING_FS
 
 in VS_FS {
-    vec2 rgbNW;
-    vec2 rgbNE;
-    vec2 rgbSW;
-    vec2 rgbSE;
-    vec2 rgbM;
     vec3 position;
 } vs_in;
 
@@ -65,11 +46,11 @@ uniform samplerCube skybox;
 vec4 fxaa(sampler2D tex, vec2 coord) {
     vec4 color;
     vec2 inverse_vp = vec2(1.0 / resolution.x, 1.0 / resolution.y);
-    vec3 rgbNW = textureLod(tex, vs_in.rgbNW, 0.0).xyz;
-    vec3 rgbNE = textureLod(tex, vs_in.rgbNE, 0.0).xyz;
-    vec3 rgbSW = textureLod(tex, vs_in.rgbSW, 0.0).xyz;
-    vec3 rgbSE = textureLod(tex, vs_in.rgbSE, 0.0).xyz;
-    vec4 tex_col = textureLod(tex, vs_in.rgbM, 0.0);
+    vec3 rgbNW = textureLod(tex, (coord + vec2(-1.0, 1.0))*inverse_vp, 0.0).xyz;
+    vec3 rgbNE = textureLod(tex, (coord + vec2( 1.0, 1.0))*inverse_vp, 0.0).xyz;
+    vec3 rgbSW = textureLod(tex, (coord + vec2(-1.0,-1.0))*inverse_vp, 0.0).xyz;
+    vec3 rgbSE = textureLod(tex, (coord + vec2( 1.0,-1.0))*inverse_vp, 0.0).xyz;
+    vec4 tex_col = textureLod(tex, coord*inverse_vp, 0.0);
     vec3 rgbM  = tex_col.xyz;
 
     vec3 luma = vec3(0.299, 0.587, 0.114);
@@ -80,7 +61,7 @@ vec4 fxaa(sampler2D tex, vec2 coord) {
     float lumaM  = dot(rgbM,  luma);
     float lumaMin = min(lumaM, min(min(lumaNW, lumaNE), min(lumaSW, lumaSE)));
     float lumaMax = max(lumaM, max(max(lumaNW, lumaNE), max(lumaSW, lumaSE)));
-    
+
     vec2 dir;
     dir.x = -((lumaNW + lumaNE) - (lumaSW + lumaSE));
     dir.y =  ((lumaNW + lumaSW) - (lumaNE + lumaSE));

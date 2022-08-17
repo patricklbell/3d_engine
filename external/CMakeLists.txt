@@ -59,4 +59,7 @@ target_link_libraries(GLEW_210
 ### ASSIMP ###
 # AssImp already has a CMakeLists.txt so let's use these
 
+set(ASSIMP_BUILD_ALL_IMPORTERS_BY_DEFAULT OFF)
+set(ASSIMP_BUILD_GLTF_IMPORTER ON)
+set(ASSIMP_BUILD_OBJ_IMPORTER ON)
 add_subdirectory( assimp-5.1.5 )
