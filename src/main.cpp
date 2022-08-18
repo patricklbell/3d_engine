@@ -166,7 +166,7 @@ int main() {
         {"data/shaders/gaussian_blur.gl", shader::TYPE::GAUSSIAN_BLUR_SHADER, empty_file_time},
         {"data/shaders/post.gl", shader::TYPE::POST_SHADER, empty_file_time},
         {"data/shaders/debug.gl", shader::TYPE::DEBUG_SHADER, empty_file_time},
-        {"data/shaders/skybox.gl", shader::TYPE::SKYBOX_SHADER, empty_file_time},
+        //{"data/shaders/skybox.gl", shader::TYPE::SKYBOX_SHADER, empty_file_time},
     };
 
     // Fill in with correct file time and actually load

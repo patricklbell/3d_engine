@@ -1,8 +1,10 @@
 #include <cstring>
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include <string>
 #include <iostream>
+#include <unordered_set>
 
 // Include GLEW
 #include <GL/glew.h>
@@ -47,58 +49,126 @@ namespace shader {
 
 using namespace shader;
 
+static char *read_file_contents(std::string path, int &num_bytes) {
+	FILE *fp = fopen(path.c_str(), "rb");
+
+	if (fp == NULL) {
+		return nullptr;
+	}
+	fseek(fp, 0L, SEEK_END);
+	num_bytes = ftell(fp);
+	
+	// @note adds \0 to fread
+	rewind(fp);
+	char *data = (char*)malloc((num_bytes + 1) * sizeof(char));
+	if (data == NULL)
+		return nullptr;
+	fread(data, sizeof(char), num_bytes, fp);
+	fclose(fp);
+
+	data[num_bytes] = '\0';
+
+	return data;
+}
+
+static inline void free_linked_shader_codes(std::vector<char *> &lsc, int beg, int end) {
+	for(int i = beg; i < end; ++i) {
+		free(lsc[i]);
+	}
+}
+
+static void load_shader_dependencies(char *shader_code, int num_bytes, 
+		std::vector<char *> &linked_shader_codes, std::unordered_set<std::string> &linked_shader_paths) {
+	int offset = 0;
+
+	char line[255];
+	char filename[255];
+
+	const char *load_macro = "#load ";
+	for(int line_i = 0; offset < num_bytes; ++line_i) {
+		int line_beg_offset = offset;
+		for(; offset < num_bytes && shader_code[offset] != '\n'; offset++) {}
+
+		const int line_len = offset - line_beg_offset;
+
+		memcpy(line, &shader_code[line_beg_offset], line_len);
+		line[line_len] = '\0';
+
+		if(strncmp(load_macro, line, strlen(load_macro)) == 0) {
+			memset(&shader_code[line_beg_offset], ' ', line_len + 1);
+
+			int filename_len = line_len - strlen(load_macro);
+			if(filename_len > 0) {
+				strcpy(filename, &line[strlen(load_macro)]);
+
+				int loaded_num_bytes;
+				// @todo make this handle any relative path
+				std::string loadpath = "data/shaders/" + std::string(filename);
+
+				if(linked_shader_paths.find(loadpath) == linked_shader_paths.end()) {
+					linked_shader_paths.insert(loadpath);
+
+					char * loaded_shader = read_file_contents(loadpath, loaded_num_bytes);
+					if(loaded_shader != nullptr) {
+						std::cout << "Successful #load at path " << loadpath << "\n";
+						load_shader_dependencies(loaded_shader, loaded_num_bytes, linked_shader_codes, linked_shader_paths);
+						linked_shader_codes.push_back(loaded_shader);	
+					} else {
+						std::cout << "Failed to #load path " << loadpath << "\n";
+					}
+				} else {
+					std::cout << "Skipped duplicate #load of path " << loadpath << "\n";
+				}
+			}
+		}
+		
+		offset++;
+	}
+}
+
 GLuint loadShader(std::string vertex_fragment_file_path, std::string macro_prepends="", bool geometry=false) {
 	const char *path = vertex_fragment_file_path.c_str();
 	std::cout << "Loading shader " << path << ".\n";
-	const char *fragment_macro = "#define COMPILING_FS 1\n";
-	const char *vertex_macro   = "#define COMPILING_VS 1\n";
+	const char *fragment_macro = "#define COMPILING_FS 1\n";	const char *vertex_macro   = "#define COMPILING_VS 1\n";
 	
 	GLuint vertex_shader_id   = glCreateShader(GL_VERTEX_SHADER);
 	GLuint fragment_shader_id = glCreateShader(GL_FRAGMENT_SHADER);
 
-	FILE *fp = fopen(path, "rb");
-
-	if (fp == NULL) {
+	int num_bytes;
+	char *shader_code = read_file_contents(vertex_fragment_file_path, num_bytes);
+	if(shader_code == nullptr) {
 		std::cerr << "Can't open shader file " << path << ".\n";
-		return 0;
+		return GL_FALSE;
 	}
-	fseek(fp, 0L, SEEK_END);
-	int num_bytes = ftell(fp);
-	
-	// @note adds \0 to fread
-	rewind(fp);
-	char* shader_code = (char*)malloc((num_bytes + 1) * sizeof(char));
-	if (shader_code == NULL)
-		return 0;
-	fread(shader_code, sizeof(char), num_bytes, fp);
-	fclose(fp);
-	shader_code[num_bytes] = '\0';
-    
-	GLint result = GL_FALSE;
-	int info_log_length;
 
-	std::cout << "Compiling and linking shader: " << path << "\n";
+	std::vector<char *> linked_shader_codes = {(char*)glsl_version.c_str(), (char*)macro_prepends.c_str()};
+	std::unordered_set<std::string> linked_shader_paths;
+	int loaded_shader_beg_i = linked_shader_codes.size();
 
-    char *vertex_shader_code[] = {(char*)glsl_version.c_str(), (char*)vertex_macro, (char*)macro_prepends.c_str(), shader_code};
+	load_shader_dependencies(shader_code, num_bytes, linked_shader_codes, linked_shader_paths);
 
-	glShaderSource(vertex_shader_id, 4, vertex_shader_code, NULL);
+	int shader_macro_i = linked_shader_codes.size();
+	linked_shader_codes.push_back((char*)vertex_macro);
+	linked_shader_codes.push_back((char*)shader_code);
+	glShaderSource(vertex_shader_id, linked_shader_codes.size(), &linked_shader_codes[0], NULL);
 	glCompileShader(vertex_shader_id);
 
+
+	int info_log_length;
 	glGetShaderiv(vertex_shader_id, GL_INFO_LOG_LENGTH, &info_log_length);
 	if ( info_log_length > 0 ){
-		GLuint fragment_shader_id = glCreateShader(GL_FRAGMENT_SHADER);
 		char *vertex_shader_error_message = (char *)malloc(sizeof(char) * (info_log_length+1));
 		glGetShaderInfoLog(vertex_shader_id, info_log_length, NULL, vertex_shader_error_message);
 		std::cerr << "Vertex shader:\n" << vertex_shader_error_message << "\n";
 		free(vertex_shader_error_message);
+		free_linked_shader_codes(linked_shader_codes, loaded_shader_beg_i, shader_macro_i);
     	free(shader_code);
 		return GL_FALSE;
 	}
 
-	char *fragment_shader_code[] = {(char*)glsl_version.c_str(), (char*)fragment_macro, (char*)macro_prepends.c_str(), shader_code};
-
-	glShaderSource(fragment_shader_id, 4, fragment_shader_code, NULL);
+	linked_shader_codes[shader_macro_i] = (char*)fragment_macro;	glShaderSource(fragment_shader_id, linked_shader_codes.size(), &linked_shader_codes[0], NULL);
 	glCompileShader(fragment_shader_id);
+
 
 	glGetShaderiv(fragment_shader_id, GL_INFO_LOG_LENGTH, &info_log_length);
 	if ( info_log_length > 0 ){
@@ -106,18 +176,19 @@ GLuint loadShader(std::string vertex_fragment_file_path, std::string macro_prepe
 		glGetShaderInfoLog(fragment_shader_id, info_log_length, NULL, fragment_shader_error_message);
 		std::cerr << "Fragment shader:\n" << fragment_shader_error_message << "\n";
 		free(fragment_shader_error_message);
+		free_linked_shader_codes(linked_shader_codes, loaded_shader_beg_i, shader_macro_i);
     	free(shader_code);
 		return GL_FALSE;
 	}
 
 	GLuint geometry_shader_id;
 	if(geometry){
-		printf("Compiling additional geometry shader.\n");
+		std::cout << "Compiling additional geometry shader.\n";
 		const char *geometry_macro = "#define COMPILING_GS 1\n";
-		geometry_shader_id = glCreateShader(GL_GEOMETRY_SHADER);
-		char *geometry_shader_code[] = {(char*)glsl_version.c_str(), (char*)geometry_macro, (char*)macro_prepends.c_str(), shader_code};
 
-		glShaderSource(geometry_shader_id, 4, geometry_shader_code, NULL);
+		geometry_shader_id = glCreateShader(GL_GEOMETRY_SHADER);
+		linked_shader_codes[shader_macro_i] = (char*)geometry_macro;
+		glShaderSource(geometry_shader_id, linked_shader_codes.size(), &linked_shader_codes[0], NULL);
 		glCompileShader(geometry_shader_id);
 
 		glGetShaderiv(geometry_shader_id, GL_INFO_LOG_LENGTH, &info_log_length);
@@ -126,6 +197,7 @@ GLuint loadShader(std::string vertex_fragment_file_path, std::string macro_prepe
 			glGetShaderInfoLog(geometry_shader_id, info_log_length, NULL, geometry_shader_error_message);
 			std::cerr << "Geometry shader:\n" << geometry_shader_error_message << "\n";
 			free(geometry_shader_error_message);
+			free_linked_shader_codes(linked_shader_codes, loaded_shader_beg_i, shader_macro_i);
 			free(shader_code);
 			return GL_FALSE;
 		}
@@ -143,6 +215,7 @@ GLuint loadShader(std::string vertex_fragment_file_path, std::string macro_prepe
 		glGetProgramInfoLog(program_id, info_log_length, NULL, program_error_message);
 		std::cerr << "Program attaching:\n" << program_error_message << "\n";
 		free(program_error_message);
+		free_linked_shader_codes(linked_shader_codes, loaded_shader_beg_i, shader_macro_i);
     	free(shader_code);
 		return GL_FALSE;
 	}
@@ -154,6 +227,9 @@ GLuint loadShader(std::string vertex_fragment_file_path, std::string macro_prepe
 	glDeleteShader(vertex_shader_id);
 	if(geometry) glDeleteShader(geometry_shader_id);
 	glDeleteShader(fragment_shader_id);
+
+	free_linked_shader_codes(linked_shader_codes, loaded_shader_beg_i, shader_macro_i);
+    free(shader_code);
 
 	return program_id;
 }

@@ -1,3 +1,4 @@
+
 #ifdef COMPILING_VS
 layout (location = 0) in vec3 in_position;
 layout (location = 1) in vec2 in_texcoord;
@@ -22,6 +23,8 @@ void main()
 
 #ifdef COMPILING_FS
 
+#define FXAA 1
+
 in VS_FS {
     vec3 position;
 } vs_in;
@@ -37,6 +40,7 @@ uniform sampler2D bloom_map;
 
 uniform samplerCube skybox;
 
+#if FXAA
 // from: https://github.com/mattdesl/glsl-fxaa/blob/master/fxaa.glsl
 #define FXAA_REDUCE_MIN   (1.0 / 128.0)
 #define FXAA_REDUCE_MUL   (1.0 / 8.0)
@@ -88,6 +92,7 @@ vec4 fxaa(sampler2D tex, vec2 coord) {
         return vec4(rgbB, tex_col.a);
     }
 }
+#endif
 
 vec4 texsample(sampler2D tex, vec2 coord) {
     vec2 inverse_vp = vec2(1.0 / resolution.x, 1.0 / resolution.y);
@@ -105,7 +110,11 @@ float depthToDist(float d){
 void main()
 {
     float dist = depthToDist(texsample(depth_map, gl_FragCoord.xy).r);
+    #if FXAA
     vec3 hdr_color = fxaa(screen_map, gl_FragCoord.xy).xyz;
+    #else
+    vec3 hdr_color = texsample(screen_map, gl_FragCoord.xy).xyz;
+    #endif
 
 #ifdef BLOOM
     // Don't fxaa bloom since it is blurred
@@ -115,7 +124,7 @@ void main()
 
     const float gamma = 1.6;
 
-    // reinhard tone mapping
+    // Reinhard tone mapping
     vec3 mapped = hdr_color / (hdr_color + vec3(1.0));
 
     // gamma correction 

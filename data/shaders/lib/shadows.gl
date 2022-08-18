@@ -1,0 +1,92 @@
+uniform sampler2DArray shadow_map;
+layout(std140, binding=0) uniform ShadowVP 
+{
+    mat4 shadow_vps[CASCADE_NUM + 1];
+};
+uniform float shadow_cascade_distances[CASCADE_NUM];
+uniform float far_plane;
+uniform mat4 view;
+
+const vec2 poisson_disk[16] = vec2[]( 
+   vec2( -0.94201624, -0.39906216 ), 
+   vec2( 0.94558609, -0.76890725 ), 
+   vec2( -0.094184101, -0.92938870 ), 
+   vec2( 0.34495938, 0.29387760 ), 
+   vec2( -0.91588581, 0.45771432 ), 
+   vec2( -0.81544232, -0.87912464 ), 
+   vec2( -0.38277543, 0.27676845 ), 
+   vec2( 0.97484398, 0.75648379 ), 
+   vec2( 0.44323325, -0.97511554 ), 
+   vec2( 0.53742981, -0.47373420 ), 
+   vec2( -0.26496911, -0.41893023 ), 
+   vec2( 0.79197514, 0.19090188 ), 
+   vec2( -0.24188840, 0.99706507 ), 
+   vec2( -0.81409955, 0.91437590 ), 
+   vec2( 0.19984126, 0.78641367 ), 
+   vec2( 0.14383161, -0.14100790 ) 
+);
+
+// Returns a random number based on a vec3 and an int.
+float random(vec3 seed, int i){
+	vec4 seed4 = vec4(seed,i);
+	float dot_product = dot(seed4, vec4(12.9898,78.233,45.164,94.673));
+	return fract(sin(dot_product) * 43758.5453);
+}
+
+// https://learnopengl.com/Guest-Articles/2021/CSM
+// @note calling multiple times recalculates
+float shadowness(float NdotL, vec3 position){
+    // Select shadow correct projection for csm
+    float frag_dist = abs((view * vec4(position, 1.0)).z);
+
+    int layer = CASCADE_NUM;
+    for (int i = 0; i < CASCADE_NUM; ++i)
+    {
+        if (frag_dist < shadow_cascade_distances[i])
+        {
+            layer = i;
+            break;
+        }
+    }
+        
+    vec4 shadow_pos = shadow_vps[layer] * vec4(position, 1.0);
+    // perform perspective divide
+    vec3 shadow_coord = shadow_pos.xyz / shadow_pos.w;
+    // transform to [0,1] range
+    shadow_coord = shadow_coord * 0.5 + 0.5;
+
+    // get depth of current fragment from light's perspective
+    float shadow_depth = shadow_coord.z;
+
+    // keep the shadow at 0.0 when outside the far_plane region of the light's frustum.
+    if (shadow_depth > 1.0)
+    {
+        return 1.0;
+    }
+
+    // calculate bias (based on depth map resolution and slope)
+    float bias = max(0.01 * (1.0 - NdotL), 0.005);
+    if (layer == CASCADE_NUM)
+    {
+        bias *= 1 / (far_plane * 0.5f);
+    }
+    else
+    {
+        bias *= 1 / (shadow_cascade_distances[layer] * 0.5f);
+    }
+    // PCF
+    float shadow = 0.0;
+    vec2 texel_size = 1.0 / vec2(textureSize(shadow_map, 0));
+    for(int x = -1; x <= 1; ++x)
+    {
+        for(int y = -1; y <= 1; ++y)
+        {
+            float pcf_depth = texture(shadow_map, vec3(shadow_coord.xy + vec2(x, y) * texel_size, layer)).r; 
+            shadow += (shadow_depth - bias) > pcf_depth ? 1.0 : 0.0;        
+        }    
+    }
+    shadow /= 9.0;
+            
+    return 1.0 - shadow;
+}
+

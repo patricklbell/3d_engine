@@ -43,6 +43,7 @@ namespace graphics{
     Mesh grid;
     Texture * simplex_gradient;
     Texture * simplex_value;
+    const int MSAA_SAMPLES = 2;
 }
 // @hardcoded
 static const int SHADOW_SIZE = 4096;
