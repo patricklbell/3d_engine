@@ -26,6 +26,8 @@ namespace shader {
         POST_SHADER,
         DEBUG_SHADER,
         SKYBOX_SHADER,
+        WHITE_SHADER,
+        DEPTH_ONLY_SHADER,
         NUM_SHADER_TYPES,
     };
     extern GLuint null_program;
@@ -62,6 +64,12 @@ namespace shader {
     extern struct SkyboxUniforms {
         GLuint view, projection;
     } skybox_uniforms;
+
+	extern GLuint depth_only_program;
+	extern GLuint white_program;
+	extern struct MvpUniforms {
+		GLuint mvp;
+	} depth_only_uniforms, white_uniforms;
 }
 
 void loadShader(std::string path, shader::TYPE type);

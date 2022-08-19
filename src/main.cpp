@@ -115,8 +115,9 @@ int main() {
     glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
     glfwSwapInterval(0);
 
-    // We implement FXAA so multisampling should be unnecessary
+    // @todo MSAA with different levels
     glDisable(GL_MULTISAMPLE);
+    glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);  
 
     GL_version = std::string((char*)glGetString(GL_VERSION));
     GL_vendor = std::string((char*)glGetString(GL_VENDOR));
@@ -132,6 +133,7 @@ int main() {
     initDefaultMaterial(global_assets);
     initGraphicsPrimitives(global_assets);
     initShadowFbo();
+    initWaterColliderFbo();
     initHdrFbo();
     if(shader::unified_bloom){
         initBloomFbo();
@@ -166,6 +168,8 @@ int main() {
         {"data/shaders/gaussian_blur.gl", shader::TYPE::GAUSSIAN_BLUR_SHADER, empty_file_time},
         {"data/shaders/post.gl", shader::TYPE::POST_SHADER, empty_file_time},
         {"data/shaders/debug.gl", shader::TYPE::DEBUG_SHADER, empty_file_time},
+        {"data/shaders/white.gl", shader::TYPE::WHITE_SHADER, empty_file_time},
+        {"data/shaders/depth_only.gl", shader::TYPE::DEPTH_ONLY_SHADER, empty_file_time},
         //{"data/shaders/skybox.gl", shader::TYPE::SKYBOX_SHADER, empty_file_time},
     };
 
@@ -226,6 +230,9 @@ int main() {
                 } 
             }
         }
+        // @debug for now render collision map every frame
+        if(entity_manager.water != nullptr)
+            bindDrawWaterColliderMap(entity_manager, camera, entity_manager.water);
         bindDrawShadowMap(entity_manager, camera);
         bindHdr();
         clearFramebuffer(glm::vec4(0.1,0.1,0.1,1.0));

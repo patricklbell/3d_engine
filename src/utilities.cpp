@@ -112,7 +112,7 @@ void checkGLError(std::string identifier)
 }
 
 void saveLevel(EntityManager & entity_manager, const std::string & level_path){
-    std::cerr << "----------- Saving Level " << level_path << "----------\n";
+    std::cout << "----------- Saving Level " << level_path << "----------\n";
 
     std::set<Mesh*> used_meshes;
     for(int i = 0; i < ENTITY_COUNT; i++){
@@ -142,6 +142,11 @@ void saveLevel(EntityManager & entity_manager, const std::string & level_path){
     fputc('\0', f);
 
     // Save entities
+    if(entity_manager.water != nullptr) {
+        auto water = entity_manager.water;
+        fwrite(&water->type, sizeof(EntityType), 1, f);
+        fwrite(water, entitySize(water->type), 1, f);
+    }
     for(int i = 0; i < ENTITY_COUNT; i++){
         auto e = entity_manager.entities[i];
         if(e == nullptr || e->type == EntityType::ENTITY) continue;
@@ -241,9 +246,13 @@ bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const
             // Contains no pointers
             case EntityType::WATER_ENTITY:
                 {
-                    auto e = allocateEntity(NULLID, type);
-                    fread(e, entitySize(type), 1, f);
-                    entity_manager.setEntity(entity_manager.getFreeId().i, e);
+                    if(entity_manager.water == nullptr) {
+                        auto e = new WaterEntity();
+                        fread(e, entitySize(type), 1, f);
+                        entity_manager.water = reinterpret_cast<WaterEntity*>(e);
+                    } else {
+                        std::cerr << "Duplicate water in level\n";
+                    }
                     break;
                 }
             // Handle resource pointers with path lut

@@ -48,7 +48,8 @@ namespace editor {
     Mesh block_arrow_mesh;
     Mesh ring_mesh;
     glm::vec3 translation_snap = glm::vec3(1.0);
-    Id sel_e(-1, -1);
+
+    Selection selection;
 }
 using namespace editor;
 
@@ -188,7 +189,7 @@ static bool loadLevelCommand(std::vector<std::string>& input_tokens, std::string
         if (loadLevel(entity_manager, asset_manager, filename)) {
             level_path = filename;
             output += "Loaded level " + input_tokens[1];
-            sel_e = NULLID;
+            selection = Selection();
             return true;
         }
 
@@ -264,7 +265,8 @@ static bool addMeshCommand(std::vector<std::string>& input_tokens, std::string& 
         new_mesh_entity->mesh = mesh;
         new_mesh_entity->casts_shadow = true;
         entity_manager.setEntity(id.i, new_mesh_entity);
-        sel_e = new_mesh_entity->id;
+        selection.id = new_mesh_entity->id;
+        selection.is_water = false;
 
         output += "Added mesh entity with provided mesh to level\n";
         return true;
@@ -331,11 +333,14 @@ static bool convertModelsToMeshCommand(std::vector<std::string>& input_tokens, s
 }
 
 static bool addWaterCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
-    auto id = entity_manager.getFreeId();
-    auto water = new WaterEntity(id);
-    entity_manager.setEntity(id.i, water);
-    sel_e = water->id;
-    return true;
+    if(entity_manager.water == nullptr) {
+        entity_manager.water = new WaterEntity();
+        selection.is_water = true;
+        return true;
+    }
+    selection = Selection();
+    output += "Failed to create water, there already is one in level\n";
+    return false;
 }
 
 static bool helpCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager);
@@ -1094,8 +1099,15 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, AssetManager &
     //}
     
 
-    if(sel_e.i == -1) gizmo_mode = GIZMO_MODE_NONE;
-    static int s_entity_material_index = -1;
+    Entity *sel_e;
+    if(selection.is_water) {
+        sel_e = entity_manager.water;
+    } else {
+        sel_e = entity_manager.getEntity(selection.id);
+    }
+
+    if(sel_e == nullptr) gizmo_mode = GIZMO_MODE_NONE;
+    static int sel_e_material_index = -1;
     
     // Start the Dear ImGui frame;
     ImGui_ImplOpenGL3_NewFrame();
@@ -1107,7 +1119,7 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, AssetManager &
     static float sidebar_pos_right = 0;
     static float sidebar_open_time = glfwGetTime();
     {
-        if(sel_e.i != -1) {
+        if(sel_e != nullptr) {
             // Just opened
             if(sidebar_pos_right == 0) {
                 sidebar_open_time = glfwGetTime();
@@ -1126,147 +1138,152 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, AssetManager &
             ImGui::SetNextWindowSizeConstraints(ImVec2(sidebar_w, window_height), ImVec2(window_width / 2.0, window_height));
 
             ImGui::Begin("###entity", NULL, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar);
-            ImGui::TextWrapped("Entity Index: %d Version: %d", sel_e.i, sel_e.v);
+            ImGui::TextWrapped("Entity Index: %d Version: %d", sel_e->id.i, sel_e->id.v);
 
-            auto s_e = entity_manager.getEntity(sel_e);
-            if(s_e != nullptr){
-                auto m_e = reinterpret_cast<MeshEntity*>(s_e);
-                const float img_w = glm::min(sidebar_w - pad, 70.0f);
-                static const std::vector<std::string> image_file_extensions = { ".jpg", ".png", ".bmp", ".tiff", ".tga" };
+            const float img_w = glm::min(sidebar_w - pad, 70.0f);
+            static const std::vector<std::string> image_file_extensions = { ".jpg", ".png", ".bmp", ".tiff", ".tga" };
 
-                if(s_e->type == EntityType::MESH_ENTITY && m_e->mesh != nullptr){
-                    auto &mesh = m_e->mesh;
+            auto m_e = reinterpret_cast<MeshEntity*>(sel_e);
+            if(sel_e->type == EntityType::MESH_ENTITY && m_e->mesh != nullptr){
+                auto &mesh = m_e->mesh;
+                if(editor::draw_debug_wireframe)
+                    drawMeshWireframe(*mesh, m_e->position, m_e->rotation, m_e->scale, camera, true);
 
-                    if(editor::draw_debug_wireframe)
-                        drawMeshWireframe(*mesh, m_e->position, m_e->rotation, m_e->scale, camera, true);
+                editor::transform_active = editTransform(camera, m_e->position, m_e->rotation, m_e->scale);
 
-                    editor::transform_active = editTransform(camera, m_e->position, m_e->rotation, m_e->scale);
+                ImGui::Checkbox("Casts Shadows", &m_e->casts_shadow);
 
-                    ImGui::Checkbox("Casts Shadows", &m_e->casts_shadow);
+                ImGui::SetCursorPosY(ImGui::GetCursorPosY() + ImGui::GetTextLineHeight());
+                if (ImGui::CollapsingHeader("Materials")){
+                    const auto create_tex_ui = [&img_w, &asset_manager] (Texture** tex, int i, std::string&& type, bool is_float = false) {
+                        ImGui::Text("%s", type.c_str());
 
-                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + ImGui::GetTextLineHeight());
-                    if (ImGui::CollapsingHeader("Materials")){
-                        const auto create_tex_ui = [&img_w, &asset_manager] (Texture** tex, int i, std::string&& type, bool is_float = false) {
-                            ImGui::Text("%s", type.c_str());
-
-                            std::string id = type + std::to_string(i);
-                            bool is_color = (*tex)->is_color;
-                            if (ImGui::Checkbox(("###is_color" + type).c_str(), &is_color)) {
-                                (*tex)->is_color = is_color;
-                                std::cout << id << "\n";
-                                if ((*tex)->is_color) {
-                                    (*tex) = asset_manager.getColorTexture((*tex)->color, GL_RGBA);
-                                }
-                            }
+                        std::string id = type + std::to_string(i);
+                        bool is_color = (*tex)->is_color;
+                        if (ImGui::Checkbox(("###is_color" + type).c_str(), &is_color)) {
+                            (*tex)->is_color = is_color;
+                            std::cout << id << "\n";
                             if ((*tex)->is_color) {
-                                glm::vec3& col = (*tex)->color;
-                                ImGui::SameLine();
+                                (*tex) = asset_manager.getColorTexture((*tex)->color, GL_RGBA);
+                            }
+                        }
+                        if ((*tex)->is_color) {
+                            glm::vec3& col = (*tex)->color;
+                            ImGui::SameLine();
 
-                                if (is_float) {
-                                    float val = col.x;
-                                    if (ImGui::InputFloat(("###color" + id).c_str(), &val)) {
-                                        (*tex) = asset_manager.getColorTexture(glm::vec3(val), GL_RGBA);
-                                    }
-                                }
-                                else {
-                                    if (ImGui::ColorEdit3(("###color" + id).c_str(), &col.x)) {
-                                        // @note maybe you want more specific format
-                                        // and color picker may make many unnecessary textures
-                                        (*tex) = asset_manager.getColorTexture(col, GL_RGBA);
-                                    }
+                            if (is_float) {
+                                float val = col.x;
+                                if (ImGui::InputFloat(("###color" + id).c_str(), &val)) {
+                                    (*tex) = asset_manager.getColorTexture(glm::vec3(val), GL_RGBA);
                                 }
                             }
                             else {
-                                void* tex_id = (void*)(intptr_t)(*tex)->id;
-                                ImGui::SetNextItemWidth(img_w);
-                                if (ImGui::ImageButton(tex_id, ImVec2(img_w, img_w))) {
-                                    im_file_dialog.SetPwd(exepath + "/data/textures");
-                                    s_entity_material_index = i;
-                                    im_file_dialog_type = "asset.mat.t" + type;
-                                    im_file_dialog.SetCurrentTypeFilterIndex(2);
-                                    im_file_dialog.SetTypeFilters(image_file_extensions);
-                                    im_file_dialog.Open();
+                                if (ImGui::ColorEdit3(("###color" + id).c_str(), &col.x)) {
+                                    // @note maybe you want more specific format
+                                    // and color picker may make many unnecessary textures
+                                    (*tex) = asset_manager.getColorTexture(col, GL_RGBA);
                                 }
                             }
-                        };
-                        for(int i = 0; i < mesh->num_materials; i++) {
-                            auto &mat = mesh->materials[i];
-                            char buf[128];
-                            sprintf(buf, "Material %d", i);
-                            if (ImGui::CollapsingHeader(buf)){
-                                create_tex_ui(&mat.t_albedo, i,    "Albedo");
-                                create_tex_ui(&mat.t_ambient, i,   "Ambient", true);
-                                create_tex_ui(&mat.t_metallic, i,  "Metallic", true);
-                                create_tex_ui(&mat.t_normal, i,    "Normal");
-                                create_tex_ui(&mat.t_roughness, i, "Roughness", true);
+                        }
+                        else {
+                            void* tex_id = (void*)(intptr_t)(*tex)->id;
+                            ImGui::SetNextItemWidth(img_w);
+                            if (ImGui::ImageButton(tex_id, ImVec2(img_w, img_w))) {
+                                im_file_dialog.SetPwd(exepath + "/data/textures");
+                                sel_e_material_index = i;
+                                im_file_dialog_type = "asset.mat.t" + type;
+                                im_file_dialog.SetCurrentTypeFilterIndex(2);
+                                im_file_dialog.SetTypeFilters(image_file_extensions);
+                                im_file_dialog.Open();
                             }
                         }
-                    }
-                } else if(s_e->type & EntityType::WATER_ENTITY) {
-                    auto w_e = (WaterEntity*)s_e;
-                    if(editor::draw_debug_wireframe)
-                        drawWaterDebug(w_e, camera, true);
-                    glm::quat _r = glm::quat();
-                    editor::transform_active = editTransform(camera, w_e->position, _r, w_e->scale, TransformType::POS_SCL);
-                    ImGui::TextWrapped("Shallow Color:");
-                    ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - pad);
-                    ImGui::ColorEdit4("##shallow_color", (float*)(&w_e->shallow_color));
-                    ImGui::TextWrapped("Deep Color:");
-                    ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - pad);
-                    ImGui::ColorEdit4("##deep_color", (float*)(&w_e->deep_color));
-                    ImGui::TextWrapped("Foam Color:");
-                    ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - pad);
-                    ImGui::ColorEdit4("##foam_color", (float*)(&w_e->foam_color));
-
-                    if (ImGui::CollapsingHeader("Noise Textures")) {
-                        ImGui::Text("Gradient");
-                        ImGui::SameLine();
-                        auto cursor = ImGui::GetCursorPos();
-                        cursor.x += img_w;
-                        ImGui::SetCursorPos(cursor);
-                        ImGui::Text("Value");
-                        void* tex_albedo = (void*)(intptr_t)graphics::simplex_gradient->id;
-                        if (ImGui::ImageButton(tex_albedo, ImVec2(img_w, img_w))) {
-                            im_file_dialog.SetPwd(exepath + "/data/textures");
-                            im_file_dialog_type = "simplexGradient";
-                            im_file_dialog.SetCurrentTypeFilterIndex(2);
-                            im_file_dialog.SetTypeFilters(image_file_extensions);
-                            im_file_dialog.Open();
-                        }
-                        ImGui::SameLine();
-                        void* tex_ambient = (void*)(intptr_t)graphics::simplex_value->id;
-                        if (ImGui::ImageButton(tex_ambient, ImVec2(img_w, img_w))) {
-                            im_file_dialog.SetPwd(exepath + "/data/textures");
-                            im_file_dialog_type = "simplexValue";
-                            im_file_dialog.SetCurrentTypeFilterIndex(2);
-                            im_file_dialog.SetTypeFilters(image_file_extensions);
-                            im_file_dialog.Open();
+                    };
+                    for(int i = 0; i < mesh->num_materials; i++) {
+                        auto &mat = mesh->materials[i];
+                        char buf[128];
+                        sprintf(buf, "Material %d", i);
+                        if (ImGui::CollapsingHeader(buf)){
+                            create_tex_ui(&mat.t_albedo, i,    "Albedo");
+                            create_tex_ui(&mat.t_ambient, i,   "Ambient", true);
+                            create_tex_ui(&mat.t_metallic, i,  "Metallic", true);
+                            create_tex_ui(&mat.t_normal, i,    "Normal");
+                            create_tex_ui(&mat.t_roughness, i, "Roughness", true);
                         }
                     }
                 }
+            } else if(sel_e->type == EntityType::WATER_ENTITY) {
+                auto w_e = (WaterEntity*)sel_e;
+                if(editor::draw_debug_wireframe)
+                    drawWaterDebug(w_e, camera, true);
+                glm::quat _r = glm::quat();
+                editor::transform_active = editTransform(camera, w_e->position, _r, w_e->scale, TransformType::POS_SCL);
+                ImGui::TextWrapped("Shallow Color:");
+                ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - pad);
+                ImGui::ColorEdit4("##shallow_color", (float*)(&w_e->shallow_color));
+                ImGui::TextWrapped("Deep Color:");
+                ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - pad);
+                ImGui::ColorEdit4("##deep_color", (float*)(&w_e->deep_color));
+                ImGui::TextWrapped("Foam Color:");
+                ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - pad);
+                ImGui::ColorEdit4("##foam_color", (float*)(&w_e->foam_color));
+
+                if (ImGui::CollapsingHeader("Noise Textures")) {
+                    ImGui::Text("Gradient");
+                    ImGui::SameLine();
+                    auto cursor = ImGui::GetCursorPos();
+                    cursor.x += img_w;
+                    ImGui::SetCursorPos(cursor);
+                    ImGui::Text("Value");
+                    void* tex_simplex_gradient = (void*)(intptr_t)graphics::simplex_gradient->id;
+                    if (ImGui::ImageButton(tex_simplex_gradient, ImVec2(img_w, img_w))) {
+                        im_file_dialog.SetPwd(exepath + "/data/textures");
+                        im_file_dialog_type = "simplexGradient";
+                        im_file_dialog.SetCurrentTypeFilterIndex(2);
+                        im_file_dialog.SetTypeFilters(image_file_extensions);
+                        im_file_dialog.Open();
+                    }
+                    ImGui::SameLine();
+                    void* tex_simplex_value = (void*)(intptr_t)graphics::simplex_value->id;
+                    if (ImGui::ImageButton(tex_simplex_value, ImVec2(img_w, img_w))) {
+                        im_file_dialog.SetPwd(exepath + "/data/textures");
+                        im_file_dialog_type = "simplexValue";
+                        im_file_dialog.SetCurrentTypeFilterIndex(2);
+                        im_file_dialog.SetTypeFilters(image_file_extensions);
+                        im_file_dialog.Open();
+                    }
+                }
+                void* tex_water_collider = (void*)(intptr_t)graphics::water_collider_depth;
+                ImGui::ImageButton(tex_water_collider, ImVec2(img_w, img_w));
             }
 
             ImGui::SetCursorPosY(ImGui::GetCursorPosY() + ImGui::GetTextLineHeight());
             auto button_size = ImVec2(ImGui::GetWindowWidth()/2.0f - pad, 2.0f*pad);
-            if(ImGui::Button("Duplicate", button_size)){
-                if(s_e != nullptr){
-                    auto e = entity_manager.duplicateEntity(sel_e);
+            if(sel_e->type != WATER_ENTITY && ImGui::Button("Duplicate", button_size)){
+                if(sel_e != nullptr){
+                    auto e = entity_manager.duplicateEntity(sel_e->id);
                     if(e->type == MESH_ENTITY){
-                        ((MeshEntity*)e)->position.x += translation_snap.x;
+                        auto m_e = reinterpret_cast<MeshEntity*>(e);
+                        m_e->position.x += translation_snap.x;
                         if(camera.state == Camera::TYPE::TRACKBALL){
-                            sel_e = e->id;
-                            camera.target = ((MeshEntity*)e)->position;
+                            camera.target = m_e->position;
                             updateCameraView(camera);
                         }
                     }
+                    selection.id = e->id;
+                    selection.is_water = false;
                 } else {
                     entity_manager.setEntity(entity_manager.getFreeId().i, new Entity());
                 }
             }
             ImGui::SameLine();
             if(ImGui::Button("Delete", button_size)){
-                entity_manager.deleteEntity(sel_e);
-                sel_e = Id(-1, -1);
+                if(sel_e->type == WATER_ENTITY) {
+                    free(entity_manager.water);
+                    entity_manager.water = nullptr;
+                } else {
+                    entity_manager.deleteEntity(sel_e->id);
+                }
+                selection = Selection();
             }
             ImGui::End();
         } else if(sidebar_pos_right != 0) {
@@ -1410,8 +1427,11 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, AssetManager &
             std::cout << "Selected filename at path " << p << ".\n";
             if(im_file_dialog_type == "loadLevel"){
                 // @note accumulates assets
-                if(loadLevel(entity_manager, asset_manager, p))
-                    sel_e = NULLID;
+                if(loadLevel(entity_manager, asset_manager, p)){
+                    selection = Selection();
+                    sel_e = nullptr;
+                }
+                    
             } else if(im_file_dialog_type == "saveLevel"){
                 saveLevel(entity_manager, p);
             } else if(im_file_dialog_type == "exportMesh"){
@@ -1427,10 +1447,9 @@ void drawEditorGui(Camera &camera, EntityManager &entity_manager, AssetManager &
             } else if (im_file_dialog_type == "simplexGradient") {
                 global_assets.loadTexture(graphics::simplex_gradient, p, GL_RGB);
             } else if(startsWith(im_file_dialog_type, "asset.mat.t")) {
-                auto s_e = entity_manager.getEntity(sel_e);
-                if (s_e != nullptr && s_e->type == MESH_ENTITY) {
-                    auto m_e = static_cast<MeshEntity*>(s_e);
-                    auto &mat = m_e->mesh->materials[s_entity_material_index];
+                if (sel_e != nullptr && sel_e->type == MESH_ENTITY) {
+                    auto m_e = static_cast<MeshEntity*>(sel_e);
+                    auto &mat = m_e->mesh->materials[sel_e_material_index];
 
                     // Assets might already been loaded so just use it
                     auto tex = asset_manager.getTexture(p);

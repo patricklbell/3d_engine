@@ -95,6 +95,8 @@ struct EntityManager {
     std::stack<int> delete_entity_stack;
     int id_counter = 0;
 
+    WaterEntity *water = nullptr;
+
     ~EntityManager(){
         clear();
     }
@@ -107,6 +109,10 @@ struct EntityManager {
         memset(versions, 0, sizeof(versions));
         free_entity_stack = {};
         delete_entity_stack = {};
+        if(water != nullptr) {
+            free(water);
+            water = nullptr;
+        }
         id_counter = 0;
     }
     inline Entity *getEntity(Id id){

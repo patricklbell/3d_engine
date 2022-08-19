@@ -45,6 +45,11 @@ namespace shader {
 
 	GLuint skybox_programs[2];
 	struct SkyboxUniforms skybox_uniforms;
+
+	GLuint depth_only_program;
+	struct MvpUniforms depth_only_uniforms;
+	GLuint white_program;
+	struct MvpUniforms white_uniforms;
 }
 
 using namespace shader;
@@ -329,12 +334,12 @@ void loadUnifiedShader(std::string path){
 		
 		glUseProgram(unified_programs[i]);
 		// Set fixed locations for textures in GL_TEXTUREi
-		glUniform1i(glGetUniformLocation(unified_programs[i], "albedo_map"), 0);
-		glUniform1i(glGetUniformLocation(unified_programs[i], "normal_map"),  1);
-		glUniform1i(glGetUniformLocation(unified_programs[i], "metallic_map"),  2);
-		glUniform1i(glGetUniformLocation(unified_programs[i], "roughness_map"),  3);
-		glUniform1i(glGetUniformLocation(unified_programs[i], "ao_map"),  4);
-		glUniform1i(glGetUniformLocation(unified_programs[i], "shadow_map"),  5);
+		glUniform1i(glGetUniformLocation(unified_programs[i], "albedo_map"),   0);
+		glUniform1i(glGetUniformLocation(unified_programs[i], "normal_map"),   1);
+		glUniform1i(glGetUniformLocation(unified_programs[i], "metallic_map"), 2);
+		glUniform1i(glGetUniformLocation(unified_programs[i], "roughness_map"),3);
+		glUniform1i(glGetUniformLocation(unified_programs[i], "ao_map"),       4);
+		glUniform1i(glGetUniformLocation(unified_programs[i], "shadow_map"),   5);
 	}
 }
 void loadWaterShader(std::string path){
@@ -393,9 +398,35 @@ void loadSkyboxShader(std::string path){
 		skybox_uniforms.view = glGetUniformLocation(skybox_programs[i], "view");
 	}
 }
+void loadWhiteShader(std::string path){
+	// Create and compile our GLSL program from the shaders
+	auto tmp = white_program;
+	white_program = loadShader(path);
+	if (white_program == GL_FALSE) {
+		white_program = tmp;
+		return;
+	}
+
+	// Grab uniforms to modify during rendering
+	white_uniforms.mvp = glGetUniformLocation(white_program, "mvp");
+}
+void loadDepthOnlyShader(std::string path){
+	// Create and compile our GLSL program from the shaders
+	auto tmp = depth_only_program;
+	depth_only_program = loadShader(path);
+	if (depth_only_program == GL_FALSE) {
+		depth_only_program = tmp;
+		return;
+	}
+
+	// Grab uniforms to modify during rendering
+	depth_only_uniforms.mvp = glGetUniformLocation(depth_only_program, "mvp");
+}
 void deleteShaderPrograms(){
     glDeleteProgram(null_program);
     glDeleteProgram(debug_program);
+    glDeleteProgram(white_program);
+    glDeleteProgram(depth_only_program);
     glDeleteProgram(unified_programs[0]);
     glDeleteProgram(unified_programs[1]);
     glDeleteProgram(gaussian_blur_program);
@@ -427,6 +458,12 @@ void loadShader(std::string path, TYPE type) {
             break;
         case shader::TYPE::SKYBOX_SHADER:
             loadSkyboxShader(path);
+            break;
+        case shader::TYPE::WHITE_SHADER:
+            loadWhiteShader(path);
+            break;
+        case shader::TYPE::DEPTH_ONLY_SHADER:
+            loadDepthOnlyShader(path);
             break;
         default:
             break;

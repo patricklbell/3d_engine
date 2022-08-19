@@ -60,6 +60,12 @@ namespace editor {
     extern Id sel_e;
     extern AssetManager editor_assets;
     extern glm::vec3 translation_snap;
+
+    struct Selection {
+        Id id = NULLID;
+        bool is_water = false;
+    };
+    extern Selection selection;
 }
 
 #endif

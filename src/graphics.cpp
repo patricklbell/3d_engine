@@ -29,15 +29,17 @@ namespace graphics{
     GLuint hdr_depth;
     // Used by water pass to write and read from same depth buffer
     GLuint hdr_depth_copy;
+
     const int shadow_num = 4;
     float shadow_cascade_distances[shadow_num];
     const char * shadow_macro = "#define CASCADE_NUM 4\n";
     // @note make sure to change macro to shadow_num + 1
     const char * shadow_invocation_macro = "#define INVOCATIONS 5\n";
-    GLuint shadow_fbo;
-    GLuint shadow_buffer;
-    GLuint shadow_matrices_ubo;
     glm::mat4x4 shadow_vps[shadow_num + 1];
+    GLuint shadow_fbo, shadow_buffer, shadow_matrices_ubo;
+
+    GLuint water_collider_fbo, water_collider, water_collider_depth;
+
     Mesh quad;
     Mesh cube;
     Mesh grid;
@@ -47,6 +49,7 @@ namespace graphics{
 }
 // @hardcoded
 static const int SHADOW_SIZE = 4096;
+static const int WATER_COLLIDER_SIZE = 4096;
 
 void windowSizeCallback(GLFWwindow* window, int width, int height){
     if(width != window_width || height != window_height) window_resized = true;
@@ -237,6 +240,100 @@ void bindDrawShadowMap(const EntityManager &entity_manager, const Camera &camera
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glViewport(0, 0, window_width, window_height);
 }
+
+void initWaterColliderFbo(){
+    glGenFramebuffers(1, &graphics::water_collider_fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, graphics::water_collider_fbo);
+
+    glGenTextures(1, &graphics::water_collider);
+    glBindTexture(GL_TEXTURE_2D, graphics::water_collider);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, WATER_COLLIDER_SIZE, WATER_COLLIDER_SIZE, 0, GL_RGBA, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    // attach texture to framebuffer
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, graphics::water_collider, 0);
+    
+    glGenTextures(1, &graphics::water_collider_depth);
+    glBindTexture(GL_TEXTURE_2D, graphics::water_collider_depth);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH24_STENCIL8, WATER_COLLIDER_SIZE, WATER_COLLIDER_SIZE, 0, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, graphics::water_collider_depth, 0);  
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE){
+        std::cerr << "Water collider framebuffer not complete.\n";
+    }
+
+    static const GLuint attachments[] = { GL_COLOR_ATTACHMENT0 };
+    glDrawBuffers(1, attachments);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+// Since shadow buffer wont need to be bound otherwise just combine these operations
+void bindDrawWaterColliderMap(const EntityManager &entity_manager, const Camera &camera, WaterEntity *water){
+    // Create orthographic VP
+    const auto view = glm::lookAt(water->position + camera.up, water->position, camera.up);
+    const auto projection = glm::ortho(50.0f, -50.0f, 50.0f, -50.0f, camera.near_plane, camera.far_plane);
+    const auto vp = projection * view;
+
+    glBindBuffer(GL_UNIFORM_BUFFER, 0);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, graphics::shadow_fbo);
+    glViewport(0, 0, WATER_COLLIDER_SIZE, WATER_COLLIDER_SIZE);
+    
+    // Make shadow line up with object by culling front (Peter Panning)
+    // @note face culling wont work with certain techniques i.e. grass
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_FRONT);
+    glDisable(GL_CULL_FACE);
+
+    glDepthMask(GL_TRUE);
+    glEnable(GL_DEPTH_TEST);
+    
+    // Draw water only to depth map, we will compare and use as stencil buffer
+    // to determine whether fragment of entity is of equal depth
+    glUseProgram(shader::white_program);
+    glEnable(GL_STENCIL_TEST);  
+    glClear(GL_DEPTH_BUFFER_BIT);
+    auto model = createModelMatrix(water->position, glm::quat(), water->scale);
+    auto mvp = vp * model;
+    glUniformMatrix4fv(shader::white_uniforms.mvp, 1, GL_FALSE, &mvp[0][0]);
+
+    glBindVertexArray(graphics::grid.vao);
+    glDrawElements(graphics::grid.draw_mode, graphics::grid.draw_count[0], graphics::grid.draw_type, (GLvoid*)(sizeof(GLubyte)*graphics::grid.draw_start[0]));
+
+    // Render entities only when they intersect water plane
+    glUseProgram(shader::depth_only_program);
+    glDisable(GL_STENCIL_TEST);  
+	glDepthFunc(GL_EQUAL); 
+    glDisable(GL_CULL_FACE);
+    
+    for (int i = 0; i < ENTITY_COUNT; ++i) {
+        auto m_e = reinterpret_cast<MeshEntity*>(entity_manager.entities[i]);
+        if(m_e == nullptr || m_e->type != EntityType::MESH_ENTITY || m_e->mesh == nullptr) continue;
+
+        auto model = createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
+        auto mvp = vp * model;
+        glUniformMatrix4fv(shader::depth_only_uniforms.mvp, 1, GL_FALSE, &mvp[0][0]);
+
+        auto &mesh = m_e->mesh;
+        for (int j = 0; j < mesh->num_materials; ++j) {
+            glBindVertexArray(mesh->vao);
+            glDrawElements(mesh->draw_mode, mesh->draw_count[j], mesh->draw_type, (GLvoid*)(sizeof(GLubyte)*mesh->draw_start[j]));
+        }
+    }
+    // Reset gl state to expected degree
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_BACK);
+	glDepthFunc(GL_LESS); 
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, window_width, window_height);
+}
+
 
 void initBloomFbo(bool resize){
     if(!resize){
@@ -535,22 +632,12 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Texture* skybox, 
     glActiveTexture(GL_TEXTURE5);
     glBindTexture(GL_TEXTURE_2D_ARRAY, graphics::shadow_buffer);
 
-    // @ In general we could store lists of needed types with the entity_manager
-    std::vector<int> water_ids;
-    bool draw_water = false;
-
     glUniform1fv(shader::unified_uniforms[shader::unified_bloom].shadow_cascade_distances, graphics::shadow_num, graphics::shadow_cascade_distances);
     glUniform1f(shader::unified_uniforms[shader::unified_bloom].far_plane, camera.far_plane);
     auto vp = camera.projection * camera.view;
     for (int i = 0; i < ENTITY_COUNT; ++i) {
         auto m_e = reinterpret_cast<MeshEntity*>(entity_manager.entities[i]);
-        if(m_e == nullptr) continue;
-        if(m_e->type == EntityType::WATER_ENTITY){
-            water_ids.push_back(i); 
-            draw_water = true;
-            continue;
-        }
-        if(m_e->type != EntityType::MESH_ENTITY || m_e->mesh == nullptr) continue;
+        if(m_e == nullptr || m_e->type != EntityType::MESH_ENTITY || m_e->mesh == nullptr) continue;
 
         auto model = createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
         auto mvp = vp * model;
@@ -582,8 +669,7 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Texture* skybox, 
     }
 
     //drawSkybox(skybox, camera);
-
-    if(draw_water){
+    if(entity_manager.water != nullptr){
         glUseProgram(       shader::water_programs[shader::unified_bloom]);
         glUniform1fv(       shader::water_uniforms[shader::unified_bloom].shadow_cascade_distances, graphics::shadow_num, graphics::shadow_cascade_distances);
         glUniform1f(        shader::water_uniforms[shader::unified_bloom].far_plane, camera.far_plane);
@@ -608,20 +694,18 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Texture* skybox, 
         glActiveTexture(GL_TEXTURE3);
         glBindTexture(GL_TEXTURE_2D, graphics::simplex_value->id);
     
-        // @note Sort by depth
-        for(auto &id : water_ids){
-            auto e = (WaterEntity*)entity_manager.entities[id];
-            auto model = createModelMatrix(e->position, glm::quat(), e->scale);
-            auto mvp = vp * model;
-            glUniformMatrix4fv(shader::water_uniforms[shader::unified_bloom].mvp, 1, GL_FALSE, &mvp[0][0]);
-            glUniformMatrix4fv(shader::water_uniforms[shader::unified_bloom].model, 1, GL_FALSE, &model[0][0]);
-            glUniform4fv(shader::water_uniforms[shader::unified_bloom].shallow_color, 1, &e->shallow_color[0]);
-            glUniform4fv(shader::water_uniforms[shader::unified_bloom].deep_color, 1, &e->deep_color[0]);
-            glUniform4fv(shader::water_uniforms[shader::unified_bloom].foam_color, 1, &e->foam_color[0]);
+        auto &water = entity_manager.water;
+        auto model = createModelMatrix(water->position, glm::quat(), water->scale);
+        auto mvp = vp * model;
+        glUniformMatrix4fv(shader::water_uniforms[shader::unified_bloom].mvp, 1, GL_FALSE, &mvp[0][0]);
+        glUniformMatrix4fv(shader::water_uniforms[shader::unified_bloom].model, 1, GL_FALSE, &model[0][0]);
+        glUniform4fv(shader::water_uniforms[shader::unified_bloom].shallow_color, 1, &water->shallow_color[0]);
+        glUniform4fv(shader::water_uniforms[shader::unified_bloom].deep_color, 1, &water->deep_color[0]);
+        glUniform4fv(shader::water_uniforms[shader::unified_bloom].foam_color, 1, &water->foam_color[0]);
 
-            glBindVertexArray(graphics::grid.vao);
-            glDrawElements(graphics::grid.draw_mode, graphics::grid.draw_count[0], graphics::grid.draw_type, (GLvoid*)(sizeof(GLubyte)*graphics::grid.draw_start[0]));
-        }
+        glBindVertexArray(graphics::grid.vao);
+        glDrawElements(graphics::grid.draw_mode, graphics::grid.draw_count[0], graphics::grid.draw_type, (GLvoid*)(sizeof(GLubyte)*graphics::grid.draw_start[0]));
+
         //glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
         glDepthFunc(GL_LESS);
     }

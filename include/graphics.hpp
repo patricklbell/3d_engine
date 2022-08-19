@@ -11,6 +11,7 @@
 class EntityManager;
 struct Mesh;
 struct Texture;
+struct WaterEntity;
 
 extern int    window_width;
 extern int    window_height;
@@ -56,6 +57,9 @@ void updateShadowVP(const Camera &camera);
 void initShadowFbo();
 void bindDrawShadowMap(const EntityManager &entity_manager, const Camera &camera);
 
+void initWaterColliderFbo();
+void bindDrawWaterColliderMap(const EntityManager &entity_manager, const Camera &camera, WaterEntity *water);
+
 void clearFramebuffer(const glm::vec4 &color);
 void bindHdr();
 void drawSkybox(const Texture* skybox, const Camera &camera);
@@ -75,11 +79,14 @@ namespace graphics {
     extern GLuint hdr_buffers[2];
     extern const char *shadow_macro;
     extern const char * shadow_invocation_macro;
-    extern GLuint shadow_fbo;
-    extern GLuint shadow_buffer;
+    extern GLuint shadow_buffer, shadow_fbo;
+
+    extern GLuint water_collider_fbo, water_collider, water_collider_depth;
+
     extern Mesh quad;
     extern Mesh cube;
     extern Mesh grid;
+
     extern Texture * simplex_gradient;
     extern Texture * simplex_value;
 }
