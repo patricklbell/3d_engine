@@ -29,6 +29,7 @@ extern bool draw_bloom;
 extern AssetManager global_assets;
 extern std::string GL_version, GL_vendor, GL_renderer;
 extern std::string level_path;
+extern bool playing;
 
 struct ThreadPool;
 extern ThreadPool *global_thread_pool;

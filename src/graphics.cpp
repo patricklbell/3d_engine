@@ -38,11 +38,9 @@ namespace graphics{
     glm::mat4x4 shadow_vps[shadow_num + 1];
     GLuint shadow_fbo, shadow_buffer, shadow_matrices_ubo;
 
-    GLuint water_collider_fbo, water_collider, water_collider_depth;
+    GLuint water_collider_fbos[2], water_collider_buffers[2];
 
-    Mesh quad;
-    Mesh cube;
-    Mesh grid;
+    Mesh quad, cube, line_cube, grid;
     Texture * simplex_gradient;
     Texture * simplex_value;
     const int MSAA_SAMPLES = 2;
@@ -69,10 +67,12 @@ void createDefaultCamera(Camera &camera){
 
 void updateCameraView(Camera &camera){
     camera.view = glm::lookAt(camera.position, camera.target, camera.up);
+    camera.right = glm::vec3(glm::transpose(camera.view)[0]);
+    camera.forward = glm::normalize(camera.position - camera.target);
 }
 
 void updateCameraProjection(Camera &camera){
-    camera.projection = glm::perspective(glm::radians(45.0f), (float)window_width/(float)window_height, camera.near_plane, camera.far_plane);
+    camera.projection = glm::perspective(camera.fov, (float)window_width/(float)window_height, camera.near_plane, camera.far_plane);
 }
 
 glm::mat4x4 getShadowMatrixFromFrustrum(const Camera &camera, float near_plane, float far_plane){
@@ -242,98 +242,133 @@ void bindDrawShadowMap(const EntityManager &entity_manager, const Camera &camera
 }
 
 void initWaterColliderFbo(){
-    glGenFramebuffers(1, &graphics::water_collider_fbo);
-    glBindFramebuffer(GL_FRAMEBUFFER, graphics::water_collider_fbo);
-
-    glGenTextures(1, &graphics::water_collider);
-    glBindTexture(GL_TEXTURE_2D, graphics::water_collider);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, WATER_COLLIDER_SIZE, WATER_COLLIDER_SIZE, 0, GL_RGBA, GL_FLOAT, NULL);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    // attach texture to framebuffer
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, graphics::water_collider, 0);
-    
-    glGenTextures(1, &graphics::water_collider_depth);
-    glBindTexture(GL_TEXTURE_2D, graphics::water_collider_depth);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH24_STENCIL8, WATER_COLLIDER_SIZE, WATER_COLLIDER_SIZE, 0, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8, NULL);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, graphics::water_collider_depth, 0);  
-
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE){
-        std::cerr << "Water collider framebuffer not complete.\n";
-    }
+    glGenFramebuffers(2, graphics::water_collider_fbos);
+    glGenTextures(2, graphics::water_collider_buffers);
 
     static const GLuint attachments[] = { GL_COLOR_ATTACHMENT0 };
-    glDrawBuffers(1, attachments);
+    for (unsigned int i = 0; i < 2; i++) {
+        glBindFramebuffer(GL_FRAMEBUFFER, graphics::water_collider_fbos[i]);
+        glDrawBuffers(1, attachments);
+        glBindTexture(GL_TEXTURE_2D, graphics::water_collider_buffers[i]);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, WATER_COLLIDER_SIZE, WATER_COLLIDER_SIZE, 0, GL_RGBA, GL_FLOAT, NULL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        // we clamp to the edge as the blur filter would otherwise sample repeated texture values
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, graphics::water_collider_buffers[i], 0);
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+            std::cerr << "Water collider framebuffer not complete.\n";
+        }
+    }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-// Since shadow buffer wont need to be bound otherwise just combine these operations
-void bindDrawWaterColliderMap(const EntityManager &entity_manager, const Camera &camera, WaterEntity *water){
-    // Create orthographic VP
-    const auto view = glm::lookAt(water->position + camera.up, water->position, camera.up);
-    const auto projection = glm::ortho(50.0f, -50.0f, 50.0f, -50.0f, camera.near_plane, camera.far_plane);
-    const auto vp = projection * view;
+// Since water buffer wont need to be bound otherwise just combine these operations
+//void bindDrawWaterColliderMap(const EntityManager &entity_manager, WaterEntity *water){
+//    // Create orthographic VP
+//    // This makes the horizontal axis of the texture the x dimension
+//    float x_len = water->scale[0][0];
+//    float z_len = water->scale[2][2];
+//    constexpr float height = 0.02;
+//    const auto view = glm::lookAt(water->position + glm::vec3(0,2*height,0), water->position, glm::vec3(1,0,0));
+//    const auto projection = glm::ortho(z_len, -z_len, -x_len, x_len, height, 3.0f*height);
+//    const auto vp = projection * view;
+//
+//    glBindFramebuffer(GL_FRAMEBUFFER, graphics::water_collider_fbos[0]);
+//    glViewport(0, 0, WATER_COLLIDER_SIZE, WATER_COLLIDER_SIZE);
+//
+//    // Render entities only when they intersect water plane
+//    glUseProgram(shader::white_program);
+//    glDisable(GL_DEPTH_TEST);
+//    glDepthMask(GL_TRUE);
+//    glDisable(GL_CULL_FACE);
+//    
+//    glClearColor(0,0,0,1);
+//    glClear(GL_COLOR_BUFFER_BIT);
+//
+//    glUniform1f(shader::white_uniforms.height, 2.0*height);
+//    for (int i = 0; i < ENTITY_COUNT; ++i) {
+//        auto m_e = reinterpret_cast<MeshEntity*>(entity_manager.entities[i]);
+//        if(m_e == nullptr || m_e->type != EntityType::MESH_ENTITY || m_e->mesh == nullptr) continue;
+//
+//        auto model = createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
+//        auto mvp = vp * model;
+//        glUniformMatrix4fv(shader::white_uniforms.mvp, 1, GL_FALSE, &mvp[0][0]);
+//
+//        auto &mesh = m_e->mesh;
+//        for (int j = 0; j < mesh->num_materials; ++j) {
+//            glBindVertexArray(mesh->vao);
+//            glDrawElements(mesh->draw_mode, mesh->draw_count[j], mesh->draw_type, (GLvoid*)(sizeof(GLubyte)*mesh->draw_start[j]));
+//        }
+//    }
+//    // Reset gl state to expected degree
+//    glEnable(GL_CULL_FACE);
+//    glEnable(GL_DEPTH_TEST);
+//    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+//    glViewport(0, 0, window_width, window_height);
+//    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+//}
 
-    glBindBuffer(GL_UNIFORM_BUFFER, 0);
-
-    glBindFramebuffer(GL_FRAMEBUFFER, graphics::shadow_fbo);
+void bindDrawWaterColliderMap(const EntityManager& entity_manager, WaterEntity* water) {
+    glBindFramebuffer(GL_FRAMEBUFFER, graphics::water_collider_fbos[0]);
     glViewport(0, 0, WATER_COLLIDER_SIZE, WATER_COLLIDER_SIZE);
-    
-    // Make shadow line up with object by culling front (Peter Panning)
-    // @note face culling wont work with certain techniques i.e. grass
-    glEnable(GL_CULL_FACE);
-    glCullFace(GL_FRONT);
-    glDisable(GL_CULL_FACE);
-
-    glDepthMask(GL_TRUE);
-    glEnable(GL_DEPTH_TEST);
-    
-    // Draw water only to depth map, we will compare and use as stencil buffer
-    // to determine whether fragment of entity is of equal depth
-    glUseProgram(shader::white_program);
-    glEnable(GL_STENCIL_TEST);  
-    glClear(GL_DEPTH_BUFFER_BIT);
-    auto model = createModelMatrix(water->position, glm::quat(), water->scale);
-    auto mvp = vp * model;
-    glUniformMatrix4fv(shader::white_uniforms.mvp, 1, GL_FALSE, &mvp[0][0]);
-
-    glBindVertexArray(graphics::grid.vao);
-    glDrawElements(graphics::grid.draw_mode, graphics::grid.draw_count[0], graphics::grid.draw_type, (GLvoid*)(sizeof(GLubyte)*graphics::grid.draw_start[0]));
 
     // Render entities only when they intersect water plane
-    glUseProgram(shader::depth_only_program);
-    glDisable(GL_STENCIL_TEST);  
-	glDepthFunc(GL_EQUAL); 
+    glUseProgram(shader::white_program);
+    glDisable(GL_DEPTH_TEST);
+    glDepthMask(GL_TRUE);
     glDisable(GL_CULL_FACE);
-    
+
+    glClearColor(0, 0, 0, 1);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    auto grid_scale = water->scale;
+    // Remove y component of scale, shouldn't technically be necessary but helps with debugging
+    grid_scale[1][1] = 1.0f;
+    auto inv_grid = glm::inverse(createModelMatrix(water->position, glm::quat(), grid_scale));
     for (int i = 0; i < ENTITY_COUNT; ++i) {
         auto m_e = reinterpret_cast<MeshEntity*>(entity_manager.entities[i]);
-        if(m_e == nullptr || m_e->type != EntityType::MESH_ENTITY || m_e->mesh == nullptr) continue;
+        if (m_e == nullptr || m_e->type != EntityType::MESH_ENTITY || m_e->mesh == nullptr) continue;
 
         auto model = createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
-        auto mvp = vp * model;
-        glUniformMatrix4fv(shader::depth_only_uniforms.mvp, 1, GL_FALSE, &mvp[0][0]);
+        auto model_inv_grid = inv_grid * model; 
+        glUniformMatrix4fv(shader::white_uniforms.mvp, 1, GL_FALSE, &model_inv_grid[0][0]);
 
-        auto &mesh = m_e->mesh;
+        auto& mesh = m_e->mesh;
         for (int j = 0; j < mesh->num_materials; ++j) {
             glBindVertexArray(mesh->vao);
-            glDrawElements(mesh->draw_mode, mesh->draw_count[j], mesh->draw_type, (GLvoid*)(sizeof(GLubyte)*mesh->draw_start[j]));
+            glDrawElements(mesh->draw_mode, mesh->draw_count[j], mesh->draw_type, (GLvoid*)(sizeof(GLubyte) * mesh->draw_start[j]));
         }
     }
     // Reset gl state to expected degree
     glEnable(GL_CULL_FACE);
-    glCullFace(GL_BACK);
-	glDepthFunc(GL_LESS); 
+    glEnable(GL_DEPTH_TEST);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glViewport(0, 0, window_width, window_height);
 }
 
+void blurWaterFbo() {
+    bool horizontal = false;
+    // @note make sure final buffer is 0
+    constexpr int amount = 7;
+    glUseProgram(shader::distance_blur_program);
+    glViewport(0, 0, WATER_COLLIDER_SIZE, WATER_COLLIDER_SIZE);
+    for (unsigned int i = 0; i < amount; i++)
+    {
+        glBindFramebuffer(GL_FRAMEBUFFER, graphics::water_collider_fbos[!horizontal]);
+
+        glUniform1i(shader::distance_blur_uniforms.horizontal, (int)horizontal);
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, graphics::water_collider_buffers[horizontal]);
+
+        drawQuad();
+        horizontal = !horizontal;
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, window_width, window_height);
+}
 
 void initBloomFbo(bool resize){
     if(!resize){
@@ -448,42 +483,6 @@ void initGraphicsPrimitives(AssetManager &asset_manager) {
 
     // @hardcoded
     static const float cube_vertices[] = {
-//        -1.0f,-1.0f,-1.0f, // triangle 1 : begin
-//        -1.0f,-1.0f, 1.0f,
-//        -1.0f, 1.0f, 1.0f, // triangle 1 : end
-//        1.0f, 1.0f,-1.0f,  // triangle 2 : begin
-//        -1.0f,-1.0f,-1.0f,
-//        -1.0f, 1.0f,-1.0f, // triangle 2 : end
-//        1.0f,-1.0f, 1.0f,
-//        -1.0f,-1.0f,-1.0f,
-//        1.0f,-1.0f,-1.0f,
-//        1.0f, 1.0f,-1.0f,
-//        1.0f,-1.0f,-1.0f,
-//        -1.0f,-1.0f,-1.0f,
-//        -1.0f,-1.0f,-1.0f,
-//        -1.0f, 1.0f, 1.0f,
-//        -1.0f, 1.0f,-1.0f,
-//        1.0f,-1.0f, 1.0f,
-//        -1.0f,-1.0f, 1.0f,
-//        -1.0f,-1.0f,-1.0f,
-//        -1.0f, 1.0f, 1.0f,
-//        -1.0f,-1.0f, 1.0f,
-//        1.0f,-1.0f, 1.0f,
-//        1.0f, 1.0f, 1.0f,
-//        1.0f,-1.0f,-1.0f,
-//        1.0f, 1.0f,-1.0f,
-//        1.0f,-1.0f,-1.0f,
-//        1.0f, 1.0f, 1.0f,
-//        1.0f,-1.0f, 1.0f,
-//        1.0f, 1.0f, 1.0f,
-//        1.0f, 1.0f,-1.0f,
-//        -1.0f, 1.0f,-1.0f,
-//        1.0f, 1.0f, 1.0f,
-//        -1.0f, 1.0f,-1.0f,
-//        -1.0f, 1.0f, 1.0f,
-//        1.0f, 1.0f, 1.0f,
-//        -1.0f, 1.0f, 1.0f,
-//        1.0f,-1.0f, 1.0f
         -1.0f,  1.0f, -1.0f,
         -1.0f, -1.0f, -1.0f,
          1.0f, -1.0f, -1.0f,
@@ -548,6 +547,64 @@ void initGraphicsPrimitives(AssetManager &asset_manager) {
     graphics::cube.draw_start[0] = 0; 
     graphics::cube.draw_count[0] = sizeof(cube_vertices) / (3.0 * sizeof(*cube_vertices));
 
+    // @hardcoded
+    static const float line_cube_vertices[] = {
+    //0     1.0f, -1.0f, -1.0f,
+    //1     1.0f,  1.0f, -1.0f,
+    //2    -1.0f,  1.0f, -1.0f,
+    //3    -1.0f, -1.0f, -1.0f,
+    //4     1.0f, -1.0f,  1.0f,
+    //5     1.0f,  1.0f,  1.0f,
+    //6    -1.0f, -1.0f,  1.0f,
+    //7    -1.0f,  1.0f,  1.0f
+
+         1.0f, -1.0f, -1.0f,
+         1.0f,  1.0f, -1.0f,
+         1.0f, -1.0f, -1.0f,
+        -1.0f, -1.0f, -1.0f,
+         1.0f, -1.0f, -1.0f,
+         1.0f, -1.0f,  1.0f,
+        -1.0f,  1.0f, -1.0f,
+         1.0f,  1.0f, -1.0f,
+        -1.0f,  1.0f, -1.0f,
+        -1.0f, -1.0f, -1.0f,
+        -1.0f,  1.0f, -1.0f,
+        -1.0f,  1.0f,  1.0f,
+        -1.0f, -1.0f,  1.0f,
+        -1.0f, -1.0f, -1.0f,
+        -1.0f, -1.0f,  1.0f,
+         1.0f, -1.0f,  1.0f,
+        -1.0f, -1.0f,  1.0f,
+        -1.0f,  1.0f,  1.0f,
+         1.0f,  1.0f,  1.0f,
+         1.0f,  1.0f, -1.0f,
+         1.0f,  1.0f,  1.0f,
+         1.0f, -1.0f,  1.0f,
+         1.0f,  1.0f,  1.0f,
+        -1.0f,  1.0f,  1.0f,
+    };
+    glGenVertexArrays(1, &graphics::line_cube.vao);
+    GLuint line_cube_vbo;
+    glGenBuffers(1, &line_cube_vbo);
+
+    glBindVertexArray(graphics::line_cube.vao);
+    glBindBuffer(GL_ARRAY_BUFFER, line_cube_vbo);
+
+    glBufferData(GL_ARRAY_BUFFER, sizeof(line_cube_vertices), &line_cube_vertices, GL_STATIC_DRAW);
+
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
+
+    glBindVertexArray(0);
+
+    graphics::line_cube.draw_count = (GLint*)malloc(sizeof(GLint));
+    graphics::line_cube.draw_start = (GLint*)malloc(sizeof(GLint));
+    graphics::line_cube.draw_mode = GL_LINES;
+    graphics::line_cube.draw_type = GL_UNSIGNED_SHORT;
+
+    graphics::line_cube.draw_start[0] = 0;
+    graphics::line_cube.draw_count[0] = sizeof(line_cube_vertices) / (2.0 * sizeof(*line_cube_vertices));
+
     asset_manager.loadMeshAssimp(&graphics::grid, "data/models/grid.obj");
 
     graphics::simplex_gradient = asset_manager.createTexture("data/textures/2d_simplex_gradient_seamless.png");
@@ -559,6 +616,10 @@ void initGraphicsPrimitives(AssetManager &asset_manager) {
 void drawCube(){
     glBindVertexArray(graphics::cube.vao);
     glDrawArrays(graphics::cube.draw_mode, graphics::cube.draw_start[0], graphics::cube.draw_count[0]);
+}
+void drawLineCube() {
+    glBindVertexArray(graphics::line_cube.vao);
+    glDrawArrays(graphics::line_cube.draw_mode, graphics::line_cube.draw_start[0], graphics::line_cube.draw_count[0]);
 }
 void drawQuad(){
     glBindVertexArray(graphics::quad.vao);
@@ -693,6 +754,8 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Texture* skybox, 
         glBindTexture(GL_TEXTURE_2D, graphics::simplex_gradient->id);
         glActiveTexture(GL_TEXTURE3);
         glBindTexture(GL_TEXTURE_2D, graphics::simplex_value->id);
+        glActiveTexture(GL_TEXTURE4);
+        glBindTexture(GL_TEXTURE_2D, graphics::water_collider_buffers[0]);
     
         auto &water = entity_manager.water;
         auto model = createModelMatrix(water->position, glm::quat(), water->scale);

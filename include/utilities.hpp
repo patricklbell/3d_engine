@@ -16,12 +16,13 @@
 
 #include "graphics.hpp"
 
-void saveLevel(EntityManager& entity_manager, const std::string& level_path);
-bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const std::string &level_path);
+void saveLevel(EntityManager& entity_manager, const std::string& level_path, const Camera &camera);
+bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const std::string &level_path, Camera& camera);
 
 void checkGLError(std::string identifier="");
 
 glm::mat4x4 createModelMatrix(const glm::vec3 &pos, const glm::quat &rot, const glm::mat3x3 &scl);
+glm::mat4x4 createModelMatrix(const glm::vec3& pos, const glm::mat3x3& rot, const glm::mat3x3& scl);
 
 void screenPosToWorldRay(glm::ivec2 mouse_position, glm::mat4 view, glm::mat4 projection, glm::vec3 &out_origin, glm::vec3 &out_direction);
 

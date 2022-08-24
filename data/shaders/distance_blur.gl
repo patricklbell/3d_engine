@@ -1,0 +1,48 @@
+#if COMPILING_VS
+
+layout (location = 0) in vec3 in_vertex;
+layout (location = 1) in vec2 in_texcoord;
+
+out vec2 texcoord;
+
+void main(){
+    gl_Position = vec4(in_vertex,1.0);
+    texcoord = in_texcoord;
+}
+
+#endif
+
+#if COMPILING_FS
+out vec4 out_color;
+  
+in vec2 texcoord;
+
+uniform sampler2D image;
+  
+uniform bool horizontal;
+
+void main(){             
+    const float weight[5] = float[] (1.f/2.f, 1.f/3.f, 1.f/4.f, 1.f/5.f, 1.f/6.f);
+    //vec2 tex_offset = 1.0 / textureSize(image, 0); // gets size of single texel
+    vec2 tex_offset = vec2(0.0003);
+    vec3 result = texture(image, texcoord).rgb * weight[0]; // current fragment's contribution
+    if(horizontal)
+    {
+        for(int i = 1; i < 5; ++i)
+        {
+            result += texture(image, texcoord + vec2(tex_offset.x * i, 0.0)).rgb * weight[i];
+            result += texture(image, texcoord - vec2(tex_offset.x * i, 0.0)).rgb * weight[i];
+        }
+    }
+    else
+    {
+        for(int i = 1; i < 5; ++i)
+        {
+            result += texture(image, texcoord + vec2(0.0, tex_offset.y * i)).rgb * weight[i];
+            result += texture(image, texcoord - vec2(0.0, tex_offset.y * i)).rgb * weight[i];
+        }
+    }
+    out_color = vec4(min(result, vec3(1.0)), 1.0);
+}
+
+#endif

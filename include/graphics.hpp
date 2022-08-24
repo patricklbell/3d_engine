@@ -35,10 +35,14 @@ struct Camera {
     enum TYPE { 
         TRACKBALL = 0,
         SHOOTER = 1,
+        STATIC = 2,
     } state;
 
-    const float near_plane = 1.0f, far_plane = 100.0f;
-    const glm::vec3 up = glm::vec3(0,1,0);
+    float near_plane = 1.0f, far_plane = 100.0f;
+    float fov = glm::radians(45.0f);
+    glm::vec3 up = glm::vec3(0,1,0);
+    glm::vec3 forward;
+    glm::vec3 right;
     glm::vec3 position;
     glm::vec3 target;
     glm::mat4 view;
@@ -52,13 +56,15 @@ void updateCameraProjection(Camera &camera);
 void initGraphicsPrimitives(AssetManager &asset_manager);
 void drawQuad();
 void drawCube();
+void drawLineCube();
 
 void updateShadowVP(const Camera &camera);
 void initShadowFbo();
 void bindDrawShadowMap(const EntityManager &entity_manager, const Camera &camera);
 
 void initWaterColliderFbo();
-void bindDrawWaterColliderMap(const EntityManager &entity_manager, const Camera &camera, WaterEntity *water);
+void bindDrawWaterColliderMap(const EntityManager &entity_manager, WaterEntity *water);
+void blurWaterFbo();
 
 void clearFramebuffer(const glm::vec4 &color);
 void bindHdr();
@@ -81,7 +87,7 @@ namespace graphics {
     extern const char * shadow_invocation_macro;
     extern GLuint shadow_buffer, shadow_fbo;
 
-    extern GLuint water_collider_fbo, water_collider, water_collider_depth;
+    extern GLuint water_collider_fbos[2], water_collider_buffers[2];
 
     extern Mesh quad;
     extern Mesh cube;

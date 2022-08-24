@@ -17,11 +17,11 @@ uniform float time;
 
 vec3 gwaves(in vec3 v) {
     const int wn = 2;
-     const vec2  d[wn] = {normalize(vec2(0.2, 0.4)), normalize(vec2(0.3, 0.2))};
-     const float a[wn] = {0.08, 0.03};
-     const float q[wn] = {0.7, 0.3};
-     const float p[wn] = {0.7, 0.6};
-     const float w[wn] = {20.0, 10.0};
+    const vec2  d[wn] = {normalize(vec2(0.2, 0.4)), normalize(vec2(0.3, 0.2))};
+    const float a[wn] = {0.08, 0.03};
+    const float q[wn] = {0.7, 0.3};
+    const float p[wn] = {0.7, 0.6};
+    const float w[wn] = {20.0, 10.0};
 
     vec3 res = v;
     for(int i = 0; i < wn; i++){
@@ -36,7 +36,8 @@ vec3 gwaves(in vec3 v) {
 }
 
 void main(){
-    vec3 vertex = gwaves(in_vertex);
+//    vec3 vertex = gwaves(in_vertex);
+    vec3 vertex = in_vertex;
     vec4 v = vec4(vertex, 1.0);
     gl_Position = mvp * v;
     vs_out.position = (model * v).xyz;
@@ -175,6 +176,7 @@ layout (location = 1) out vec4 out_bloom_color;
 
 uniform sampler2D simplex_gradient;
 uniform sampler2D simplex_value;
+uniform sampler2D collider;
 
 #load lib/shadows.gl
 
@@ -257,11 +259,18 @@ void main(){
   float scene_d  = gl_FragCoord.z;
 
   vec4 alpha = texture(screen_map, screencoord);
-  if (scene_d >= screen_d) {
+  if (scene_d > screen_d) {
     out_color = alpha;
 
     gl_FragDepth = screen_d;
   } else {
+    float collision = texture(collider, vs_in.texcoord.xy).r;
+//    collision = sqrt(collision);
+//    collision = max(
+//        clamp(sin(exp(-(2.0-collision))*0.5f*t + 5.0*t)*2.f*collision, 0.5, 1.0f) - 0.5,
+//        clamp(1.1-exp(-collision*collision), 0.5, 1.0) - 0.5
+//    )*2.0f;
+    
     vec3 n1 = normalnoise(10.0*vs_in.texcoord + t);
 
     float screen_z = depthToDist(screen_d);
@@ -277,7 +286,7 @@ void main(){
 
     vec4 col = mix(mat, alpha, min(rad*0.7 + 0.08, 0.8));
 
-    col = mix(col, foam_color, foam_dif + foam_dif*noise(18.0*vs_in.texcoord + (-1.0+screen_z - scene_z)*t*0.1 + t));
+    col = mix(col, foam_color, collision);
 
     vec3 albedo = col.xyz;
     vec3 normal = dgwaves(vs_in.vertex);

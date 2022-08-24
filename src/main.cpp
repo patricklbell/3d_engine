@@ -45,6 +45,7 @@ AssetManager global_assets;
 std::string GL_version, GL_vendor, GL_renderer;
 std::string level_path = "";
 ThreadPool *global_thread_pool;
+bool playing = false;
 
 int main() {
     exepath = getexepath();
@@ -145,9 +146,11 @@ int main() {
     sun_direction = glm::vec3(-0.7071067811865475, -0.7071067811865475, 0);
     sun_color = 5.0f*glm::vec3(0.941, 0.933, 0.849);
 
-    Camera camera;
-    createDefaultCamera(camera);
-    updateShadowVP(camera);
+    Camera editor_camera, level_camera;
+    createDefaultCamera(editor_camera);
+    createDefaultCamera(level_camera);
+    level_camera.state = Camera::TYPE::STATIC;
+    updateShadowVP(editor_camera);
 
     // 
     // Load shaders
@@ -166,6 +169,7 @@ int main() {
         {"data/shaders/unified.gl", shader::TYPE::UNIFIED_SHADER, empty_file_time},
         {"data/shaders/water.gl", shader::TYPE::WATER_SHADER, empty_file_time},
         {"data/shaders/gaussian_blur.gl", shader::TYPE::GAUSSIAN_BLUR_SHADER, empty_file_time},
+        {"data/shaders/distance_blur.gl", shader::TYPE::DISTANCE_BLUR_SHADER, empty_file_time},
         {"data/shaders/post.gl", shader::TYPE::POST_SHADER, empty_file_time},
         {"data/shaders/debug.gl", shader::TYPE::DEBUG_SHADER, empty_file_time},
         {"data/shaders/white.gl", shader::TYPE::WHITE_SHADER, empty_file_time},
@@ -209,8 +213,15 @@ int main() {
         last_time = current_time;
         static const float dt = 1.0/60.0;
 
+        Camera* camera_ptr = &editor_camera;
+        if (editor::use_level_camera || playing) {
+            camera_ptr = &level_camera;
+        }
+        Camera& camera = *camera_ptr;
+
         if (window_resized){
             updateCameraProjection(camera);
+            
             initHdrFbo(true);
 
             if(shader::unified_bloom){
@@ -230,25 +241,40 @@ int main() {
                 } 
             }
         }
-        // @debug for now render collision map every frame
-        if(entity_manager.water != nullptr)
-            bindDrawWaterColliderMap(entity_manager, camera, entity_manager.water);
+        if (!playing) {
+            // @debug for now render collision map every frame
+            if (entity_manager.water != nullptr) {
+                bindDrawWaterColliderMap(entity_manager, entity_manager.water);
+                blurWaterFbo();
+            }
+        }
+
         bindDrawShadowMap(entity_manager, camera);
+
         bindHdr();
         clearFramebuffer(glm::vec4(0.1,0.1,0.1,1.0));
         drawUnifiedHdr(entity_manager, skybox, camera);
 
-        handleEditorControls(camera, entity_manager, true_dt);
-
-        int blur_buffer_index = 0;
-        if(shader::unified_bloom){
-            blur_buffer_index = blurBloomFbo();
+        if (!playing) {
+            handleEditorControls(editor_camera, level_camera, entity_manager, true_dt);
+        }
+        else {
+            handleGameControls();
         }
 
+        int blur_buffer_index = 0;
+        if (shader::unified_bloom) {
+            blur_buffer_index = blurBloomFbo();
+        }
         bindBackbuffer();
         drawPost(blur_buffer_index, skybox, camera);
 
-        drawEditorGui(camera, entity_manager, asset_manager);
+        if (!playing) {
+            drawEditorGui(editor_camera, level_camera, entity_manager, asset_manager);
+        }
+        else {
+            drawGameGui(editor_camera, level_camera, entity_manager, asset_manager);
+        }
         // Swap backbuffer with front buffer
         glfwSwapBuffers(window);
         window_resized = false;

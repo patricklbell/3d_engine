@@ -37,6 +37,9 @@ namespace shader {
 	GLuint gaussian_blur_program;
 	struct GaussianBlurUniforms gaussian_blur_uniforms;
 
+	GLuint distance_blur_program;
+	struct DistanceBlurUniforms distance_blur_uniforms;
+
 	GLuint debug_program;
 	struct DebugUniforms debug_uniforms;
 
@@ -48,11 +51,30 @@ namespace shader {
 
 	GLuint depth_only_program;
 	struct MvpUniforms depth_only_uniforms;
+
 	GLuint white_program;
-	struct MvpUniforms white_uniforms;
+	struct WhiteUniforms white_uniforms;
 }
 
 using namespace shader;
+
+static std::string read_line(char* data, int data_len, int &line_len) {
+	for (int offset = 0; offset < data_len; offset++) {
+		if (data[offset] == '\n') {
+			line_len = offset + 1;
+			std::string line;
+			line.resize(offset);
+			memcpy(&line[0], data, offset);
+			return line;
+		} else if (data[offset] == '\r') {
+			line_len = offset + 2;
+			std::string line;
+			line.resize(offset);
+			memcpy(&line[0], data, offset);
+			return line;
+		}
+	}
+}
 
 static char *read_file_contents(std::string path, int &num_bytes) {
 	FILE *fp = fopen(path.c_str(), "rb");
@@ -86,30 +108,18 @@ static void load_shader_dependencies(char *shader_code, int num_bytes,
 		std::vector<char *> &linked_shader_codes, std::unordered_set<std::string> &linked_shader_paths) {
 	int offset = 0;
 
-	char line[255];
-	char filename[255];
-
-	const char *load_macro = "#load ";
+	constexpr std::string_view load_macro = "#load ";
 	for(int line_i = 0; offset < num_bytes; ++line_i) {
-		int line_beg_offset = offset;
-		for(; offset < num_bytes && shader_code[offset] != '\n'; offset++) {}
+		int aoffset;
+		auto line = read_line(&shader_code[offset], num_bytes, aoffset);
 
-		const int line_len = offset - line_beg_offset;
-
-		memcpy(line, &shader_code[line_beg_offset], line_len);
-		line[line_len] = '\0';
-
-		if(strncmp(load_macro, line, strlen(load_macro)) == 0) {
-			memset(&shader_code[line_beg_offset], ' ', line_len + 1);
-
-			int filename_len = line_len - strlen(load_macro);
-			if(filename_len > 0) {
-				strcpy(filename, &line[strlen(load_macro)]);
+		if(startsWith(line, load_macro)){
+			memset(&shader_code[offset], ' ', aoffset);
+			if(line.size() > load_macro.size()) {
+				// @todo make this handle any relative path
+				std::string loadpath = "data/shaders/" + line.substr(load_macro.size());
 
 				int loaded_num_bytes;
-				// @todo make this handle any relative path
-				std::string loadpath = "data/shaders/" + std::string(filename);
-
 				if(linked_shader_paths.find(loadpath) == linked_shader_paths.end()) {
 					linked_shader_paths.insert(loadpath);
 
@@ -126,8 +136,7 @@ static void load_shader_dependencies(char *shader_code, int num_bytes,
 				}
 			}
 		}
-		
-		offset++;
+		offset += aoffset;
 	}
 }
 
@@ -158,7 +167,6 @@ GLuint loadShader(std::string vertex_fragment_file_path, std::string macro_prepe
 	glShaderSource(vertex_shader_id, linked_shader_codes.size(), &linked_shader_codes[0], NULL);
 	glCompileShader(vertex_shader_id);
 
-
 	int info_log_length;
 	glGetShaderiv(vertex_shader_id, GL_INFO_LOG_LENGTH, &info_log_length);
 	if ( info_log_length > 0 ){
@@ -173,7 +181,6 @@ GLuint loadShader(std::string vertex_fragment_file_path, std::string macro_prepe
 
 	linked_shader_codes[shader_macro_i] = (char*)fragment_macro;	glShaderSource(fragment_shader_id, linked_shader_codes.size(), &linked_shader_codes[0], NULL);
 	glCompileShader(fragment_shader_id);
-
 
 	glGetShaderiv(fragment_shader_id, GL_INFO_LOG_LENGTH, &info_log_length);
 	if ( info_log_length > 0 ){
@@ -270,14 +277,14 @@ void loadDebugShader(std::string path){
 	}
 
 	// Grab uniforms to modify
-	debug_uniforms.model = glGetUniformLocation(debug_program, "model");
-	debug_uniforms.mvp = glGetUniformLocation(debug_program, "mvp");
-	debug_uniforms.sun_direction = glGetUniformLocation(debug_program, "sun_direction");
-	debug_uniforms.time = glGetUniformLocation(debug_program, "time");
-	debug_uniforms.flashing = glGetUniformLocation(debug_program, "flashing");
-	debug_uniforms.shaded = glGetUniformLocation(debug_program, "shaded");
-	debug_uniforms.color = glGetUniformLocation(debug_program, "color");
-	debug_uniforms.color_flash_to = glGetUniformLocation(debug_program, "color_flash_to");
+	debug_uniforms.model			= glGetUniformLocation(debug_program, "model");
+	debug_uniforms.mvp				= glGetUniformLocation(debug_program, "mvp");
+	debug_uniforms.sun_direction	= glGetUniformLocation(debug_program, "sun_direction");
+	debug_uniforms.time				= glGetUniformLocation(debug_program, "time");
+	debug_uniforms.flashing			= glGetUniformLocation(debug_program, "flashing");
+	debug_uniforms.shaded			= glGetUniformLocation(debug_program, "shaded");
+	debug_uniforms.color			= glGetUniformLocation(debug_program, "color");
+	debug_uniforms.color_flash_to	= glGetUniformLocation(debug_program, "color_flash_to");
 }
 void loadGaussianBlurShader(std::string path){
 	auto tmp = gaussian_blur_program;
@@ -294,6 +301,22 @@ void loadGaussianBlurShader(std::string path){
 	glUseProgram(gaussian_blur_program);
 	// Set fixed locations for textures in GL_TEXTUREi
 	glUniform1i(glGetUniformLocation(gaussian_blur_program, "image"), 0);
+}
+void loadDistanceBlurShader(std::string path) {
+	auto tmp = distance_blur_program;
+	// Create and compile our GLSL program from the shaders
+	distance_blur_program = loadShader(path);
+	if (distance_blur_program == GL_FALSE) {
+		distance_blur_program = tmp;
+		return;
+	}
+
+	// Grab uniforms to modify
+	distance_blur_uniforms.horizontal = glGetUniformLocation(distance_blur_program, "horizontal");
+
+	glUseProgram(distance_blur_program);
+	// Set fixed locations for textures in GL_TEXTUREi
+	glUniform1i(glGetUniformLocation(distance_blur_program, "image"), 0);
 }
 void loadNullShader(std::string path){
 	auto tmp = null_program;
@@ -372,11 +395,12 @@ void loadWaterShader(std::string path){
 		
 		glUseProgram(water_programs[i]);
 		// Set fixed locations for textures in GL_TEXTUREi
-		glUniform1i(glGetUniformLocation(water_programs[i], "screen_map"),  0);
-		glUniform1i(glGetUniformLocation(water_programs[i], "depth_map"),   1);
+		glUniform1i(glGetUniformLocation(water_programs[i], "screen_map"),       0);
+		glUniform1i(glGetUniformLocation(water_programs[i], "depth_map"),        1);
 		glUniform1i(glGetUniformLocation(water_programs[i], "simplex_gradient"), 2);
-		glUniform1i(glGetUniformLocation(water_programs[i], "simplex_value"), 3);
-		glUniform1i(glGetUniformLocation(water_programs[i], "shadow_map"),  5);
+		glUniform1i(glGetUniformLocation(water_programs[i], "simplex_value"),    3);
+		glUniform1i(glGetUniformLocation(water_programs[i], "collider"),		 4);
+		glUniform1i(glGetUniformLocation(water_programs[i], "shadow_map"),       5);
 	}
 }
 void loadSkyboxShader(std::string path){
@@ -395,20 +419,21 @@ void loadSkyboxShader(std::string path){
 
 		// Grab uniforms to modify during rendering
 		skybox_uniforms.projection = glGetUniformLocation(skybox_programs[i], "projection");
-		skybox_uniforms.view = glGetUniformLocation(skybox_programs[i], "view");
+		skybox_uniforms.view	   = glGetUniformLocation(skybox_programs[i], "view");
 	}
 }
 void loadWhiteShader(std::string path){
 	// Create and compile our GLSL program from the shaders
 	auto tmp = white_program;
-	white_program = loadShader(path);
+	white_program = loadShader(path, "", true);
 	if (white_program == GL_FALSE) {
 		white_program = tmp;
 		return;
 	}
 
 	// Grab uniforms to modify during rendering
-	white_uniforms.mvp = glGetUniformLocation(white_program, "mvp");
+	white_uniforms.mvp    = glGetUniformLocation(white_program, "mvp");
+	white_uniforms.height = glGetUniformLocation(white_program, "height");
 }
 void loadDepthOnlyShader(std::string path){
 	// Create and compile our GLSL program from the shaders
@@ -430,6 +455,7 @@ void deleteShaderPrograms(){
     glDeleteProgram(unified_programs[0]);
     glDeleteProgram(unified_programs[1]);
     glDeleteProgram(gaussian_blur_program);
+	glDeleteProgram(distance_blur_program);
 	glDeleteProgram(post_program[0]);
 	glDeleteProgram(post_program[1]);
 	glDeleteProgram(skybox_programs[0]);
@@ -450,6 +476,9 @@ void loadShader(std::string path, TYPE type) {
         case shader::TYPE::GAUSSIAN_BLUR_SHADER:
             loadGaussianBlurShader(path);
             break;
+		case shader::TYPE::DISTANCE_BLUR_SHADER:
+			loadDistanceBlurShader(path);
+			break;
         case shader::TYPE::POST_SHADER:
             loadPostShader(path);
             break;
@@ -464,8 +493,6 @@ void loadShader(std::string path, TYPE type) {
             break;
         case shader::TYPE::DEPTH_ONLY_SHADER:
             loadDepthOnlyShader(path);
-            break;
-        default:
             break;
     }
 }

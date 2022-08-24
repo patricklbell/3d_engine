@@ -111,7 +111,7 @@ void checkGLError(std::string identifier)
                        "Error '" + error + "' description: " + description + "\n";
 }
 
-void saveLevel(EntityManager & entity_manager, const std::string & level_path){
+void saveLevel(EntityManager & entity_manager, const std::string & level_path, const Camera &camera){
     std::cout << "----------- Saving Level " << level_path << "----------\n";
 
     std::set<Mesh*> used_meshes;
@@ -125,6 +125,9 @@ void saveLevel(EntityManager & entity_manager, const std::string & level_path){
 
     FILE *f;
     f=fopen(level_path.c_str(), "wb");
+
+    // @note uses extra memory because writes matrices
+    fwrite(&camera, sizeof(camera), 1, f);
 
     // Construct map between mesh pointers and index
     std::unordered_map<intptr_t, uint64_t> asset_lookup;
@@ -189,7 +192,7 @@ void saveLevel(EntityManager & entity_manager, const std::string & level_path){
 // @todo if needed make loading asign new ids such that connections are maintained
 // @todo any entities that store ids must be resolved so that invalid ie wrong versions are NULLID 
 // since we dont maintain version either
-bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const std::string &level_path) {
+bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const std::string &level_path, Camera &camera) {
     std::cout << "---------- Loading Level " << level_path << "----------\n";
 
     FILE *f;
@@ -202,6 +205,8 @@ bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const
     }
 
     entity_manager.clear();
+
+    fread(&camera, sizeof(camera), 1, f);
 
     std::string mesh_path;
     uint64_t mesh_index = 0;
@@ -282,6 +287,11 @@ bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const
 glm::mat4x4 createModelMatrix(const glm::vec3 &pos, const glm::quat &rot, const glm::mat3x3 &scl){
     return glm::translate(glm::mat4x4(1.0), pos) * glm::mat4_cast(rot) * glm::mat4x4(scl);
 }
+
+glm::mat4x4 createModelMatrix(const glm::vec3& pos, const glm::mat3x3& rot, const glm::mat3x3& scl) {
+    return glm::translate(glm::mat4x4(1.0), pos) * glm::mat4x4(rot) * glm::mat4x4(scl);
+}
+
 
 // https://cadxfem.org/inf/Fast%20MinimumStorage%20RayTriangle%20Intersection.pdf
 // Cornell university paper describing ray intersection algorithms

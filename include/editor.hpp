@@ -29,9 +29,10 @@ enum class TransformType : unsigned int{
 
 void initEditorGui(AssetManager &asset_manager);
 
-void ImTerminal(EntityManager &entity_manager, AssetManager &asset_manager, bool is_active);
+void ImTerminal(EntityManager &entity_manager, AssetManager &asset_manager, bool is_active, Camera &level_camera, Camera &editor_camera);
 
-void drawEditorGui(Camera &camera, EntityManager &entity_manager, AssetManager &asset_manager);
+void drawEditorGui(Camera& editor_camera, Camera& level_camera, EntityManager& entity_manager, AssetManager& asset_manager);
+void drawGameGui(Camera& editor_camera, Camera& level_camera, EntityManager& entity_manager, AssetManager& asset_manager);
 
 bool editorTranslationGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, Camera &camera, const glm::vec3 &snap, bool do_snap);
 bool editorRotationGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, const Camera &camera, float rot_snap, bool do_snap);
@@ -40,6 +41,7 @@ bool editTransform(Camera &camera, glm::vec3 &pos, glm::quat &rot, glm::mat3 &sc
 void drawEditor3DArrow(const glm::vec3 &position, const glm::vec3 &direction, const Camera &camera, const glm::vec4 &color, const glm::vec3 &scale, bool shaded=true, bool block=false);
 void drawEditor3DRing(const glm::vec3 &position, const glm::vec3 &direction, const Camera &camera, const glm::vec4 &color, const glm::vec3 &scale, bool shaded=true);
 void drawMeshCube(const glm::vec3 &pos, const glm::quat &rot, const glm::mat3x3 &scl, const Camera &camera);
+void drawFrustrum(Camera& drawn_camera, const Camera& camera);
 void drawMeshWireframe(const Mesh &mesh, const glm::vec3 &pos, const glm::quat &rot, const glm::mat3x3 &scl, const Camera &camera, bool flash);
 void drawWaterDebug(WaterEntity* w_e, const Camera &camera, bool flash);
 
@@ -57,6 +59,7 @@ namespace editor {
     extern ImGui::FileBrowser im_file_dialog;
     extern bool draw_debug_wireframe;
     extern bool transform_active;
+    extern bool use_level_camera, draw_level_camera;
     extern Id sel_e;
     extern AssetManager editor_assets;
     extern glm::vec3 translation_snap;
