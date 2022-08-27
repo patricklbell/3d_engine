@@ -700,6 +700,12 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Texture* skybox, 
         auto m_e = reinterpret_cast<MeshEntity*>(entity_manager.entities[i]);
         if(m_e == nullptr || m_e->type != EntityType::MESH_ENTITY || m_e->mesh == nullptr) continue;
 
+        // Material multipliers
+        glUniform3fv(shader::unified_uniforms[shader::unified_bloom].albedo_mult, 1, &m_e->albedo_mult[0]);
+        glUniform1f(shader::unified_uniforms[shader::unified_bloom].roughness_mult, m_e->roughness_mult);
+        glUniform1f(shader::unified_uniforms[shader::unified_bloom].metal_mult,     m_e->metal_mult);
+        glUniform1f(shader::unified_uniforms[shader::unified_bloom].ao_mult,        m_e->ao_mult);
+
         auto model = createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
         auto mvp = vp * model;
         glUniformMatrix4fv(shader::unified_uniforms[shader::unified_bloom].mvp, 1, GL_FALSE, &mvp[0][0]);

@@ -38,7 +38,7 @@ namespace shader {
 
     extern GLuint unified_programs[2];
     extern struct UnifiedUniforms {
-        GLuint mvp, model, sun_color, sun_direction, camera_position, shadow_cascade_distances, far_plane, view;
+        GLuint mvp, model, sun_color, sun_direction, camera_position, shadow_cascade_distances, far_plane, view, albedo_mult, roughness_mult, ao_mult, metal_mult;
     } unified_uniforms[2];
 
     extern GLuint water_programs[2];

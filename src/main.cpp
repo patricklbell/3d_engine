@@ -256,7 +256,7 @@ int main() {
         drawUnifiedHdr(entity_manager, skybox, camera);
 
         if (!playing) {
-            handleEditorControls(editor_camera, level_camera, entity_manager, true_dt);
+            handleEditorControls(editor_camera, level_camera, entity_manager, asset_manager, true_dt);
         }
         else {
             handleGameControls();

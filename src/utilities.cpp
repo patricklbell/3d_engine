@@ -144,6 +144,12 @@ void saveLevel(EntityManager & entity_manager, const std::string & level_path, c
     // Write extra null terminator to signal end of asset paths
     fputc('\0', f);
 
+    uint16_t collider_size = entity_manager.colliders.size();
+    fwrite(&collider_size, sizeof(collider_size), 1, f);
+    for (auto& c : entity_manager.colliders) {
+        fwrite(&c, sizeof(c), 1, f);
+    }
+
     // Save entities
     if(entity_manager.water != nullptr) {
         auto water = entity_manager.water;
@@ -238,6 +244,14 @@ bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const
         } else {
             mesh_path += c;
         }
+    }
+
+    uint16_t collider_size;
+    fread(&collider_size, sizeof(collider_size), 1, f);
+    if (collider_size > 0) {
+        auto index = entity_manager.colliders.size();
+        entity_manager.colliders.resize(entity_manager.colliders.size() + collider_size);
+        fread(&entity_manager.colliders[index], sizeof(entity_manager.colliders[0]), collider_size, f);
     }
 
     while((c = fgetc(f)) != EOF){
@@ -410,7 +424,7 @@ bool rayIntersectsTriangleCull(const glm::vec3 vertices[3], const glm::vec3 &ray
     v *= inv_det;
     return true;
 }
-bool lineIntersectsPlane(const glm::vec3 &plane_origin, const glm::vec3 &plane_normal,const glm::vec3 &line_origin, const glm::vec3 &line_direction, float &t){
+bool lineIntersectsPlane(const glm::vec3 &plane_origin, const glm::vec3 &plane_normal, const glm::vec3 &line_origin, const glm::vec3 &line_direction, float &t){
     float pn_ld = glm::dot(plane_normal, line_direction);
     // Line parallel to plane
     if(pn_ld < epsilon && pn_ld > -epsilon) return false;
@@ -423,6 +437,36 @@ bool lineIntersectsPlane(const glm::vec3 &plane_origin, const glm::vec3 &plane_n
     t = glm::dot(plane_normal, plane_origin - line_origin) / (pn_ld);
 
     return true;
+}
+
+bool lineIntersectsCube(const glm::vec3& cube_position, const glm::vec3& cube_scale, const glm::vec3& line_origin, const glm::vec3& line_direction, float& t, glm::vec3 &normal) {
+    bool did_intersect = false;
+    for (int i = 0; i < 3; i++) {
+        for (int d = -1; d <= 1; d += 2) {
+            auto p_normal = glm::vec3(d * (i == 0), d * (i == 1), d * (i == 2));
+            auto p_position = cube_position + cube_scale * p_normal;
+            
+            float p_t;
+            if (lineIntersectsPlane(p_position, p_normal, line_origin, line_direction, p_t)) {
+                auto p = line_origin + p_t * line_direction;
+                auto offset = glm::abs(p - p_position);
+                auto p_tangent = cube_scale * glm::vec3((i == 1 || i == 2), (i == 0 || i == 2), (i == 0 || i == 1));
+                offset *= p_tangent;
+
+                // Test if points lies on bounded plane
+                if (offset.x > p_tangent.x || offset.y > p_tangent.y || offset.z > p_tangent.z) {
+                    continue;
+                }
+                
+                if (!did_intersect || p_t < t) {
+                    t = p_t;
+                    normal = p_normal;
+                    did_intersect = true;
+                }
+            }
+        }
+    }
+    return did_intersect;
 }
 
 float closestDistanceBetweenLineCircle(const glm::vec3 &line_origin, const glm::vec3 &line_direction, const glm::vec3 &circle_center, const glm::vec3 &circle_normal, float circle_radius, glm::vec3& point)

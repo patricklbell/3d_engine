@@ -354,6 +354,10 @@ void loadUnifiedShader(std::string path){
         unified_uniforms[i].shadow_cascade_distances    = glGetUniformLocation(unified_programs[i], "shadow_cascade_distances");
         unified_uniforms[i].far_plane                   = glGetUniformLocation(unified_programs[i], "far_plane");
         unified_uniforms[i].view                        = glGetUniformLocation(unified_programs[i], "view");
+		unified_uniforms[i].albedo_mult					= glGetUniformLocation(unified_programs[i], "albedo_mult");
+		unified_uniforms[i].roughness_mult				= glGetUniformLocation(unified_programs[i], "roughness_mult");
+		unified_uniforms[i].ao_mult						= glGetUniformLocation(unified_programs[i], "ao_mult");
+		unified_uniforms[i].metal_mult					= glGetUniformLocation(unified_programs[i], "metal_mult");
 		
 		glUseProgram(unified_programs[i]);
 		// Set fixed locations for textures in GL_TEXTUREi

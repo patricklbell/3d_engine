@@ -47,12 +47,16 @@ layout (location = 1) out vec4 out_bloom_color;
 
 uniform sampler2D normal_map;
 uniform sampler2D albedo_map;
+uniform vec3 albedo_mult;
 
 
 #ifdef PBR
 uniform sampler2D ao_map;
+uniform float ao_mult;
 uniform sampler2D metallic_map;
+uniform float metal_mult;
 uniform sampler2D roughness_map;
+uniform float roughness_mult;
 #load lib/pbr.gl
 #else
 uniform float specular_int;
@@ -74,7 +78,7 @@ void main() {
     normal = normalize(normal * 2.0 - 1.0); 
     //// Transform normal from tangent to world space
     normal = TBN * normal;
-    vec3 albedo = texture(albedo_map, texcoord).xyz;
+    vec3 albedo = albedo_mult*texture(albedo_map, texcoord).xyz;
 
     // @debug, renders different layers of csm in colors
     //float frag_dist = abs((view * vec4(position, 1.0)).z);
@@ -103,9 +107,9 @@ void main() {
     //vec3 r = reflect(l, normalize(normal));
 
     //vec3  reflect    = vec4(texture(skybox, r).rgb, 1.0);
-    float roughness  = texture(roughness_map, texcoord).r; 
-    float metallic   = texture(metallic_map, texcoord).r; 
-    float ao         = texture(ao_map, texcoord).r + 0.04;
+    float roughness  = roughness_mult*texture(roughness_map, texcoord).r; 
+    float metallic   = metal_mult    *texture(metallic_map, texcoord).r; 
+    float ao         = ao_mult       *texture(ao_map, texcoord).r + 0.04;
 
     vec3 ambient = albedo * ao;
     vec3 hdr_color = ambient + brdfSchlickGGX(position, normal, albedo, metallic, roughness, -sun_direction, sun_color, camera_position);

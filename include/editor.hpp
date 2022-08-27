@@ -44,13 +44,14 @@ void drawMeshCube(const glm::vec3 &pos, const glm::quat &rot, const glm::mat3x3 
 void drawFrustrum(Camera& drawn_camera, const Camera& camera);
 void drawMeshWireframe(const Mesh &mesh, const glm::vec3 &pos, const glm::quat &rot, const glm::mat3x3 &scl, const Camera &camera, bool flash);
 void drawWaterDebug(WaterEntity* w_e, const Camera &camera, bool flash);
+void drawColliders(const std::vector<BoxCollider>& colliders, const Camera& camera);
 
 namespace editor {
-    extern enum GizmoMode {
-        GIZMO_MODE_TRANSLATE = 0,
-        GIZMO_MODE_ROTATE,
-        GIZMO_MODE_SCALE,
-        GIZMO_MODE_NONE,
+    extern enum class GizmoMode {
+        TRANSLATE = 0,
+        ROTATE,
+        SCALE,
+        NONE,
     } gizmo_mode;
     extern std::string im_file_dialog_type;
     extern bool do_terminal;
@@ -63,6 +64,12 @@ namespace editor {
     extern Id sel_e;
     extern AssetManager editor_assets;
     extern glm::vec3 translation_snap;
+
+    extern enum class EditorMode {
+        ENTITY = 0,
+        COLLIDERS,
+        NUM,
+    } editor_mode;
 
     struct Selection {
         Id id = NULLID;

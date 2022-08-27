@@ -16,6 +16,18 @@
 
 #include "graphics.hpp"
 
+template<typename T, glm::precision P>
+std::ostream& operator<<(std::ostream& os, const glm::tvec1<T, P>& v);
+
+template<typename T, glm::precision P>
+std::ostream &operator<<(std::ostream &os, const glm::tvec2<T, P> &v);
+
+template<typename T, glm::precision P>
+std::ostream &operator<<(std::ostream &os, const glm::tvec3<T, P> &v);
+
+template<typename T, glm::precision P>
+std::ostream &operator<<(std::ostream &os, const glm::tvec4<T, P> &v);
+
 void saveLevel(EntityManager& entity_manager, const std::string& level_path, const Camera &camera);
 bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const std::string &level_path, Camera& camera);
 
@@ -32,6 +44,7 @@ bool rayIntersectsTriangleTestCull(const glm::vec3 vertices[3], const glm::vec3 
 bool rayIntersectsTriangleTest(const glm::vec3 vertices[3], const glm::vec3 &ray_origin, const glm::vec3 &ray_direction);
 bool rayIntersectsMesh(Mesh *mesh, const glm::mat4x4 &transform, const Camera &camera, const glm::vec3 &ray_origin, const glm::vec3 &ray_direction, glm::vec3 &collision_point, glm::vec3 &normal);
 bool lineIntersectsPlane(const glm::vec3 &plane_origin, const glm::vec3 &plane_normal,const glm::vec3 &line_origin, const glm::vec3 &line_direction, float &t);
+bool lineIntersectsCube(const glm::vec3& cube_position, const glm::vec3& cube_scale, const glm::vec3& line_origin, const glm::vec3& line_direction, float& t, glm::vec3 &n);
 
 float closestDistanceBetweenLines(const glm::vec3 &l1_origin, const glm::vec3 &l1_direction, const glm::vec3 &l2_origin, const glm::vec3 &l2_direction, float &l1_t, float &l2_t);
 float closestDistanceBetweenLineCircle(const glm::vec3 &line_origin, const glm::vec3 &line_direction, const glm::vec3 &circle_center, const glm::vec3 &circle_normal, float circle_radius, glm::vec3& point);

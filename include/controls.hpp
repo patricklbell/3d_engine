@@ -20,7 +20,7 @@ namespace controls {
     extern glm::dvec2 mouse_position;
     extern glm::dvec2 delta_mouse_position;
 }
-void handleEditorControls(Camera& editor_camera, Camera& level_camera, EntityManager& entity_manager, float dt);
+void handleEditorControls(Camera& editor_camera, Camera& level_camera, EntityManager& entity_manager, AssetManager &asset_manager, float dt);
 void handleGameControls();
 void initEditorControls();
 

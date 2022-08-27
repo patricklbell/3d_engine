@@ -32,6 +32,10 @@ struct Entity {
 
 struct MeshEntity : Entity {
     Mesh* mesh = nullptr;
+    glm::vec3 albedo_mult = glm::vec3(1.0);
+    float roughness_mult = 1.0;
+    float metal_mult = 1.0;
+    float ao_mult = 1.0;
 
     glm::vec3 position      = glm::vec3(0.0);
     glm::quat rotation      = glm::quat(0.0,0.0,0.0,1.0);
@@ -88,6 +92,12 @@ inline constexpr size_t entitySize(EntityType type){
     }
 }
 
+// 2x2 Box
+struct BoxCollider {
+    Id linked_id = NULLID;
+    glm::vec3 position = glm::vec3(0.0);
+};
+
 struct EntityManager {
     Entity *entities[ENTITY_COUNT] = {nullptr};
     int versions[ENTITY_COUNT] = {0};
@@ -114,6 +124,7 @@ struct EntityManager {
             water = nullptr;
         }
         id_counter = 0;
+        colliders.clear();
     }
     inline Entity *getEntity(Id id){
         if(id.i < 0 || id.i > ENTITY_COUNT || id.v != versions[id.i]) return nullptr;
@@ -158,6 +169,20 @@ struct EntityManager {
             if(entities[i] != nullptr) free (entities[i]);
             entities[i] = nullptr;
         }
+    }
+    std::vector<BoxCollider> colliders;
+    inline void addBoxCollider(const glm::vec3& position, const Id& linked_id) {
+        colliders.emplace_back(BoxCollider({ linked_id, position }));
+    }
+    inline bool removeBoxCollider(BoxCollider *box) {
+        // @todo change architecture to be faster
+        for (int i = 0; i < colliders.size(); ++i) {
+            if (&colliders[i] == box) {
+                colliders.erase(colliders.begin() + i);
+                return true;
+            }
+        }
+        return false;
     }
 };
 
