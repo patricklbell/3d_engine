@@ -1,0 +1,35 @@
+#if COMPILING_VS
+
+layout (location = 0) in vec3 in_vertex;
+layout (location = 1) in vec2 in_texcoord;
+
+out vec2 texcoord;
+
+void main(){
+    gl_Position = vec4(in_vertex, 1.0);
+    texcoord = in_texcoord;
+}
+
+#endif
+
+#if COMPILING_FS
+
+in vec2 texcoord;
+out vec4 out_color;
+  
+uniform sampler2D image;
+
+vec4 make_distance_transform(in vec2 fragcoord) {
+    vec4 data = texture2D(image, texcoord);
+
+    vec2 seed_coord = data.xy;
+    float dist = length(seed_coord - texcoord);        
+
+    return vec4(vec3(dist), 1.0);
+}
+
+void main() {
+    out_color = make_distance_transform(gl_FragCoord.xy);
+}
+
+#endif

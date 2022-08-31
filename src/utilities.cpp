@@ -38,7 +38,20 @@ std::ostream &operator<<(std::ostream &os, const glm::tvec4<T, P> &v) {
     return os << v.x << ", " << v.y << ", " << v.z << ", " << v.w;
 }
 
+std::vector<std::string> split(std::string s, std::string delimiter) {
+    size_t pos_start = 0, pos_end, delim_len = delimiter.length();
+    std::string token;
+    std::vector<std::string> res;
 
+    while ((pos_end = s.find(delimiter, pos_start)) != std::string::npos) {
+        token = s.substr(pos_start, pos_end - pos_start);
+        pos_start = pos_end + delim_len;
+        res.push_back(token);
+    }
+
+    res.push_back(s.substr(pos_start));
+    return res;
+}
 
 // Based on:
 // https://www.codeproject.com/Tips/1263121/Copy-a-GL-Texture-to-Another-GL-Texture-or-to-a-GL
@@ -114,10 +127,11 @@ void checkGLError(std::string identifier)
 void saveLevel(EntityManager & entity_manager, const std::string & level_path, const Camera &camera){
     std::cout << "----------- Saving Level " << level_path << "----------\n";
 
+    // @todo handle nullptr on mesh
     std::set<Mesh*> used_meshes;
     for(int i = 0; i < ENTITY_COUNT; i++){
         auto e = entity_manager.entities[i];
-        if(e == nullptr || e->type != EntityType::MESH_ENTITY) continue;
+        if(e == nullptr || !(e->type & EntityType::MESH_ENTITY)) continue;
         auto m_e = reinterpret_cast<MeshEntity*>(e);
 
         used_meshes.emplace(m_e->mesh);
@@ -144,50 +158,30 @@ void saveLevel(EntityManager & entity_manager, const std::string & level_path, c
     // Write extra null terminator to signal end of asset paths
     fputc('\0', f);
 
-    uint16_t collider_size = entity_manager.colliders.size();
-    fwrite(&collider_size, sizeof(collider_size), 1, f);
-    for (auto& c : entity_manager.colliders) {
-        fwrite(&c, sizeof(c), 1, f);
-    }
-
-    // Save entities
-    if(entity_manager.water != nullptr) {
-        auto water = entity_manager.water;
-        fwrite(&water->type, sizeof(EntityType), 1, f);
-        fwrite(water, entitySize(water->type), 1, f);
-    }
     for(int i = 0; i < ENTITY_COUNT; i++){
         auto e = entity_manager.entities[i];
-        if(e == nullptr || e->type == EntityType::ENTITY) continue;
+        if(e == nullptr || e->type == ENTITY) continue;
 
         fwrite(&e->type, sizeof(EntityType), 1, f);
-        switch (e->type) {
-            // Write entities which contain no pointers
-            case EntityType::WATER_ENTITY:
-                {
-                    fwrite(e, entitySize(e->type), 1, f);
-                    break;
-                }
-            // Handle resource pointers with path lut
-            case EntityType::MESH_ENTITY:
-                {
-                    auto m_e = (MeshEntity*)e;
 
-                    // Hacky way of writing pointers by mapping to indexes into a list
-                    auto mesh = m_e->mesh;
-                    auto lookup = asset_lookup[reinterpret_cast<intptr_t>(mesh)];
-                    m_e->mesh = reinterpret_cast<Mesh*>(lookup);
+        // Handle resource pointers with path lut
+        if(e->type & MESH_ENTITY) {
+            auto m_e = (MeshEntity*)e;
 
-                    fwrite(m_e, sizeof(MeshEntity), 1, f);
+            // Hacky way of writing pointers by mapping to indexes into a list
+            auto mesh = m_e->mesh;
+            
+            auto lookup = asset_lookup[reinterpret_cast<intptr_t>(mesh)];
+            m_e->mesh = reinterpret_cast<Mesh*>(lookup);
+
+            fwrite(e, entitySize(e->type), 1, f);
                    
-                    // Restore real pointer
-                    m_e->mesh = mesh;
-
-                    break;
-                }
-            default:
-                break;
-                
+            // Restore real pointer
+            m_e->mesh = mesh;
+        }
+        // Write entities which contain no pointers
+        else {
+            fwrite(e, entitySize(e->type), 1, f);
         }
     }
 
@@ -246,14 +240,6 @@ bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const
         }
     }
 
-    uint16_t collider_size;
-    fread(&collider_size, sizeof(collider_size), 1, f);
-    if (collider_size > 0) {
-        auto index = entity_manager.colliders.size();
-        entity_manager.colliders.resize(entity_manager.colliders.size() + collider_size);
-        fread(&entity_manager.colliders[index], sizeof(entity_manager.colliders[0]), collider_size, f);
-    }
-
     while((c = fgetc(f)) != EOF){
         ungetc(c, f);
         // If needed we can write id as well to maintain during saves
@@ -261,37 +247,39 @@ bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const
         fread(&type, sizeof(EntityType), 1, f);
 
         std::cout << "Reading entity of type " << type << ":\n";
-        switch (type) {
-            // Contains no pointers
-            case EntityType::WATER_ENTITY:
-                {
-                    if(entity_manager.water == nullptr) {
-                        auto e = new WaterEntity();
-                        fread(e, entitySize(type), 1, f);
-                        entity_manager.water = reinterpret_cast<WaterEntity*>(e);
-                    } else {
-                        std::cerr << "Duplicate water in level\n";
-                    }
-                    break;
-                }
-            // Handle resource pointers with path lut
-            case EntityType::MESH_ENTITY:
-                {
-                    auto m_e = (MeshEntity*)allocateEntity(NULLID, type);
-                    fread(m_e, sizeof(MeshEntity), 1, f);
+        if(type & WATER_ENTITY)
+        {
+            auto e = (WaterEntity*)allocateEntity(NULLID, type);
+            fread(e, entitySize(type), 1, f);
+            if(entity_manager.water == NULLID) {
+                entity_manager.setEntity(entity_manager.getFreeId().i, e);
+                entity_manager.water = e->id;
+            } else {
+                free(e);
+                std::cerr << "Duplicate water in level, skipping\n";
+            }
+        }
+        // Handle resource pointers with path lut
+        else if(type & MESH_ENTITY)
+        {
+            auto e = allocateEntity(NULLID, type);
+            fread(e, entitySize(type), 1, f);
+            entity_manager.setEntity(entity_manager.getFreeId().i, e);
 
-                    // Convert asset index to ptr
-                    auto file_asset_index = reinterpret_cast<uint64_t>(m_e->mesh);
-                    m_e->mesh = index_to_mesh[file_asset_index];
+            auto m_e = (MeshEntity*)e;
+            
+            // Convert asset index to ptr
+            auto file_asset_index = reinterpret_cast<uint64_t>(m_e->mesh);
+            m_e->mesh = index_to_mesh[file_asset_index];
 
-                    std::cout << "\tAsset index is " << file_asset_index << ".\n";
-                    std::cout << "\tPosition is " << m_e->position << ".\n";
-
-                    entity_manager.setEntity(entity_manager.getFreeId().i, m_e);
-                    break;
-                }
-            default:
-                break;
+            std::cout << "\tAsset index is " << file_asset_index << ".\n";
+            std::cout << "\tPosition is " << m_e->position << ".\n";
+        }
+        else
+        {
+            auto e = allocateEntity(NULLID, type);
+            fread(e, entitySize(type), 1, f);
+            entity_manager.setEntity(entity_manager.getFreeId().i, e);
         }
     }
     fclose(f);

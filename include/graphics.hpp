@@ -52,6 +52,7 @@ struct Camera {
 void createDefaultCamera(Camera &camera);
 void updateCameraView(Camera &camera);
 void updateCameraProjection(Camera &camera);
+void updateCameraTarget(Camera& camera, glm::vec3 target);
 
 void initGraphicsPrimitives(AssetManager &asset_manager);
 void drawQuad();
@@ -88,6 +89,7 @@ namespace graphics {
     extern GLuint shadow_buffer, shadow_fbo;
 
     extern GLuint water_collider_fbos[2], water_collider_buffers[2];
+    extern int water_collider_final_fbo;
 
     extern Mesh quad;
     extern Mesh cube;

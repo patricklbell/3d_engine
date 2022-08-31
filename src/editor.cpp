@@ -38,22 +38,156 @@
 #include "entities.hpp"
 
 namespace editor {
-    std::string im_file_dialog_type;
-    bool draw_debug_wireframe = true;
-    bool do_terminal = false;
-    bool transform_active = false;
-    bool use_level_camera = false, draw_level_camera = false;
-    GizmoMode gizmo_mode = GizmoMode::NONE;
-    ImGui::FileBrowser im_file_dialog(ImGuiFileBrowserFlags_EnterNewFilename | ImGuiFileBrowserFlags_NoTitleBar);
+    EditorMode editor_mode = EditorMode::ENTITY;
+    AssetManager editor_assets;
     Mesh arrow_mesh;
     Mesh block_arrow_mesh;
     Mesh ring_mesh;
-    glm::vec3 translation_snap = glm::vec3(1.0);
-    EditorMode editor_mode = EditorMode::ENTITY;
 
-    Selection selection;
+    GizmoMode gizmo_mode = GizmoMode::NONE;
+    glm::vec3 translation_snap = glm::vec3(1.0);
+
+    ImGui::FileBrowser im_file_dialog = ImGui::FileBrowser(ImGuiFileBrowserFlags_EnterNewFilename | ImGuiFileBrowserFlags_NoTitleBar);
+    std::string im_file_dialog_type;
+
+    bool do_terminal;
+    bool draw_debug_wireframe = true;
+    bool draw_colliders = false;
+    bool transform_active = false;
+    bool use_level_camera = false, draw_level_camera = false;
+
+    ReferenceSelection selection;
+    CopySelection copy_selection;
 }
 using namespace editor;
+
+void ReferenceSelection::addEntity(Entity* e) {
+    for (const auto &id : ids) {
+        if (id == e->id) return;
+    }
+
+    ids.push_back(e->id);
+    if (type == ENTITY) type = e->type;
+    else                type = (EntityType)(type & e->type);
+
+    if (e->type & MESH_ENTITY) {
+        avg_position = (float)avg_position_count * avg_position + ((MeshEntity*)e)->position;
+        avg_position_count++;
+        avg_position /= (float)avg_position_count;
+    }
+}
+// If entity is not already in selection add it, else remove it
+void ReferenceSelection::toggleEntity(const EntityManager &entity_manager, Entity* e) {
+    int id_to_erase = -1;
+    for (int i = 0; i < ids.size(); ++i) {
+        const auto& id = ids[i];
+        if (id == e->id) {
+            id_to_erase = i;
+        }
+        else {
+            auto e = entity_manager.getEntity(id);
+            if (e == nullptr) continue;
+
+            if (i == 0) type = e->type;
+            else        type = (EntityType)(type & e->type);
+        }
+    }
+
+    if (id_to_erase != -1) {
+        ids.erase(ids.begin() + id_to_erase);
+
+        if (e->type & MESH_ENTITY) {
+            avg_position = (float)avg_position_count * avg_position - ((MeshEntity*)e)->position;
+            avg_position_count--;
+            avg_position /= (float)avg_position_count;
+        }
+        return;
+    }
+    else {
+        ids.push_back(e->id);
+        if (type == ENTITY) type = e->type;
+        else                type = (EntityType)(type & e->type);
+
+        if (e->type & MESH_ENTITY) {
+            avg_position = (float)avg_position_count * avg_position + ((MeshEntity*)e)->position;
+            avg_position_count++;
+            avg_position /= (float)avg_position_count;
+        }
+    }
+}
+void ReferenceSelection::clear() {
+    ids.clear();
+    type = ENTITY;
+    avg_position_count = 0;
+    avg_position = glm::vec3(0.0);
+}
+
+CopySelection::~CopySelection() {
+    for (auto& entity : entities) {
+        free(entity);
+    }
+    entities.clear();
+}
+void CopySelection::free_clear() {
+    for (auto& entity : entities) {
+        free(entity);
+    }
+    entities.clear();
+}
+
+void referenceToCopySelection(EntityManager& entity_manager, const ReferenceSelection& ref, CopySelection& cpy) {
+    cpy.free_clear();
+    for (const auto& id : ref.ids) {
+        auto e = entity_manager.getEntity(id);
+        if (e == nullptr) continue;
+
+        auto cpy_e = copyEntity(e);
+        if (cpy_e->type & MESH_ENTITY) {
+            auto m_e = (MeshEntity*)cpy_e;
+            
+            if (m_e->mesh != nullptr) {
+                m_e->mesh = new Mesh();
+                m_e->mesh->handle = ((MeshEntity*)e)->mesh->handle;
+            }
+        }
+
+        cpy.entities.emplace_back(std::move(cpy_e));
+    }
+}
+
+// @note doesn't preserve relationships between entities
+void createCopySelectionEntities(EntityManager& entity_manager, AssetManager &asset_manager, CopySelection& cpy, ReferenceSelection &ref) {
+    for (auto& e : cpy.entities) {
+        if (entity_manager.water != NULLID && e->type & WATER_ENTITY) {
+            std::cerr << "Warning, attempted to copy water to entity_manager which already has one. Skipping\n";
+            continue;
+        }
+        auto id = entity_manager.getFreeId();
+        entity_manager.setEntity(id.i, e);
+        if (e->type & WATER_ENTITY) entity_manager.water = e->id;
+        ref.addEntity(e);
+
+        // @note this needs to makes sure all assets are correctly copied,
+        // @todo systematise copying entities and assets, maybe only store path? (might be slow)
+        if (e->type & MESH_ENTITY) {
+            auto m_e = (MeshEntity*)e;
+            if (m_e->mesh == nullptr) continue;
+            
+            auto path = m_e->mesh->handle;
+            free(m_e->mesh);
+
+            auto mesh = asset_manager.getMesh(path);
+            if (mesh == nullptr) {
+                mesh = asset_manager.createMesh(path);
+                asset_manager.loadMeshFile(mesh, path);
+            }
+            m_e->mesh = mesh;
+            m_e->position += editor::translation_snap;
+        }
+    }
+    // memory is now owned by entity manager so makes sure we clear cpy
+    cpy.entities.clear();
+}
 
 void initEditorGui(AssetManager &asset_manager){
     // Setup Dear ImGui context
@@ -128,8 +262,6 @@ void initEditorGui(AssetManager &asset_manager){
     colors[ImGuiCol_NavWindowingDimBg] = ImVec4(0.80f, 0.80f, 0.80f, 0.20f);
     colors[ImGuiCol_ModalWindowDimBg] = ImVec4(0.80f, 0.80f, 0.80f, 0.35f);
 
-    //ImGui::StyleColorsDark();
-
     // Setup Platform/Renderer backends
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init(glsl_version.c_str());
@@ -137,22 +269,6 @@ void initEditorGui(AssetManager &asset_manager){
     asset_manager.loadMeshAssimp(&arrow_mesh, "data/models/arrow.obj");
     asset_manager.loadMeshAssimp(&block_arrow_mesh, "data/models/block_arrow.obj");
     asset_manager.loadMeshAssimp(&ring_mesh, "data/models/ring.obj");
-}
-
-// for string delimiter
-static std::vector<std::string> split (std::string s, std::string delimiter) {
-    size_t pos_start = 0, pos_end, delim_len = delimiter.length();
-    std::string token;
-    std::vector<std::string> res;
-
-    while ((pos_end = s.find (delimiter, pos_start)) != std::string::npos) {
-        token = s.substr (pos_start, pos_end - pos_start);
-        pos_start = pos_end + delim_len;
-        res.push_back (token);
-    }
-
-    res.push_back(s.substr(pos_start));
-    return res;
 }
 
 static bool echoCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager, Camera &camera) {
@@ -190,12 +306,12 @@ static bool loadLevelCommand(std::vector<std::string>& input_tokens, std::string
         auto filename = "data/levels/" + input_tokens[1] + ".level";
         if (loadLevel(entity_manager, asset_manager, filename, camera)) {
             level_path = filename;
-            output += "Loaded level " + input_tokens[1];
-            selection = Selection();
+            output += "Loaded level at path " + filename;
+            selection.clear();
             return true;
         }
 
-        output += "Failed to loaded level " + input_tokens[1];
+        output += "Failed to loaded level at path " + filename;
         return false;
     }
     
@@ -205,6 +321,7 @@ static bool loadLevelCommand(std::vector<std::string>& input_tokens, std::string
 
 static bool clearLevelCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager, Camera& camera) {
     entity_manager.clear();    
+    editor::selection.clear();
     output += "Cleared level";
 
     return true;
@@ -226,6 +343,23 @@ static bool saveLevelCommand(std::vector<std::string>& input_tokens, std::string
     level_path = filename;
 
     output += "Saved current level at path " + filename;
+    return true;
+}
+
+static bool newLevelCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager, Camera& camera) {
+    std::string filename;
+    if (input_tokens.size() == 1) {
+        output += "Please provide a name for the new level";
+        return false;
+    }
+    else if (input_tokens.size() >= 2) {
+        entity_manager.clear();
+        filename = "data/levels/" + input_tokens[1] + ".level";
+    }
+    level_path = filename;
+
+    saveLevel(entity_manager, filename, camera);
+    output += "Created new level at path " + filename;
     return true;
 }
 
@@ -270,13 +404,10 @@ static bool addMeshCommand(std::vector<std::string>& input_tokens, std::string& 
             output += "Mesh has already been loaded, using program memory\n";
         }
 
-        auto id = entity_manager.getFreeId();
-        auto new_mesh_entity = new MeshEntity(id);
+        auto new_mesh_entity = (MeshEntity*)entity_manager.createEntity(MESH_ENTITY);
         new_mesh_entity->mesh = mesh;
         new_mesh_entity->casts_shadow = true;
-        entity_manager.setEntity(id.i, new_mesh_entity);
-        selection.id = new_mesh_entity->id;
-        selection.is_water = false;
+        selection.addEntity(new_mesh_entity);
 
         output += "Added mesh entity with provided mesh to level\n";
         return true;
@@ -284,6 +415,24 @@ static bool addMeshCommand(std::vector<std::string>& input_tokens, std::string& 
     
     output += "Please provide a mesh name, see list_mesh\n";
     return false;
+}
+
+static bool addColliderCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager, Camera& camera) {
+    auto collider = new ColliderEntity(entity_manager.getFreeId());
+    auto collider_mesh = asset_manager.getMesh("data/mesh/cube.mesh");
+    if (collider_mesh == nullptr) {
+        collider->mesh = asset_manager.createMesh("data/mesh/cube.mesh");
+        if (!asset_manager.loadMesh(collider->mesh, "data/mesh/cube.mesh", true)) {
+            output += "Failed to load collider mesh";
+            return false;
+        }
+    }
+    else {
+        collider->mesh = collider_mesh;
+    }
+    entity_manager.setEntity(collider->id.i, collider);
+    
+    return true;
 }
 
 static bool saveMeshCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager, Camera &camera) {
@@ -343,12 +492,13 @@ static bool convertModelsToMeshCommand(std::vector<std::string>& input_tokens, s
 }
 
 static bool addWaterCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager, Camera &camera) {
-    if(entity_manager.water == nullptr) {
-        entity_manager.water = new WaterEntity();
-        selection.is_water = true;
+    if(entity_manager.water == NULLID) {
+        auto w = (WaterEntity*)entity_manager.createEntity(WATER_ENTITY);
+        entity_manager.water = w->id;
+        selection.addEntity(w);
         return true;
     }
-    selection = Selection();
+    
     output += "Failed to create water, there already is one in level\n";
     return false;
 }
@@ -376,8 +526,10 @@ const std::map
     {"list_levels", listLevelsCommand},
     {"load_level", loadLevelCommand},
     {"clear_level", clearLevelCommand},
+    {"new_level", newLevelCommand},
     {"list_mesh", listMeshCommand},
     {"add_mesh", addMeshCommand},
+    {"add_collider", addColliderCommand},
     {"load_model", loadModelCommand},
     {"list_models", listModelsCommand},
     {"save_level", saveLevelCommand},
@@ -561,19 +713,19 @@ void ImTerminal(EntityManager &entity_manager, AssetManager &asset_manager, bool
     prev_is_active = is_active;
 }
 
-bool editTransform(Camera &camera, glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, TransformType type=TransformType::ALL){
+TransformType editTransform(Camera &camera, glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, TransformType type=TransformType::ALL){
     static bool key_t = false, key_r = false, key_s = false, key_n = false;
     static bool use_trans_snap = true, use_rot_snap = true, use_scl_snap = false;
     static glm::vec3 scale_snap = glm::vec3(1.0);
     static float rotation_snap = 90;
-    bool change_occured = false;
+    TransformType change_type = TransformType::NONE;
 
     bool do_p = (bool)((unsigned int)type & (unsigned int)TransformType::POS);
     bool do_r = (bool)((unsigned int)type & (unsigned int)TransformType::ROT);
     bool do_s = (bool)((unsigned int)type & (unsigned int)TransformType::SCL);
 
     ImGuiIO& io = ImGui::GetIO();
-    if (!io.WantCaptureKeyboard && camera.state == Camera::TYPE::TRACKBALL) {
+    if (!io.WantCaptureKeyboard && camera.state != Camera::TYPE::SHOOTER) {
         if (glfwGetKey(window, GLFW_KEY_T) && !key_t && do_p)
             gizmo_mode = gizmo_mode == GizmoMode::TRANSLATE ? GizmoMode::NONE : GizmoMode::TRANSLATE;
         if (glfwGetKey(window, GLFW_KEY_R) && !key_r && do_r)
@@ -584,32 +736,29 @@ bool editTransform(Camera &camera, glm::vec3 &pos, glm::quat &rot, glm::mat3 &sc
 
     if(do_p){
         if (ImGui::RadioButton("##translate", gizmo_mode == GizmoMode::TRANSLATE)){
-            if(gizmo_mode == GizmoMode::TRANSLATE) gizmo_mode = GizmoMode::NONE;
-            else                                   gizmo_mode = GizmoMode::TRANSLATE;
+            gizmo_mode = gizmo_mode == GizmoMode::TRANSLATE ? GizmoMode::NONE : GizmoMode::TRANSLATE;
         }  
         ImGui::SameLine();
         ImGui::TextWrapped("Translation (Vector 3)");
         ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 10);
         if(ImGui::InputFloat3("##translation", &pos[0])){
-            change_occured = true;
+            change_type = (TransformType)((uint64_t)change_type | (uint64_t)TransformType::POS);
         } 
     }
     if(do_r){
         if (ImGui::RadioButton("##rotate", gizmo_mode == GizmoMode::ROTATE)){
-            if(gizmo_mode == GizmoMode::ROTATE) gizmo_mode = GizmoMode::NONE;
-            else                                gizmo_mode = GizmoMode::ROTATE;
+            gizmo_mode = gizmo_mode == GizmoMode::ROTATE ? GizmoMode::NONE : GizmoMode::ROTATE;
         }
         ImGui::SameLine();
         ImGui::TextWrapped("Rotation (Quaternion)");
         ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 10);
         if(ImGui::InputFloat4("##rotation", &rot[0])){
-            change_occured = true;
+            change_type = (TransformType)((uint64_t)change_type | (uint64_t)TransformType::ROT);
         } 
     }
     if(do_s){
         if (ImGui::RadioButton("##scale", gizmo_mode == GizmoMode::SCALE)){
-            if(gizmo_mode == GizmoMode::SCALE) gizmo_mode = GizmoMode::NONE;
-            else                               gizmo_mode = GizmoMode::SCALE;
+            gizmo_mode = gizmo_mode == GizmoMode::SCALE ? GizmoMode::NONE : GizmoMode::SCALE;
         }
         ImGui::SameLine();
         ImGui::TextWrapped("Scale (Vector 3)");
@@ -619,7 +768,7 @@ bool editTransform(Camera &camera, glm::vec3 &pos, glm::quat &rot, glm::mat3 &sc
             scl[0][0] = scale.x;
             scl[1][1] = scale.y;
             scl[2][2] = scale.z;
-            change_occured = true;
+            change_type = (TransformType)((uint64_t)change_type | (uint64_t)TransformType::SCL);
         } 
     }
   
@@ -631,7 +780,8 @@ bool editTransform(Camera &camera, glm::vec3 &pos, glm::quat &rot, glm::mat3 &sc
         ImGui::Checkbox("", &use_trans_snap);
         ImGui::SameLine();
         ImGui::InputFloat3("Snap", &translation_snap[0]);
-        change_occured |= editorTranslationGizmo(pos, rot, scl, camera, translation_snap, use_trans_snap);
+        if(do_p && editorTranslationGizmo(pos, rot, scl, camera, translation_snap, use_trans_snap))
+            change_type = (TransformType)((uint64_t)change_type | (uint64_t)TransformType::POS);
         break;
     case GizmoMode::ROTATE:
         if (!io.WantCaptureKeyboard && glfwGetKey(window, GLFW_KEY_N) && !key_n)
@@ -639,7 +789,8 @@ bool editTransform(Camera &camera, glm::vec3 &pos, glm::quat &rot, glm::mat3 &sc
         ImGui::Checkbox("", &use_rot_snap);
         ImGui::SameLine();
         ImGui::InputFloat("Snap", &rotation_snap);
-        change_occured |= editorRotationGizmo(pos, rot, scl, camera, (rotation_snap / 180.f) * PI, use_rot_snap);
+        if(do_r && editorRotationGizmo(pos, rot, scl, camera, (rotation_snap / 180.f) * PI, use_rot_snap))
+            change_type = (TransformType)((uint64_t)change_type | (uint64_t)TransformType::ROT);
         break;
     case GizmoMode::SCALE:
         if (!io.WantCaptureKeyboard && glfwGetKey(window, GLFW_KEY_N) && !key_n)
@@ -647,7 +798,8 @@ bool editTransform(Camera &camera, glm::vec3 &pos, glm::quat &rot, glm::mat3 &sc
         ImGui::Checkbox("", &use_scl_snap);
         ImGui::SameLine();
         ImGui::InputFloat3("Snap", &scale_snap[0]);
-        change_occured |= editorScalingGizmo(pos, rot, scl, camera, scale_snap, use_scl_snap);
+        if(do_s && editorScalingGizmo(pos, rot, scl, camera, scale_snap, use_scl_snap))
+            change_type = (TransformType)((uint64_t)change_type | (uint64_t)TransformType::SCL);
         break;
     default:
         break;
@@ -657,7 +809,7 @@ bool editTransform(Camera &camera, glm::vec3 &pos, glm::quat &rot, glm::mat3 &sc
     key_r = glfwGetKey(window, GLFW_KEY_R);
     key_s = glfwGetKey(window, GLFW_KEY_S);
     key_n = glfwGetKey(window, GLFW_KEY_N);
-    return change_occured;
+    return change_type;
 }
 
 bool editorRotationGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, const Camera &camera, float snap=1.0, bool do_snap=false){
@@ -942,7 +1094,7 @@ bool editorScalingGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, Camera &
 }
 
 
-void drawWaterDebug(WaterEntity* w_e, const Camera &camera, bool flash = false){
+void drawWaterDebug(WaterEntity* w, const Camera &camera, bool flash = false){
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     glDisable(GL_CULL_FACE);
     glDisable(GL_DEPTH_TEST);
@@ -951,9 +1103,9 @@ void drawWaterDebug(WaterEntity* w_e, const Camera &camera, bool flash = false){
     //glLineWidth(200.0);
 
     glUseProgram(shader::debug_program);
-    auto mvp = camera.projection * camera.view * createModelMatrix(w_e->position, glm::quat(), w_e->scale);
+    auto mvp = camera.projection * camera.view * createModelMatrix(w->position, glm::quat(), w->scale);
     glUniformMatrix4fv(shader::debug_uniforms.mvp, 1, GL_FALSE, &mvp[0][0]);
-    glUniformMatrix4fv(shader::debug_uniforms.model, 1, GL_FALSE, &w_e->position[0]);
+    glUniformMatrix4fv(shader::debug_uniforms.model, 1, GL_FALSE, &w->position[0]);
     glUniform4f(shader::debug_uniforms.color, 1.0, 1.0, 1.0, 1.0);
     glUniform4f(shader::debug_uniforms.color_flash_to, 1.0, 0.0, 1.0, 1.0);
     glUniform1f(shader::debug_uniforms.time, glfwGetTime());
@@ -1119,18 +1271,20 @@ void drawEditor3DArrow(const glm::vec3 &position, const glm::vec3 &direction, co
     glDisable(GL_BLEND);  
 }
 
-void drawColliders(const std::vector<BoxCollider> &colliders, const Camera &camera) {
+void drawColliders(const EntityManager &entity_manager, const Camera &camera) {
     glLineWidth(0.1);
 
     glUseProgram(shader::debug_program);
-    glUniform4f(shader::debug_uniforms.color, 1.0, 0.0, 1.0, 0.2);
-    glUniform4f(shader::debug_uniforms.color_flash_to, 1.0, 0.0, 1.0, 1.0);
+    glUniform4f(shader::debug_uniforms.color, 0.0, 1.0, 1.0, 0.2);
     glUniform1f(shader::debug_uniforms.time, glfwGetTime());
     glUniform1f(shader::debug_uniforms.shaded, 0.0);
     glUniform1f(shader::debug_uniforms.flashing, 0.0);
 
-    for (const auto& c : colliders) {
-        auto model = glm::translate(glm::mat4x4(1.0), c.position);
+    for (int i = 0; i < ENTITY_COUNT; ++i) {
+        auto c = (ColliderEntity*)entity_manager.entities[i];
+        if (c == nullptr || !(c->type & EntityType::COLLIDER_ENTITY)) continue;
+    
+        auto model = glm::translate(glm::mat4x4(1.0), c->collider_position);
         auto mvp = camera.projection * camera.view * model;
         glUniformMatrix4fv(shader::debug_uniforms.mvp, 1, GL_FALSE, &mvp[0][0]);
         glUniformMatrix4fv(shader::debug_uniforms.model, 1, GL_FALSE, &model[0][0]);
@@ -1140,31 +1294,6 @@ void drawColliders(const std::vector<BoxCollider> &colliders, const Camera &came
 }
 
 void drawEditorGui(Camera &editor_camera, Camera& level_camera, EntityManager &entity_manager, AssetManager &asset_manager){
-    // 
-    // Visualise entity picker and ray cast
-    //
-    //glm::vec3 out_origin;
-    //glm::vec3 out_direction;
-    //screenPosToWorldRay(controls::mouse_position, camera.view, camera.projection, out_origin, out_direction);
-    //float min_collision_distance = std::numeric_limits<float>::max();
-    //glm::vec3 normal, collision_point;
-    //for(int i = 0; i < ENTITY_COUNT; ++i){
-    //    if(entities[i] == nullptr) continue;
-    //    const auto mesh = entities[i]->asset;
-    //    const auto transform = entities[i]->transform;
-    //    glm::vec3 collision_point_tmp(0), normal_tmp(0);
-    //    rayIntersectsMesh(mesh, transform, camera, out_origin, out_direction, collision_point_tmp, normal_tmp);
-    //    float dis = glm::length(collision_point_tmp - camera.position);
-    //    if(dis < min_collision_distance){
-    //        min_collision_distance = dis;
-    //        collision_point = collision_point_tmp;
-    //        normal = normal_tmp;
-    //    }
-    //}
-    //if(min_collision_distance != std::numeric_limits<float>::max()){
-    //    drawEditor3DArrow(collision_point, normal, camera, glm::vec4(1.0));
-    //}
-
     if (!use_level_camera && draw_level_camera) {
         drawFrustrum(level_camera, editor_camera);
     }
@@ -1174,18 +1303,21 @@ void drawEditorGui(Camera &editor_camera, Camera& level_camera, EntityManager &e
     }
     Camera& camera = *camera_ptr;
     
-    if (editor::editor_mode == editor::EditorMode::COLLIDERS) {
-        drawColliders(entity_manager.colliders, camera);
+    if (editor::draw_colliders) {
+        drawColliders(entity_manager, camera);
     }
-    Entity *sel_e;
-    if(selection.is_water) {
-        sel_e = entity_manager.water;
-    } else {
-        sel_e = entity_manager.getEntity(selection.id);
+    if (editor::draw_debug_wireframe) {
+        for (const auto& id : selection.ids) {
+            auto e = (MeshEntity*)entity_manager.getEntity(id);
+            
+            if (e->type == WATER_ENTITY) {
+                drawWaterDebug((WaterEntity*)e, camera, true);
+            }
+            else if (e != nullptr && (e->type & MESH_ENTITY) && e->mesh != nullptr) {
+                drawMeshWireframe(*e->mesh, e->position, e->rotation, e->scale, camera, true);
+            }
+        }
     }
-
-    if(sel_e == nullptr) gizmo_mode = GizmoMode::NONE;
-    static int sel_e_material_index = -1;
     
     // Start the Dear ImGui frame;
     ImGui_ImplOpenGL3_NewFrame();
@@ -1193,11 +1325,13 @@ void drawEditorGui(Camera &editor_camera, Camera& level_camera, EntityManager &e
     ImGui::NewFrame();
 
     constexpr float pad = 10;
-    const static float sidebar_open_len = 0.8; // s
+    const static float sidebar_open_len = 0.2; // s
     static float sidebar_pos_right = 0;
-    static float sidebar_open_time = glfwGetTime();
+    static float sidebar_open_time;
     {
-        if(sel_e != nullptr) {
+        if(selection.ids.size()) {
+            auto fe = (Entity*)entity_manager.getEntity(selection.ids[0]);
+
             // Just opened
             if(sidebar_pos_right == 0) {
                 sidebar_open_time = glfwGetTime();
@@ -1216,93 +1350,119 @@ void drawEditorGui(Camera &editor_camera, Camera& level_camera, EntityManager &e
             ImGui::SetNextWindowSizeConstraints(ImVec2(sidebar_w, window_height), ImVec2(window_width / 2.0, window_height));
 
             ImGui::Begin("###entity", NULL, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar);
-            ImGui::TextWrapped("Entity Index: %d Version: %d", sel_e->id.i, sel_e->id.v);
+            if(selection.ids.size() == 1) 
+                ImGui::TextWrapped("Entity Index: %d Version: %d", selection.ids[0].i, selection.ids[0].v);
+            else 
+                ImGui::TextWrapped("Multiple Entities Selected");
 
             const float img_w = glm::min(sidebar_w - pad, 70.0f);
             static const std::vector<std::string> image_file_extensions = { ".jpg", ".png", ".bmp", ".tiff", ".tga" };
 
-            auto m_e = reinterpret_cast<MeshEntity*>(sel_e);
-            if(sel_e->type == EntityType::MESH_ENTITY && m_e->mesh != nullptr){
-                auto &mesh = m_e->mesh;
-                if(editor::draw_debug_wireframe)
-                    drawMeshWireframe(*mesh, m_e->position, m_e->rotation, m_e->scale, camera, true);
-
-                editor::transform_active = editTransform(camera, m_e->position, m_e->rotation, m_e->scale);
-
-                ImGui::Checkbox("Casts Shadows", &m_e->casts_shadow);
-
-                ImGui::SetCursorPosY(ImGui::GetCursorPosY() + ImGui::GetTextLineHeight());
-                if (ImGui::CollapsingHeader("Materials")){
-                    //const auto create_tex_ui = [&img_w, &asset_manager] (Texture** tex, int i, std::string&& type, bool is_float = false) {
-                    //    ImGui::Text("%s", type.c_str());
-
-                    //    std::string id = type + std::to_string(i);
-                    //    bool is_color = (*tex)->is_color;
-                    //    if (ImGui::Checkbox(("###is_color" + type).c_str(), &is_color)) {
-                    //        (*tex)->is_color = is_color;
-                    //        std::cout << id << "\n";
-                    //        if ((*tex)->is_color) {
-                    //            (*tex) = asset_manager.getColorTexture((*tex)->color, GL_RGBA);
-                    //        }
-                    //    }
-                    //    if ((*tex)->is_color) {
-                    //        glm::vec3& col = (*tex)->color;
-                    //        ImGui::SameLine();
-
-                    //        if (is_float) {
-                    //            float val = col.x;
-                    //            if (ImGui::InputFloat(("###color" + id).c_str(), &val)) {
-                    //                (*tex) = asset_manager.getColorTexture(glm::vec3(val), GL_RGBA);
-                    //            }
-                    //        }
-                    //        else {
-                    //            if (ImGui::ColorEdit3(("###color" + id).c_str(), &col.x)) {
-                    //                // @note maybe you want more specific format
-                    //                // and color picker may make many unnecessary textures
-                    //                (*tex) = asset_manager.getColorTexture(col, GL_RGBA);
-                    //            }
-                    //        }
-                    //    }
-                    //    else {
-                    //        void* tex_id = (void*)(intptr_t)(*tex)->id;
-                    //        ImGui::SetNextItemWidth(img_w);
-                    //        if (ImGui::ImageButton(tex_id, ImVec2(img_w, img_w))) {
-                    //            im_file_dialog.SetPwd(exepath + "/data/textures");
-                    //            sel_e_material_index = i;
-                    //            im_file_dialog_type = "asset.mat.t" + type;
-                    //            im_file_dialog.SetCurrentTypeFilterIndex(2);
-                    //            im_file_dialog.SetTypeFilters(image_file_extensions);
-                    //            im_file_dialog.Open();
-                    //        }
-                    //    }
-                    //};
-                    //for(int i = 0; i < mesh->num_materials; i++) {
-                    //    auto &mat = mesh->materials[i];
-                    //    char buf[128];
-                    //    sprintf(buf, "Material %d", i);
-                    //    if (ImGui::CollapsingHeader(buf)){
-                    //        create_tex_ui(&mat.t_albedo, i,    "Albedo");
-                    //        create_tex_ui(&mat.t_ambient, i,   "Ambient", true);
-                    //        create_tex_ui(&mat.t_metallic, i,  "Metallic", true);
-                    //        create_tex_ui(&mat.t_normal, i,    "Normal");
-                    //        create_tex_ui(&mat.t_roughness, i, "Roughness", true);
-                    //    }
-                    //}
-                    ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 2*pad);
-                    ImGui::ColorEdit3("###albedo_mult", &m_e->albedo_mult[0]);
-                    ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 2*pad);
-                    ImGui::SliderFloat("###roughness_mult", &m_e->roughness_mult, 0.0f, 1.0f, "%.3f", ImGuiSliderFlags_ClampOnInput);
-                    ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 2*pad);
-                    ImGui::SliderFloat("###ao_mult", &m_e->ao_mult, 0.0f, 1.0f, "%.3f", ImGuiSliderFlags_ClampOnInput);
-                    ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 2*pad);
-                    ImGui::SliderFloat("###metal_mult",     &m_e->metal_mult, 0.0f, 1.0f, "%.3f", ImGuiSliderFlags_ClampOnInput);
+            if (selection.type & EntityType::MESH_ENTITY) {
+                auto m_e = (MeshEntity*)fe;
+                TransformType edited_transform;
+                if (selection.ids.size() == 1) {
+                    edited_transform = editTransform(camera, m_e->position, m_e->rotation, m_e->scale);
                 }
-            } else if(sel_e->type == EntityType::WATER_ENTITY) {
-                auto w_e = (WaterEntity*)sel_e;
-                if(editor::draw_debug_wireframe)
-                    drawWaterDebug(w_e, camera, true);
+                else {
+                    glm::vec3 position = m_e->position;
+                    glm::quat rotation = m_e->rotation;
+                    glm::mat3 scale = m_e->scale;
+
+                    // @todo support multiple selection rotation and scale
+                    edited_transform = editTransform(camera, position, rotation, scale, TransformType::POS);
+
+                    auto offset = position - m_e->position;
+                    for (const auto& id : selection.ids) {
+                        auto e = (MeshEntity*)entity_manager.getEntity(id);
+                        if (e == nullptr) continue;
+                        e->position += offset;
+                    }
+                }
+                editor::transform_active = edited_transform != TransformType::NONE;
+
+                bool casts_shadow = m_e->casts_shadow;
+                if (ImGui::Checkbox("Casts Shadows", &casts_shadow)) {
+                    for (const auto& id : selection.ids) {
+                        auto e = (MeshEntity*)entity_manager.getEntity(id);
+                        e->casts_shadow = casts_shadow;
+                    }
+                }
+
+                if (selection.ids.size() == 1) {
+                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + ImGui::GetTextLineHeight());
+                    if (ImGui::CollapsingHeader("Materials")) {
+                        //const auto create_tex_ui = [&img_w, &asset_manager] (Texture** tex, int i, std::string&& type, bool is_float = false) {
+                        //    ImGui::Text("%s", type.c_str());
+
+                        //    std::string id = type + std::to_string(i);
+                        //    bool is_color = (*tex)->is_color;
+                        //    if (ImGui::Checkbox(("###is_color" + type).c_str(), &is_color)) {
+                        //        (*tex)->is_color = is_color;
+                        //        std::cout << id << "\n";
+                        //        if ((*tex)->is_color) {
+                        //            (*tex) = asset_manager.getColorTexture((*tex)->color, GL_RGBA);
+                        //        }
+                        //    }
+                        //    if ((*tex)->is_color) {
+                        //        glm::vec3& col = (*tex)->color;
+                        //        ImGui::SameLine();
+
+                        //        if (is_float) {
+                        //            float val = col.x;
+                        //            if (ImGui::InputFloat(("###color" + id).c_str(), &val)) {
+                        //                (*tex) = asset_manager.getColorTexture(glm::vec3(val), GL_RGBA);
+                        //            }
+                        //        }
+                        //        else {
+                        //            if (ImGui::ColorEdit3(("###color" + id).c_str(), &col.x)) {
+                        //                // @note maybe you want more specific format
+                        //                // and color picker may make many unnecessary textures
+                        //                (*tex) = asset_manager.getColorTexture(col, GL_RGBA);
+                        //            }
+                        //        }
+                        //    }
+                        //    else {
+                        //        void* tex_id = (void*)(intptr_t)(*tex)->id;
+                        //        ImGui::SetNextItemWidth(img_w);
+                        //        if (ImGui::ImageButton(tex_id, ImVec2(img_w, img_w))) {
+                        //            im_file_dialog.SetPwd(exepath + "/data/textures");
+                        //            sel_e_material_index = i;
+                        //            im_file_dialog_type = "asset.mat.t" + type;
+                        //            im_file_dialog.SetCurrentTypeFilterIndex(2);
+                        //            im_file_dialog.SetTypeFilters(image_file_extensions);
+                        //            im_file_dialog.Open();
+                        //        }
+                        //    }
+                        //};
+                        //for(int i = 0; i < mesh->num_materials; i++) {
+                        //    auto &mat = mesh->materials[i];
+                        //    char buf[128];
+                        //    sprintf(buf, "Material %d", i);
+                        //    if (ImGui::CollapsingHeader(buf)){
+                        //        create_tex_ui(&mat.t_albedo, i,    "Albedo");
+                        //        create_tex_ui(&mat.t_ambient, i,   "Ambient", true);
+                        //        create_tex_ui(&mat.t_metallic, i,  "Metallic", true);
+                        //        create_tex_ui(&mat.t_normal, i,    "Normal");
+                        //        create_tex_ui(&mat.t_roughness, i, "Roughness", true);
+                        //    }
+                        //}
+                        ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 2 * pad);
+                        ImGui::ColorEdit3("###albedo_mult", &m_e->albedo_mult[0]);
+                        ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 2 * pad);
+                        ImGui::SliderFloat("###roughness_mult", &m_e->roughness_mult, 0.0f, 1.0f, "%.3f", ImGuiSliderFlags_ClampOnInput);
+                        ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 2 * pad);
+                        ImGui::SliderFloat("###ao_mult", &m_e->ao_mult, 0.0f, 1.0f, "%.3f", ImGuiSliderFlags_ClampOnInput);
+                        ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 2 * pad);
+                        ImGui::SliderFloat("###metal_mult", &m_e->metal_mult, 0.0f, 1.0f, "%.3f", ImGuiSliderFlags_ClampOnInput);
+                    }
+                }
+            }
+            else if (selection.type & EntityType::WATER_ENTITY && selection.ids.size() == 1) {
+                auto w_e = (WaterEntity*)fe;
+                
                 glm::quat _r = glm::quat();
-                editor::transform_active = editTransform(camera, w_e->position, _r, w_e->scale, TransformType::POS_SCL);
+                editor::transform_active = editTransform(camera, w_e->position, _r, w_e->scale, TransformType::POS_SCL) != TransformType::NONE;
                 ImGui::TextWrapped("Shallow Color:");
                 ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - pad);
                 ImGui::ColorEdit4("##shallow_color", (float*)(&w_e->shallow_color));
@@ -1338,44 +1498,42 @@ void drawEditorGui(Camera &editor_camera, Camera& level_camera, EntityManager &e
                         im_file_dialog.Open();
                     }
                 }
-                void* tex_water_collider = (void*)(intptr_t)graphics::water_collider_buffers[0];
+                void* tex_water_collider = (void*)(intptr_t)graphics::water_collider_buffers[graphics::water_collider_final_fbo];
                 ImGui::Image(tex_water_collider, ImVec2(sidebar_w, sidebar_w));
-            }
+            }   
 
             ImGui::SetCursorPosY(ImGui::GetCursorPosY() + ImGui::GetTextLineHeight());
             auto button_size = ImVec2(ImGui::GetWindowWidth()/2.0f - pad, 2.0f*pad);
-            if(sel_e->type != WATER_ENTITY ){
+            if(!(selection.type & WATER_ENTITY)){
                 if (ImGui::Button("Duplicate", button_size)) {
-                    if (sel_e != nullptr) {
-                        auto e = entity_manager.duplicateEntity(sel_e->id);
-                        if (e->type == MESH_ENTITY) {
-                            auto m_e = reinterpret_cast<MeshEntity*>(e);
-                            m_e->position.x += translation_snap.x;
-                            if (camera.state == Camera::TYPE::TRACKBALL) {
-                                camera.target = m_e->position;
-                                updateCameraView(camera);
-                            }
-                        }
-                        selection.id = e->id;
-                        selection.is_water = false;
+                    if (camera.state == Camera::TYPE::TRACKBALL && selection.type & MESH_ENTITY) {
+                        auto m_e = (MeshEntity*)fe;
+                        camera.target = m_e->position + translation_snap.x;
+                        updateCameraView(camera);
                     }
-                    else {
-                        entity_manager.setEntity(entity_manager.getFreeId().i, new Entity());
+
+                    for (auto& id : selection.ids) {
+                        auto e = entity_manager.duplicateEntity(id);
+                        if (selection.type & MESH_ENTITY) {
+                            auto m_e = reinterpret_cast<MeshEntity*>(e);
+                            m_e->position.x += translation_snap.x;   
+                        }   
+                        id = e->id;
                     }
                 }
                 ImGui::SameLine();
             }
             if(ImGui::Button("Delete", button_size)){
-                if(sel_e->type == WATER_ENTITY) {
-                    free(entity_manager.water);
-                    entity_manager.water = nullptr;
-                } else {
-                    entity_manager.deleteEntity(sel_e->id);
+                for (auto& id : selection.ids) {
+                    entity_manager.deleteEntity(id);
+                    if (id == entity_manager.water) {
+                        entity_manager.water = NULLID;
+                    }
                 }
-                selection = Selection();
+                selection.clear();
             }
             button_size.x *= 2.0;
-            if (sel_e->type == MESH_ENTITY) {
+            if (selection.type & MESH_ENTITY) {
                 if (ImGui::Button("Change Mesh", button_size)) {
                     im_file_dialog.SetPwd(exepath + "/data/mesh");
                     im_file_dialog_type = "changeMesh";
@@ -1390,9 +1548,9 @@ void drawEditorGui(Camera &editor_camera, Camera& level_camera, EntityManager &e
             sidebar_pos_right = 0;
         }
     }
-    // Information shared with file browser
-    static Mesh* s_mesh = nullptr;
 
+    // Information shared with file browser
+    //static Mesh* s_mesh = nullptr;
     //{
     //    constexpr int true_win_width = 250;
     //    int win_width = true_win_width - pad;
@@ -1532,23 +1690,27 @@ void drawEditorGui(Camera &editor_camera, Camera& level_camera, EntityManager &e
                 // @note accumulates assets
                 if(loadLevel(entity_manager, asset_manager, p, level_camera)){
                     editor_camera = level_camera;
-                    selection = Selection();
-                    sel_e = nullptr;
+                    selection.clear();
                 }
             } else if(im_file_dialog_type == "saveLevel"){
                 saveLevel(entity_manager, p, level_camera);
-            } else if(im_file_dialog_type == "exportMesh"){
+            /*} else if(im_file_dialog_type == "exportMesh"){
                 asset_manager.writeMeshFile(s_mesh, p);
             } else if(im_file_dialog_type == "loadMesh"){
                 auto mesh = asset_manager.createMesh(p);
                 asset_manager.loadMeshFile(mesh, p);
-            }
-            else if (im_file_dialog_type == "changeMesh") {
-                if (sel_e != nullptr && sel_e->type == MESH_ENTITY) {
-                    auto m_e = reinterpret_cast<MeshEntity*>(sel_e);
-                    auto mesh = asset_manager.createMesh(p);
+            */
+            }else if (im_file_dialog_type == "changeMesh") {
+                auto mesh = asset_manager.getMesh(p);
+                if (mesh == nullptr) {
+                    mesh = asset_manager.createMesh(p);
                     asset_manager.loadMeshFile(mesh, p);
-                    m_e->mesh = mesh;
+                }
+                for (const auto& id : selection.ids) {
+                    auto e = (MeshEntity*)entity_manager.getEntity(id);
+                    if (e == nullptr) continue;
+
+                    e->mesh = mesh;
                 }
             } else if(im_file_dialog_type == "loadModelAssimp"){
                 auto mesh = asset_manager.createMesh(p);
@@ -1557,32 +1719,32 @@ void drawEditorGui(Camera &editor_camera, Camera& level_camera, EntityManager &e
                 global_assets.loadTexture(graphics::simplex_value, p, GL_RED);
             } else if (im_file_dialog_type == "simplexGradient") {
                 global_assets.loadTexture(graphics::simplex_gradient, p, GL_RGB);
-            } else if(startsWith(im_file_dialog_type, "asset.mat.t")) {
-                if (sel_e != nullptr && sel_e->type == MESH_ENTITY) {
-                    auto m_e = static_cast<MeshEntity*>(sel_e);
-                    auto &mat = m_e->mesh->materials[sel_e_material_index];
+            //} else if(startsWith(im_file_dialog_type, "asset.mat.t")) {
+            //    if (sel_e != nullptr && sel_e->type == MESH_ENTITY) {
+            //        auto m_e = static_cast<MeshEntity*>(sel_e);
+            //        auto &mat = m_e->mesh->materials[sel_e_material_index];
 
-                    // Assets might already been loaded so just use it
-                    auto tex = asset_manager.getTexture(p);
-                    if(tex == nullptr) {
-                        tex = asset_manager.createTexture(p);
-                        asset_manager.loadTexture(tex, p);
-                    } 
+            //        // Assets might already been loaded so just use it
+            //        auto tex = asset_manager.getTexture(p);
+            //        if(tex == nullptr) {
+            //            tex = asset_manager.createTexture(p);
+            //            asset_manager.loadTexture(tex, p);
+            //        } 
 
-                    if(tex != nullptr) {
-                        if(endsWith(im_file_dialog_type, "Albedo")) {
-                            mat.t_albedo = tex;
-                        } else if(endsWith(im_file_dialog_type, "Ambient")) {
-                            mat.t_ambient = tex;
-                        } else if(endsWith(im_file_dialog_type, "Normal")) {
-                            mat.t_normal = tex;
-                        } else if(endsWith(im_file_dialog_type, "Metallic")) {
-                            mat.t_metallic = tex;
-                        } else if(endsWith(im_file_dialog_type, "Roughness")) {
-                            mat.t_roughness = tex;
-                        }
-                    }
-                }
+            //        if(tex != nullptr) {
+            //            if(endsWith(im_file_dialog_type, "Albedo")) {
+            //                mat.t_albedo = tex;
+            //            } else if(endsWith(im_file_dialog_type, "Ambient")) {
+            //                mat.t_ambient = tex;
+            //            } else if(endsWith(im_file_dialog_type, "Normal")) {
+            //                mat.t_normal = tex;
+            //            } else if(endsWith(im_file_dialog_type, "Metallic")) {
+            //                mat.t_metallic = tex;
+            //            } else if(endsWith(im_file_dialog_type, "Roughness")) {
+            //                mat.t_roughness = tex;
+            //            }
+            //        }
+            //    }
             } else {
                 std::cerr << "Unhandled imgui file dialog type at path " + p + ".\n";
             }

@@ -11,20 +11,27 @@
 #define NULLID Id(-1, -1)
 
 struct Id {
-    int i;
-    int v = 0;
+    uint64_t i;
+    uint16_t v = 0;
+
+    constexpr bool operator!=(const Id& other) const {
+        return (i != other.i) || (v != other.v);
+    }
+    constexpr bool operator==(const Id& other) const {
+        return (i == other.i) && (v == other.v);
+    }
     Id(int _i, int _v) : i(_i), v(_v){}
 };
 
-enum EntityType {
-    ENTITY         = 0,
-    MESH_ENTITY    = 1 << 0,
-    WATER_ENTITY   = 1 << 1,
-    TERRAIN_ENTITY = 1 << 2,
+enum EntityType : uint64_t {
+    ENTITY          = 0,
+    MESH_ENTITY     = 1 << 0,
+    WATER_ENTITY    = 1 << 1,
+    COLLIDER_ENTITY = (1 << 2) | MESH_ENTITY,
 };
 
 struct Entity {
-    EntityType type = EntityType::ENTITY;
+    EntityType type = ENTITY;
     Id id;
     Entity(Id _id=NULLID) : id(_id){
     }
@@ -43,7 +50,7 @@ struct MeshEntity : Entity {
     bool casts_shadow = true;
 
     MeshEntity(Id _id=NULLID) : Entity(_id){
-        type = (EntityType)(type | EntityType::MESH_ENTITY);
+        type = EntityType::MESH_ENTITY;
     }
 };
 
@@ -55,34 +62,37 @@ struct WaterEntity : Entity {
     glm::vec4 foam_color    = glm::vec4(1.0,  1.0, 1.0, 1.0);
 
     WaterEntity(Id _id=NULLID) : Entity(_id){
-        type = (EntityType)(type | EntityType::WATER_ENTITY);
+        type = EntityType::WATER_ENTITY;
     }
 };
 
-struct TerrainEntity : Entity {
-    glm::vec3 position = glm::vec3(0.0);
-    glm::mat3 scale    = glm::mat3(1.0);
-    Texture *texture;
+// For now axis aligned bounding box
+struct ColliderEntity : MeshEntity {
+    glm::vec3 collider_position  = glm::vec3(0.0);
+    glm::quat collider_rotation  = glm::quat(0.0, 0.0, 0.0, 1.0);
+    glm::mat3 collider_scale     = glm::mat3(1.0);
 
-    TerrainEntity(Id _id=NULLID) : Entity(_id){
-        type = (EntityType)(type | EntityType::TERRAIN_ENTITY);
+    ColliderEntity(Id _id = NULLID) : MeshEntity(_id) {
+        type = EntityType::COLLIDER_ENTITY;
     }
 };
 
 inline Entity *allocateEntity(Id id, EntityType type){
-    if(type & WATER_ENTITY)
-        return new WaterEntity(id);
-    if(type & TERRAIN_ENTITY)
-        return new TerrainEntity(id);
-    if(type & MESH_ENTITY)
-        return new MeshEntity(id);
-
-    return new Entity(id);
+    switch (type) {
+        case COLLIDER_ENTITY:
+            return new ColliderEntity(id);
+        case MESH_ENTITY:
+            return new MeshEntity(id);
+        case WATER_ENTITY:
+            return new WaterEntity(id);
+        default:
+            return new Entity(id);
+    }
 }
 inline constexpr size_t entitySize(EntityType type){
     switch (type) {
-        case TERRAIN_ENTITY:
-            return sizeof(TerrainEntity);
+        case COLLIDER_ENTITY:
+            return sizeof(ColliderEntity);
         case MESH_ENTITY:
             return sizeof(MeshEntity);
         case WATER_ENTITY:
@@ -92,65 +102,62 @@ inline constexpr size_t entitySize(EntityType type){
     }
 }
 
-// 2x2 Box
-struct BoxCollider {
-    Id linked_id = NULLID;
-    glm::vec3 position = glm::vec3(0.0);
-};
+inline Entity* copyEntity(Entity* src) {
+    auto cpy = allocateEntity(src->id, src->type);
+    memcpy(cpy, src, entitySize(src->type));
+    return cpy;
+}
 
 struct EntityManager {
     Entity *entities[ENTITY_COUNT] = {nullptr};
-    int versions[ENTITY_COUNT] = {0};
-    std::stack<int> free_entity_stack;
-    std::stack<int> delete_entity_stack;
-    int id_counter = 0;
+    uint16_t versions[ENTITY_COUNT] = {0};
+    std::stack<uint64_t> free_entity_stack;
+    std::stack<uint64_t> delete_entity_stack;
+    uint64_t id_counter = 0;
 
-    WaterEntity *water = nullptr;
+    Id water = NULLID;
 
     ~EntityManager(){
         clear();
     }
     inline void clear(){
         // Delete entities
-        for(int i = 0; i < ENTITY_COUNT; i++){
+        for(uint64_t i = 0; i < ENTITY_COUNT; i++){
             if(entities[i] != nullptr) free (entities[i]);
             entities[i] = nullptr;
         }
         memset(versions, 0, sizeof(versions));
         free_entity_stack = {};
         delete_entity_stack = {};
-        if(water != nullptr) {
-            free(water);
-            water = nullptr;
-        }
+        water = NULLID;
+
         id_counter = 0;
-        colliders.clear();
     }
-    inline Entity *getEntity(Id id){
+    inline Entity *getEntity(Id id) const {
         if(id.i < 0 || id.i > ENTITY_COUNT || id.v != versions[id.i]) return nullptr;
         return entities[id.i];
     }
-    void setEntity(int index, Entity *e){
+    void setEntity(uint64_t index, Entity *e){
         entities[index] = e;
-        // @overflow
+        // @note overflows
         versions[index]++;
         e->id = Id(index, versions[index]);
     }
     inline void deleteEntity(Id id){
         delete_entity_stack.push(id.i);
     }
-    inline Entity *duplicateEntity(Id id){
+    inline Entity *duplicateEntity(Id id) {
         auto src = getEntity(id);
         if(src == nullptr) return nullptr;
 
-        auto cp = allocateEntity(NULLID, src->type);
-        memcpy(cp, src, entitySize(src->type));
+        auto cpy = copyEntity(src);
+        cpy->id = getFreeId();
         
-        setEntity(getFreeId().i, cp);
-        return cp;
+        setEntity(cpy->id.i, cpy);
+        return cpy;
     }
     inline Id getFreeId(){
-        int i;
+        uint64_t i;
         if(free_entity_stack.size() == 0){
             i = id_counter++;
             assert(id_counter < ENTITY_COUNT);
@@ -160,7 +167,7 @@ struct EntityManager {
         }
         return Id(i, versions[i]);
     }
-    inline void propogateChanges(){
+    inline void propogateChanges() {
         // Delete entities
         while(delete_entity_stack.size() != 0){
             int i = delete_entity_stack.top();
@@ -170,19 +177,11 @@ struct EntityManager {
             entities[i] = nullptr;
         }
     }
-    std::vector<BoxCollider> colliders;
-    inline void addBoxCollider(const glm::vec3& position, const Id& linked_id) {
-        colliders.emplace_back(BoxCollider({ linked_id, position }));
-    }
-    inline bool removeBoxCollider(BoxCollider *box) {
-        // @todo change architecture to be faster
-        for (int i = 0; i < colliders.size(); ++i) {
-            if (&colliders[i] == box) {
-                colliders.erase(colliders.begin() + i);
-                return true;
-            }
-        }
-        return false;
+    inline Entity* createEntity(EntityType type) {
+        auto id = getFreeId();
+        auto e = allocateEntity(id, type);
+        setEntity(id.i, e);
+        return e;
     }
 };
 

@@ -87,7 +87,7 @@ int main() {
     // to prevent 1200x800 from becoming 2400x1600
     glfwWindowHint(GLFW_COCOA_RETINA_FRAMEBUFFER, GLFW_FALSE);
 #endif
-    //std::ios_base::sync_with_stdio(false);
+    std::ios_base::sync_with_stdio(false);
 
     // Open a window and create its OpenGL context
     window = glfwCreateWindow(1024, 700, "Window", NULL, NULL);
@@ -106,7 +106,7 @@ int main() {
     }
 
     // Ensure we can capture the escape key being pressed below
-    glfwSetInputMode(window, GLFW_STICKY_KEYS, GL_TRUE);
+    //glfwSetInputMode(window, GLFW_STICKY_KEYS, GL_TRUE);
 
     glfwSetScrollCallback(window, windowScrollCallback);
     glfwGetWindowSize(window, &window_width, &window_height);
@@ -169,10 +169,11 @@ int main() {
         {"data/shaders/unified.gl", shader::TYPE::UNIFIED_SHADER, empty_file_time},
         {"data/shaders/water.gl", shader::TYPE::WATER_SHADER, empty_file_time},
         {"data/shaders/gaussian_blur.gl", shader::TYPE::GAUSSIAN_BLUR_SHADER, empty_file_time},
-        {"data/shaders/distance_blur.gl", shader::TYPE::DISTANCE_BLUR_SHADER, empty_file_time},
+        {"data/shaders/plane_projection.gl", shader::TYPE::PLANE_PROJECTION_SHADER, empty_file_time},
+        {"data/shaders/jump_flood.gl", shader::TYPE::JFA_SHADER, empty_file_time},
+        {"data/shaders/jfa_to_distance.gl", shader::TYPE::JFA_DISTANCE_SHADER, empty_file_time},
         {"data/shaders/post.gl", shader::TYPE::POST_SHADER, empty_file_time},
         {"data/shaders/debug.gl", shader::TYPE::DEBUG_SHADER, empty_file_time},
-        {"data/shaders/white.gl", shader::TYPE::WHITE_SHADER, empty_file_time},
         {"data/shaders/depth_only.gl", shader::TYPE::DEPTH_ONLY_SHADER, empty_file_time},
         //{"data/shaders/skybox.gl", shader::TYPE::SKYBOX_SHADER, empty_file_time},
     };
@@ -206,8 +207,10 @@ int main() {
 
     double last_time = glfwGetTime();
     double last_filesystem_hotswap_check = last_time;
+    uint64_t frame_num = 0;
     window_resized = true;
     do {
+        
         double current_time = glfwGetTime();
         float true_dt = current_time - last_time;
         last_time = current_time;
@@ -241,11 +244,18 @@ int main() {
                 } 
             }
         }
+        // @todo make better systems for determining when to update shadow map
         if (!playing) {
             // @debug for now render collision map every frame
-            if (entity_manager.water != nullptr) {
-                bindDrawWaterColliderMap(entity_manager, entity_manager.water);
-                blurWaterFbo();
+            if (entity_manager.water != NULLID) {
+                auto water = (WaterEntity*)entity_manager.getEntity(entity_manager.water);
+                if (water != nullptr) {
+                    bindDrawWaterColliderMap(entity_manager, water);
+                    blurWaterFbo();
+                }
+                else {
+                    entity_manager.water = NULLID;
+                }
             }
         }
 
@@ -292,6 +302,7 @@ int main() {
             string = gluErrorString(code);
             std::cerr << "<--------------------OpenGL ERROR-------------------->\n" << string << "\n";
         }
+        frame_num++;
 #endif
     } // Check if the ESC key was pressed or the window was closed
     while( glfwGetKey(window, GLFW_KEY_ESCAPE ) != GLFW_PRESS && glfwWindowShouldClose(window) == 0 );

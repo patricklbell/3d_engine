@@ -28,6 +28,8 @@ std::ostream &operator<<(std::ostream &os, const glm::tvec3<T, P> &v);
 template<typename T, glm::precision P>
 std::ostream &operator<<(std::ostream &os, const glm::tvec4<T, P> &v);
 
+std::vector<std::string> split(std::string s, std::string delimiter);
+
 void saveLevel(EntityManager& entity_manager, const std::string& level_path, const Camera &camera);
 bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const std::string &level_path, Camera& camera);
 
@@ -68,5 +70,27 @@ struct ThreadPool {
     std::queue<std::function<void()>> jobs;
     std::atomic<int> jobs_in_progress = 0;
 };
+
+// ------------ constexpr function implementations ------------ 
+
+constexpr uint64_t log2(uint64_t n) {
+    return ((n < 2) ? 1 : 1 + log2(n / 2));
+}
+
+constexpr uint64_t nextPowerOf2(int tex_x, int tex_y) {
+    uint64_t v = std::max(tex_x, tex_y);
+
+    v--;
+    v |= v >> 1;
+    v |= v >> 2;
+    v |= v >> 4;
+    v |= v >> 8;
+    v |= v >> 16;
+    v |= v >> 32;
+    v++;
+
+    return log2(v);
+}
+
 
 #endif /* ifndef UTILITIES_HPP */

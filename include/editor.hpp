@@ -17,7 +17,8 @@
 #include "utilities.hpp"
 #include "entities.hpp"
 
-enum class TransformType : unsigned int{
+enum class TransformType : uint64_t {
+    NONE = 0,
     POS = 1,
     ROT = 2,
     SCL = 4,
@@ -37,45 +38,68 @@ void drawGameGui(Camera& editor_camera, Camera& level_camera, EntityManager& ent
 bool editorTranslationGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, Camera &camera, const glm::vec3 &snap, bool do_snap);
 bool editorRotationGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, const Camera &camera, float rot_snap, bool do_snap);
 bool editorScalingGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, Camera &camera, const glm::vec3 &snap, bool do_snap);
-bool editTransform(Camera &camera, glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, glm::vec3 &snap, TransformType type);
-void drawEditor3DArrow(const glm::vec3 &position, const glm::vec3 &direction, const Camera &camera, const glm::vec4 &color, const glm::vec3 &scale, bool shaded=true, bool block=false);
-void drawEditor3DRing(const glm::vec3 &position, const glm::vec3 &direction, const Camera &camera, const glm::vec4 &color, const glm::vec3 &scale, bool shaded=true);
+TransformType editTransform(Camera &camera, glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, glm::vec3 &snap, TransformType type);
+void drawWaterDebug(WaterEntity* w, const Camera &camera, bool flash);
 void drawMeshCube(const glm::vec3 &pos, const glm::quat &rot, const glm::mat3x3 &scl, const Camera &camera);
 void drawFrustrum(Camera& drawn_camera, const Camera& camera);
 void drawMeshWireframe(const Mesh &mesh, const glm::vec3 &pos, const glm::quat &rot, const glm::mat3x3 &scl, const Camera &camera, bool flash);
-void drawWaterDebug(WaterEntity* w_e, const Camera &camera, bool flash);
-void drawColliders(const std::vector<BoxCollider>& colliders, const Camera& camera);
+void drawEditor3DRing(const glm::vec3 &position, const glm::vec3 &direction, const Camera &camera, const glm::vec4 &color, const glm::vec3 &scale, bool shaded=true);
+void drawEditor3DArrow(const glm::vec3 &position, const glm::vec3 &direction, const Camera &camera, const glm::vec4 &color, const glm::vec3 &scale, bool shaded=true, bool block=false);
+void drawColliders(const EntityManager& entity_manager, const Camera& camera);
+
+struct ReferenceSelection {
+    void addEntity(Entity* e);
+    void ReferenceSelection::toggleEntity(const EntityManager& entity_manager, Entity* e);
+    void clear();
+
+    std::vector<Id> ids;
+    EntityType type = ENTITY;
+    glm::vec3 avg_position = glm::vec3(0.0);
+    int avg_position_count = 0;
+};
+struct CopySelection {
+    // @note owns memory
+    std::vector<Entity*> entities;
+    
+    void CopySelection::free_clear();
+    ~CopySelection();
+};
+
+void referenceToCopySelection(EntityManager& entity_manager, const ReferenceSelection& ref, CopySelection& cpy);
+void createCopySelectionEntities(EntityManager& entity_manager, AssetManager& asset_manager, CopySelection& cpy, ReferenceSelection& ref);
+
+enum class GizmoMode {
+    TRANSLATE = 0,
+    ROTATE,
+    SCALE,
+    NONE,
+};
+
+enum class EditorMode {
+    ENTITY = 0,
+    COLLIDERS,
+    NUM,
+};
 
 namespace editor {
-    extern enum class GizmoMode {
-        TRANSLATE = 0,
-        ROTATE,
-        SCALE,
-        NONE,
-    } gizmo_mode;
-    extern std::string im_file_dialog_type;
-    extern bool do_terminal;
-    //extern GLDebugDrawer bt_debug_drawer;
-    //extern bool draw_bt_debug;
-    extern ImGui::FileBrowser im_file_dialog;
-    extern bool draw_debug_wireframe;
-    extern bool transform_active;
-    extern bool use_level_camera, draw_level_camera;
-    extern Id sel_e;
+    extern EditorMode editor_mode;
     extern AssetManager editor_assets;
+
+    extern GizmoMode gizmo_mode;
     extern glm::vec3 translation_snap;
 
-    extern enum class EditorMode {
-        ENTITY = 0,
-        COLLIDERS,
-        NUM,
-    } editor_mode;
+    extern ImGui::FileBrowser im_file_dialog;
+    extern std::string im_file_dialog_type;
 
-    struct Selection {
-        Id id = NULLID;
-        bool is_water = false;
-    };
-    extern Selection selection;
+    extern bool do_terminal;
+    extern bool draw_debug_wireframe;
+    extern bool draw_colliders;
+    extern bool transform_active;
+    extern bool use_level_camera, draw_level_camera;
+
+    extern ReferenceSelection selection;
+    extern CopySelection copy_selection;
 }
+
 
 #endif

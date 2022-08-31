@@ -23,7 +23,9 @@ namespace shader {
         UNIFIED_SHADER,
         WATER_SHADER,
         GAUSSIAN_BLUR_SHADER,
-        DISTANCE_BLUR_SHADER,
+        PLANE_PROJECTION_SHADER,
+        JFA_SHADER,
+        JFA_DISTANCE_SHADER,
         POST_SHADER,
         DEBUG_SHADER,
         SKYBOX_SHADER,
@@ -51,10 +53,17 @@ namespace shader {
         GLuint horizontal;
     } gaussian_blur_uniforms;
 
-    extern GLuint distance_blur_program;
-    extern struct DistanceBlurUniforms {
-        GLuint horizontal;
-    } distance_blur_uniforms;
+	extern GLuint plane_projection_program;
+    extern struct WhiteUniforms {
+        GLuint m;
+    } plane_projection_uniforms;
+
+    extern GLuint jfa_program;
+    extern struct JfaUniforms {
+        GLuint step, num_steps, resolution;
+    } jfa_uniforms;
+
+    extern GLuint jfa_distance_program;
 
     extern GLuint debug_program;
     extern struct DebugUniforms {
@@ -76,10 +85,6 @@ namespace shader {
 		GLuint mvp;
 	} depth_only_uniforms;
 
-	extern GLuint white_program;
-    extern struct WhiteUniforms {
-        GLuint mvp, height;
-    } white_uniforms;
 }
 
 void loadShader(std::string path, shader::TYPE type);

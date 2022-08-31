@@ -37,8 +37,13 @@ namespace shader {
 	GLuint gaussian_blur_program;
 	struct GaussianBlurUniforms gaussian_blur_uniforms;
 
-	GLuint distance_blur_program;
-	struct DistanceBlurUniforms distance_blur_uniforms;
+	GLuint plane_projection_program;
+	struct WhiteUniforms plane_projection_uniforms;
+
+	GLuint jfa_program;
+	struct JfaUniforms jfa_uniforms;
+
+	GLuint jfa_distance_program;
 
 	GLuint debug_program;
 	struct DebugUniforms debug_uniforms;
@@ -51,9 +56,6 @@ namespace shader {
 
 	GLuint depth_only_program;
 	struct MvpUniforms depth_only_uniforms;
-
-	GLuint white_program;
-	struct WhiteUniforms white_uniforms;
 }
 
 using namespace shader;
@@ -302,22 +304,53 @@ void loadGaussianBlurShader(std::string path){
 	// Set fixed locations for textures in GL_TEXTUREi
 	glUniform1i(glGetUniformLocation(gaussian_blur_program, "image"), 0);
 }
-void loadDistanceBlurShader(std::string path) {
-	auto tmp = distance_blur_program;
+
+void loadPlaneProjectionShader(std::string path) {
 	// Create and compile our GLSL program from the shaders
-	distance_blur_program = loadShader(path);
-	if (distance_blur_program == GL_FALSE) {
-		distance_blur_program = tmp;
+	auto tmp = plane_projection_program;
+	plane_projection_program = loadShader(path, "", true);
+	if (plane_projection_program == GL_FALSE) {
+		plane_projection_program = tmp;
+		return;
+	}
+
+	// Grab uniforms to modify during rendering
+	plane_projection_uniforms.m = glGetUniformLocation(plane_projection_program, "m");
+}
+
+void loadJfaShader(std::string path) {
+	auto tmp = jfa_program;
+	// Create and compile our GLSL program from the shaders
+	jfa_program = loadShader(path);
+	if (jfa_program == GL_FALSE) {
+		jfa_program = tmp;
 		return;
 	}
 
 	// Grab uniforms to modify
-	distance_blur_uniforms.horizontal = glGetUniformLocation(distance_blur_program, "horizontal");
+	jfa_uniforms.step	    = glGetUniformLocation(jfa_program, "step");
+	jfa_uniforms.num_steps	= glGetUniformLocation(jfa_program, "num_steps");
+	jfa_uniforms.resolution	= glGetUniformLocation(jfa_program, "resolution");
 
-	glUseProgram(distance_blur_program);
+	glUseProgram(jfa_program);
 	// Set fixed locations for textures in GL_TEXTUREi
-	glUniform1i(glGetUniformLocation(distance_blur_program, "image"), 0);
+	glUniform1i(glGetUniformLocation(jfa_program, "image"), 0);
 }
+
+void loadJfaDistanceShader(std::string path) {
+	auto tmp = jfa_distance_program;
+	// Create and compile our GLSL program from the shaders
+	jfa_distance_program = loadShader(path);
+	if (jfa_distance_program == GL_FALSE) {
+		jfa_distance_program = tmp;
+		return;
+	}
+
+	glUseProgram(jfa_distance_program);
+	// Set fixed locations for textures in GL_TEXTUREi
+	glUniform1i(glGetUniformLocation(jfa_distance_program, "image"), 0);
+}
+
 void loadNullShader(std::string path){
 	auto tmp = null_program;
 	// Create and compile our GLSL program from the shaders
@@ -426,19 +459,6 @@ void loadSkyboxShader(std::string path){
 		skybox_uniforms.view	   = glGetUniformLocation(skybox_programs[i], "view");
 	}
 }
-void loadWhiteShader(std::string path){
-	// Create and compile our GLSL program from the shaders
-	auto tmp = white_program;
-	white_program = loadShader(path, "", true);
-	if (white_program == GL_FALSE) {
-		white_program = tmp;
-		return;
-	}
-
-	// Grab uniforms to modify during rendering
-	white_uniforms.mvp    = glGetUniformLocation(white_program, "mvp");
-	white_uniforms.height = glGetUniformLocation(white_program, "height");
-}
 void loadDepthOnlyShader(std::string path){
 	// Create and compile our GLSL program from the shaders
 	auto tmp = depth_only_program;
@@ -454,12 +474,13 @@ void loadDepthOnlyShader(std::string path){
 void deleteShaderPrograms(){
     glDeleteProgram(null_program);
     glDeleteProgram(debug_program);
-    glDeleteProgram(white_program);
     glDeleteProgram(depth_only_program);
     glDeleteProgram(unified_programs[0]);
     glDeleteProgram(unified_programs[1]);
     glDeleteProgram(gaussian_blur_program);
-	glDeleteProgram(distance_blur_program);
+    glDeleteProgram(plane_projection_program);
+	glDeleteProgram(jfa_program);
+	glDeleteProgram(jfa_distance_program);
 	glDeleteProgram(post_program[0]);
 	glDeleteProgram(post_program[1]);
 	glDeleteProgram(skybox_programs[0]);
@@ -480,8 +501,14 @@ void loadShader(std::string path, TYPE type) {
         case shader::TYPE::GAUSSIAN_BLUR_SHADER:
             loadGaussianBlurShader(path);
             break;
-		case shader::TYPE::DISTANCE_BLUR_SHADER:
-			loadDistanceBlurShader(path);
+		case shader::TYPE::PLANE_PROJECTION_SHADER:
+			loadPlaneProjectionShader(path);
+			break;
+		case shader::TYPE::JFA_SHADER:
+			loadJfaShader(path);
+			break;
+		case shader::TYPE::JFA_DISTANCE_SHADER:
+			loadJfaDistanceShader(path);
 			break;
         case shader::TYPE::POST_SHADER:
             loadPostShader(path);
@@ -491,9 +518,6 @@ void loadShader(std::string path, TYPE type) {
             break;
         case shader::TYPE::SKYBOX_SHADER:
             loadSkyboxShader(path);
-            break;
-        case shader::TYPE::WHITE_SHADER:
-            loadWhiteShader(path);
             break;
         case shader::TYPE::DEPTH_ONLY_SHADER:
             loadDepthOnlyShader(path);
