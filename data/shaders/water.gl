@@ -16,12 +16,12 @@ uniform mat4 shadow_mvp;
 uniform float time;
 
 vec3 gwaves(in vec3 v) {
-    const int wn = 2;
-    const vec2  d[wn] = {normalize(vec2(0.2, 0.4)), normalize(vec2(0.3, 0.2))};
-    const float a[wn] = {0.08, 0.03};
-    const float q[wn] = {0.7, 0.3};
-    const float p[wn] = {0.7, 0.6};
-    const float w[wn] = {20.0, 10.0};
+    const int wn = 3;
+    const vec2  d[wn] = {normalize(vec2(0.2, 0.4)), normalize(vec2(0.3, 0.2)), normalize(vec2(0.5, 0.1))};
+    const float a[wn] = {0.02, 0.008, 0.004};
+    const float q[wn] = {2.7, 1.3, 4.3};
+    const float p[wn] = {0.7, 2.8, 4.9};
+    const float w[wn] = {5.0, 20.1, 50.0};
 
     vec3 res = v;
     for(int i = 0; i < wn; i++){
@@ -36,8 +36,7 @@ vec3 gwaves(in vec3 v) {
 }
 
 void main(){
-//    vec3 vertex = gwaves(in_vertex);
-    vec3 vertex = in_vertex;
+    vec3 vertex = gwaves(in_vertex);
     vec4 v = vec4(vertex, 1.0);
     gl_Position = mvp * v;
     vs_out.position = (model * v).xyz;
@@ -157,7 +156,7 @@ void main(){
 #define EDGE_SCALE      1.252
 
 #define SPEED           0.5
-#define BEER_LAW_FACTOR 12.0
+#define BEER_LAW_FACTOR 20.0
 
 in VS_FS
 {
@@ -206,26 +205,25 @@ vec3 normalnoise(vec2 v){
 }
 
 vec3 dgwaves(in vec3 v) {
-  const int wn = 2;
-  const vec2  d[wn] = {normalize(vec2(0.2, 0.4)), normalize(vec2(0.3, 0.2))};
-  const float a[wn] = {0.1*0.08, 0.1*0.03};
-  const float q[wn] = {0.7, 0.3};
-  const float p[wn] = {0.7, 0.6};
-  const float w[wn] = {20.0, 10.0};
+    const int wn = 3;
+    const vec2  d[wn] = {normalize(vec2(0.2, 0.4)), normalize(vec2(0.3, 0.2)), normalize(vec2(0.5, 0.1))};
+    const float a[wn] = {0.02, 0.008, 0.004};
+    const float q[wn] = {2.7, 1.3, 4.3};
+    const float p[wn] = {0.7, 2.8, 4.9};
+    const float w[wn] = {5.0, 20.1, 50.0};
 
-  vec3 n = vec3(0.0, 1.0, 0.0);
-  for(int i = 0; i < wn; i++){
-    float wa = w[i]*a[i];
-    float cs = w[i]*dot(d[i], v.xz) + p[i]*time;
-    float s = sin(cs);
-    float c = cos(cs);
+    vec3 n = vec3(0.0, 10.0, 0.0);
+    for(int i = 0; i < wn; i++){
+        float wa = w[i]*a[i];
+        float cs = w[i]*dot(d[i], v.xz) + p[i]*time;
+        float s = sin(cs);
+        float c = cos(cs);
 
-    n.x -= d[i].x*wa*c;
-    n.z -= d[i].y*wa*c;
-    n.y -= q[i]*wa*s;
-
-  }
-  return n;
+        n.x -= d[i].x*wa*c;
+        n.z -= d[i].y*wa*c;
+        n.y -= q[i]*wa*s;
+    }
+    return n;
 }
 
 
@@ -264,47 +262,45 @@ void main(){
 
     gl_FragDepth = screen_d;
   } else {
-    float collision = texture(collider, vs_in.texcoord.xy).r;
-//    collision = sqrt(collision);
-//    collision = max(
-//        clamp(sin(exp(-(2.0-collision))*0.5f*t + 5.0*t)*2.f*collision, 0.5, 1.0f) - 0.5,
-//        clamp(1.1-exp(-collision*collision), 0.5, 1.0) - 0.5
-//    )*2.0f;
-    
-    vec3 n1 = normalnoise(10.0*vs_in.texcoord + t);
+    vec3 n1 = normalnoise(10.0*vs_in.texcoord + 0.01*t);
+    float n = noise(vs_in.texcoord + t*0.12);
 
     float screen_z = depthToDist(screen_d);
     float scene_z = depthToDist(scene_d);
     float dif = screen_z - scene_z;
 
-    float foam_dif = 1.0 - clamp((screen_z - scene_z) / 0.004, 0.0, 1.0);
+    float collision = texture(collider, (vec2(vs_in.vertex.x, -vs_in.vertex.z) + 1.0) / 2.0).r;
+    float foam_dif = 0.0;
+    if(collision < 0.08) {
+        foam_dif = smoothstep(0.08, 0.0, collision);
+    }
+    else if (collision < 0.4) {
+        foam_dif = 1.0 - smoothstep(0.0, 0.4, collision);
+        foam_dif = foam_dif*max(sin(20.0*foam_dif + (0.1*noise(vs_in.texcoord)+3.0)*t) - 0.3, 0.0);
+        //foam_dif = max(foam_dif, 1.0 - clamp((screen_z - scene_z) / 0.001, 0.0, 1.0));
+    }
 
     float rad = exp(-dif*BEER_LAW_FACTOR);
 
-    vec4 mat = 0.6*mix(deep_color, shallow_color, 3.0*rad + 2.0*noise(vs_in.texcoord + t*0.12));
-    mat.g += 0.09*noise(vs_in.vertex.xz - t*0.12 + 0.3);
+    vec4 mat = 0.6*mix(deep_color, shallow_color, 3.0*rad + 0.1*n);
+    mat.g += 0.02*noise(vs_in.vertex.xz - t*0.12 + 0.3);
 
     vec4 col = mix(mat, alpha, min(rad*0.7 + 0.08, 0.8));
 
-    col = mix(col, foam_color, collision);
+    col = mix(col, foam_color, foam_dif);
 
     vec3 albedo = col.xyz;
-    vec3 normal = dgwaves(vs_in.vertex);
-    normal += 0.07*normalize(vec3(n1.yz, -1.0));
+    vec3 normal = normalize(dgwaves(vs_in.vertex));
+    normal += 0.1*n1;
+    normal.y += 2.0*foam_dif;
     normal = normalize(normal);
 
-    //float fin = 0.0;
-	  //if (sum > 0.0 && sum < 0.4) fin = 0.1;
-	  //if (sum > 0.4 && sum < 0.8) fin = 0.0;
-	  //if (sum > 0.8) fin = 1.0;
-	  //
-	  //vec3 albedo = vec3(fin) + mix(alpha.rgb, col.rgb, gradientcolor.a);
-    //albedo *= 2.0;
-
     // Maybe full brdf is unnecessary? test performance
-    vec3 ambient = vec3(0.05) * albedo;
-    vec3 hdr_color = ambient + brdfSchlickGGX(vs_in.position, normal, albedo, 0.1, 0, -sun_direction, sun_color, camera_position);
+    vec3 ambient = vec3(0.1) * albedo;
+    vec3 hdr_color = ambient + brdfSchlickGGX(vs_in.position, normal, albedo, 0.03, 0.1, -sun_direction, sun_color, camera_position);
     
+    //hdr_color = mix(deep_color.rgb, hdr_color, 1.0 - smoothstep(15.0, 25.0, scene_z));
+
     out_color = vec4(hdr_color, 1.0);
 
     gl_FragDepth = scene_d;

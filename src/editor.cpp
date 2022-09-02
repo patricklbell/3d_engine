@@ -1112,8 +1112,8 @@ void drawWaterDebug(WaterEntity* w, const Camera &camera, bool flash = false){
     glUniform1f(shader::debug_uniforms.shaded, 0.0);
     glUniform1f(shader::debug_uniforms.flashing, flash ? 1.0: 0.0);
 
-    glBindVertexArray(graphics::grid.vao);
-    glDrawElements(graphics::grid.draw_mode, graphics::grid.draw_count[0], graphics::grid.draw_type, (GLvoid*)(sizeof(GLubyte)*graphics::grid.draw_start[0]));
+    glBindVertexArray(graphics::water_grid.vao);
+    glDrawElements(graphics::water_grid.draw_mode, graphics::water_grid.draw_count[0], graphics::water_grid.draw_type, (GLvoid*)(sizeof(GLubyte)*graphics::water_grid.draw_start[0]));
    
     glEnable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);
@@ -1389,72 +1389,87 @@ void drawEditorGui(Camera &editor_camera, Camera& level_camera, EntityManager &e
                     }
                 }
 
-                if (selection.ids.size() == 1) {
-                    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + ImGui::GetTextLineHeight());
-                    if (ImGui::CollapsingHeader("Materials")) {
-                        //const auto create_tex_ui = [&img_w, &asset_manager] (Texture** tex, int i, std::string&& type, bool is_float = false) {
-                        //    ImGui::Text("%s", type.c_str());
+                ImGui::SetCursorPosY(ImGui::GetCursorPosY() + ImGui::GetTextLineHeight());
+                if (ImGui::CollapsingHeader("Materials")) {
+                    //const auto create_tex_ui = [&img_w, &asset_manager] (Texture** tex, int i, std::string&& type, bool is_float = false) {
+                    //    ImGui::Text("%s", type.c_str());
 
-                        //    std::string id = type + std::to_string(i);
-                        //    bool is_color = (*tex)->is_color;
-                        //    if (ImGui::Checkbox(("###is_color" + type).c_str(), &is_color)) {
-                        //        (*tex)->is_color = is_color;
-                        //        std::cout << id << "\n";
-                        //        if ((*tex)->is_color) {
-                        //            (*tex) = asset_manager.getColorTexture((*tex)->color, GL_RGBA);
-                        //        }
-                        //    }
-                        //    if ((*tex)->is_color) {
-                        //        glm::vec3& col = (*tex)->color;
-                        //        ImGui::SameLine();
+                    //    std::string id = type + std::to_string(i);
+                    //    bool is_color = (*tex)->is_color;
+                    //    if (ImGui::Checkbox(("###is_color" + type).c_str(), &is_color)) {
+                    //        (*tex)->is_color = is_color;
+                    //        std::cout << id << "\n";
+                    //        if ((*tex)->is_color) {
+                    //            (*tex) = asset_manager.getColorTexture((*tex)->color, GL_RGBA);
+                    //        }
+                    //    }
+                    //    if ((*tex)->is_color) {
+                    //        glm::vec3& col = (*tex)->color;
+                    //        ImGui::SameLine();
 
-                        //        if (is_float) {
-                        //            float val = col.x;
-                        //            if (ImGui::InputFloat(("###color" + id).c_str(), &val)) {
-                        //                (*tex) = asset_manager.getColorTexture(glm::vec3(val), GL_RGBA);
-                        //            }
-                        //        }
-                        //        else {
-                        //            if (ImGui::ColorEdit3(("###color" + id).c_str(), &col.x)) {
-                        //                // @note maybe you want more specific format
-                        //                // and color picker may make many unnecessary textures
-                        //                (*tex) = asset_manager.getColorTexture(col, GL_RGBA);
-                        //            }
-                        //        }
-                        //    }
-                        //    else {
-                        //        void* tex_id = (void*)(intptr_t)(*tex)->id;
-                        //        ImGui::SetNextItemWidth(img_w);
-                        //        if (ImGui::ImageButton(tex_id, ImVec2(img_w, img_w))) {
-                        //            im_file_dialog.SetPwd(exepath + "/data/textures");
-                        //            sel_e_material_index = i;
-                        //            im_file_dialog_type = "asset.mat.t" + type;
-                        //            im_file_dialog.SetCurrentTypeFilterIndex(2);
-                        //            im_file_dialog.SetTypeFilters(image_file_extensions);
-                        //            im_file_dialog.Open();
-                        //        }
-                        //    }
-                        //};
-                        //for(int i = 0; i < mesh->num_materials; i++) {
-                        //    auto &mat = mesh->materials[i];
-                        //    char buf[128];
-                        //    sprintf(buf, "Material %d", i);
-                        //    if (ImGui::CollapsingHeader(buf)){
-                        //        create_tex_ui(&mat.t_albedo, i,    "Albedo");
-                        //        create_tex_ui(&mat.t_ambient, i,   "Ambient", true);
-                        //        create_tex_ui(&mat.t_metallic, i,  "Metallic", true);
-                        //        create_tex_ui(&mat.t_normal, i,    "Normal");
-                        //        create_tex_ui(&mat.t_roughness, i, "Roughness", true);
-                        //    }
-                        //}
-                        ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 2 * pad);
-                        ImGui::ColorEdit3("###albedo_mult", &m_e->albedo_mult[0]);
-                        ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 2 * pad);
-                        ImGui::SliderFloat("###roughness_mult", &m_e->roughness_mult, 0.0f, 1.0f, "%.3f", ImGuiSliderFlags_ClampOnInput);
-                        ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 2 * pad);
-                        ImGui::SliderFloat("###ao_mult", &m_e->ao_mult, 0.0f, 1.0f, "%.3f", ImGuiSliderFlags_ClampOnInput);
-                        ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 2 * pad);
-                        ImGui::SliderFloat("###metal_mult", &m_e->metal_mult, 0.0f, 1.0f, "%.3f", ImGuiSliderFlags_ClampOnInput);
+                    //        if (is_float) {
+                    //            float val = col.x;
+                    //            if (ImGui::InputFloat(("###color" + id).c_str(), &val)) {
+                    //                (*tex) = asset_manager.getColorTexture(glm::vec3(val), GL_RGBA);
+                    //            }
+                    //        }
+                    //        else {
+                    //            if (ImGui::ColorEdit3(("###color" + id).c_str(), &col.x)) {
+                    //                // @note maybe you want more specific format
+                    //                // and color picker may make many unnecessary textures
+                    //                (*tex) = asset_manager.getColorTexture(col, GL_RGBA);
+                    //            }
+                    //        }
+                    //    }
+                    //    else {
+                    //        void* tex_id = (void*)(intptr_t)(*tex)->id;
+                    //        ImGui::SetNextItemWidth(img_w);
+                    //        if (ImGui::ImageButton(tex_id, ImVec2(img_w, img_w))) {
+                    //            im_file_dialog.SetPwd(exepath + "/data/textures");
+                    //            sel_e_material_index = i;
+                    //            im_file_dialog_type = "asset.mat.t" + type;
+                    //            im_file_dialog.SetCurrentTypeFilterIndex(2);
+                    //            im_file_dialog.SetTypeFilters(image_file_extensions);
+                    //            im_file_dialog.Open();
+                    //        }
+                    //    }
+                    //};
+                    //for(int i = 0; i < mesh->num_materials; i++) {
+                    //    auto &mat = mesh->materials[i];
+                    //    char buf[128];
+                    //    sprintf(buf, "Material %d", i);
+                    //    if (ImGui::CollapsingHeader(buf)){
+                    //        create_tex_ui(&mat.t_albedo, i,    "Albedo");
+                    //        create_tex_ui(&mat.t_ambient, i,   "Ambient", true);
+                    //        create_tex_ui(&mat.t_metallic, i,  "Metallic", true);
+                    //        create_tex_ui(&mat.t_normal, i,    "Normal");
+                    //        create_tex_ui(&mat.t_roughness, i, "Roughness", true);
+                    //    }
+                    //}
+                    auto albedo    = m_e->albedo_mult;
+                    bool albedo_chng = false;
+                    auto roughness = m_e->roughness_mult;
+                    bool roughness_chng = false;
+                    auto ao        = m_e->ao_mult;
+                    bool ao_chng = false;
+                    auto metal     = m_e->metal_mult;
+                    bool metal_chng = false;
+                    ImGui::SetNextItemWidth(2.0*ImGui::GetWindowWidth()/3.0 - pad);
+                    albedo_chng = ImGui::ColorEdit3("albedo", &albedo[0]);
+                    ImGui::SetNextItemWidth(2.0*ImGui::GetWindowWidth()/3.0 - pad);
+                    roughness_chng = ImGui::SliderFloat("roughness", &roughness, 0.0f, 1.0f, "%.3f", ImGuiSliderFlags_ClampOnInput);
+                    ImGui::SetNextItemWidth(2.0*ImGui::GetWindowWidth()/3.0 - pad);
+                    ao_chng = ImGui::SliderFloat("ao", &ao, 0.0f, 1.0f, "%.3f", ImGuiSliderFlags_ClampOnInput);
+                    ImGui::SetNextItemWidth(2.0*ImGui::GetWindowWidth()/3.0 - pad);
+                    metal_chng = ImGui::SliderFloat("metal", &metal, 0.0f, 1.0f, "%.3f", ImGuiSliderFlags_ClampOnInput);
+
+                    for (const auto& id : selection.ids) {
+                        auto e = (MeshEntity*)entity_manager.getEntity(id);
+                        if (e == nullptr) continue;
+                        if (albedo_chng) e->albedo_mult = albedo;
+                        if (roughness_chng) e->roughness_mult = roughness;
+                        if (ao_chng) e->ao_mult = ao;
+                        if (metal_chng) e->metal_mult = metal;
                     }
                 }
             }

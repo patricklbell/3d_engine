@@ -196,9 +196,12 @@ int main() {
     //t_e->texture = createTextureAsset(assets, "data/textures/iceland_heightmap.png");
     //entity_manager.setEntity(entity_manager.getFreeId().i, t_e);
 
-    std::array<std::string,6> skybox_paths = {"data/textures/cloudy/bluecloud_ft.jpg", "data/textures/cloudy/bluecloud_bk.jpg",
+    /*std::array<std::string,6> skybox_paths = {"data/textures/cloudy/bluecloud_ft.jpg", "data/textures/cloudy/bluecloud_bk.jpg",
                                               "data/textures/cloudy/bluecloud_up.jpg", "data/textures/cloudy/bluecloud_dn.jpg",
-                                              "data/textures/cloudy/bluecloud_rt.jpg", "data/textures/cloudy/bluecloud_lf.jpg"};
+                                              "data/textures/cloudy/bluecloud_rt.jpg", "data/textures/cloudy/bluecloud_lf.jpg"};*/
+    std::array<std::string, 6> skybox_paths = { "data/textures/simple_skybox/0006.png", "data/textures/simple_skybox/0002.png",
+                                                "data/textures/simple_skybox/0005.png", "data/textures/simple_skybox/0004.png",
+                                                "data/textures/simple_skybox/0003.png", "data/textures/simple_skybox/0001.png" };
     auto skybox = global_assets.createTexture("skybox");
     AssetManager::loadCubemapTexture(skybox, skybox_paths);
 #ifndef NDEBUG 
@@ -245,13 +248,13 @@ int main() {
             }
         }
         // @todo make better systems for determining when to update shadow map
-        if (!playing) {
+        if (!playing && frame_num % 100 == 0) {
             // @debug for now render collision map every frame
             if (entity_manager.water != NULLID) {
                 auto water = (WaterEntity*)entity_manager.getEntity(entity_manager.water);
                 if (water != nullptr) {
                     bindDrawWaterColliderMap(entity_manager, water);
-                    blurWaterFbo();
+                    blurWaterFbo(water);
                 }
                 else {
                     entity_manager.water = NULLID;

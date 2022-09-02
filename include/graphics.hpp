@@ -65,7 +65,7 @@ void bindDrawShadowMap(const EntityManager &entity_manager, const Camera &camera
 
 void initWaterColliderFbo();
 void bindDrawWaterColliderMap(const EntityManager &entity_manager, WaterEntity *water);
-void blurWaterFbo();
+void blurWaterFbo(WaterEntity* water);
 
 void clearFramebuffer(const glm::vec4 &color);
 void bindHdr();
@@ -93,7 +93,7 @@ namespace graphics {
 
     extern Mesh quad;
     extern Mesh cube;
-    extern Mesh grid;
+    extern Mesh water_grid;
 
     extern Texture * simplex_gradient;
     extern Texture * simplex_value;

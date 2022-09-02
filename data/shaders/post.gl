@@ -107,6 +107,24 @@ float depthToDist(float d){
   return 2.0*NEAR*FAR/(FAR + NEAR - z*(FAR - NEAR));
 }
 
+const float A = 0.15;
+const float B = 0.50;
+const float C = 0.10;
+const float D = 0.20;
+const float E = 0.02;
+const float F = 0.30;
+const float W = 11.2;
+
+vec3 uncharted2_tonemap(vec3 x)
+{
+     return ((x*(A*x+C*B)+D*E)/(x*(A*x+B)+D*F))-E/F;
+}
+
+vec3 reinhard_tonemap(vec3 x)
+{
+     return x / (x + vec3(1.0));
+}
+
 void main()
 {
     float dist = depthToDist(texsample(depth_map, gl_FragCoord.xy).r);
@@ -125,14 +143,15 @@ void main()
     const float gamma = 1.6;
 
     // Reinhard tone mapping
-    vec3 mapped = hdr_color / (hdr_color + vec3(1.0));
+    vec3 mapped = reinhard_tonemap(hdr_color);
+    //vec3 mapped = uncharted2_tonemap(hdr_color);
 
     // gamma correction 
     mapped = pow(mapped, vec3(1.0 / gamma));
 
     vec3 skybox_color = texture(skybox, vs_in.position).xyz;
     
-    const float fog_near = FAR - 30.0;
+    const float fog_near = FAR - 50.0;
     const float fog_far = FAR;
     float fog_amount = smoothstep(fog_near, fog_far, dist);
     vec3 blended = mix(mapped, skybox_color, fog_amount);

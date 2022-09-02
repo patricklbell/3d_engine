@@ -41,7 +41,7 @@ namespace graphics{
     GLuint water_collider_fbos[2], water_collider_buffers[2];
     int water_collider_final_fbo = 0;
 
-    Mesh quad, cube, line_cube, grid;
+    Mesh quad, cube, line_cube, water_grid;
     Texture * simplex_gradient;
     Texture * simplex_value;
     const int MSAA_SAMPLES = 2;
@@ -330,17 +330,17 @@ void bindDrawWaterColliderMap(const EntityManager& entity_manager, WaterEntity* 
     glClearColor(0, 0, 0, 1);
     glClear(GL_COLOR_BUFFER_BIT);
 
-    auto grid_scale = water->scale;
+    auto water_grid_scale = water->scale;
     // Remove y component of scale, shouldn't technically be necessary but helps with debugging
-    grid_scale[1][1] = 1.0f;
-    auto inv_grid = glm::inverse(createModelMatrix(water->position, glm::quat(), grid_scale));
+    water_grid_scale[1][1] = 1.0f;
+    auto inv_water_grid = glm::inverse(createModelMatrix(water->position, glm::quat(), water_grid_scale));
     for (int i = 0; i < ENTITY_COUNT; ++i) {
         auto m_e = reinterpret_cast<MeshEntity*>(entity_manager.entities[i]);
         if (m_e == nullptr || !(m_e->type & EntityType::MESH_ENTITY) || m_e->mesh == nullptr) continue;
 
         auto model = createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
-        auto model_inv_grid = inv_grid * model; 
-        glUniformMatrix4fv(shader::plane_projection_uniforms.m, 1, GL_FALSE, &model_inv_grid[0][0]);
+        auto model_inv_water_grid = inv_water_grid * model; 
+        glUniformMatrix4fv(shader::plane_projection_uniforms.m, 1, GL_FALSE, &model_inv_water_grid[0][0]);
 
         auto& mesh = m_e->mesh;
         for (int j = 0; j < mesh->num_materials; ++j) {
@@ -357,8 +357,8 @@ void bindDrawWaterColliderMap(const EntityManager& entity_manager, WaterEntity* 
 
 
 
-void blurWaterFbo() {
-    constexpr uint64_t num_steps = nextPowerOf2(WATER_COLLIDER_SIZE, WATER_COLLIDER_SIZE) - 1;
+void blurWaterFbo(WaterEntity* water) {
+    constexpr uint64_t num_steps = nextPowerOf2(WATER_COLLIDER_SIZE, WATER_COLLIDER_SIZE) - 2.0;
 
     glUseProgram(shader::jfa_program);
     glUniform1f(shader::jfa_uniforms.num_steps, num_steps);
@@ -373,6 +373,7 @@ void blurWaterFbo() {
         }
         else {
             glUseProgram(shader::jfa_distance_program);
+            glUniform2f(shader::jfa_distance_uniforms.dimensions, water->scale[0][0], water->scale[2][2]);
         }
 
         glBindFramebuffer(GL_FRAMEBUFFER, graphics::water_collider_fbos[(step + 1) % 2]);
@@ -382,10 +383,26 @@ void blurWaterFbo() {
 
         drawQuad();
     }
+    
+
+    glBindTexture(GL_TEXTURE_2D, graphics::water_collider_buffers[(num_steps + 1) % 2]);
+    glGenerateMipmap(GL_TEXTURE_2D);
+    graphics::water_collider_final_fbo = (num_steps + 1) % 2;
+
+    glUseProgram(shader::gaussian_blur_program);
+    for (unsigned int i = 0; i < 2; i++)
+    {
+        glBindFramebuffer(GL_FRAMEBUFFER, graphics::water_collider_fbos[(num_steps + i) % 2]);
+
+        glUniform1i(shader::gaussian_blur_uniforms.horizontal, (int)i);
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, graphics::water_collider_buffers[(num_steps + i + 1) % 2]);
+
+        drawQuad();
+    }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glViewport(0, 0, window_width, window_height);
-
-    graphics::water_collider_final_fbo = (num_steps + 1) % 2;
 }
 
 void initBloomFbo(bool resize){
@@ -623,7 +640,7 @@ void initGraphicsPrimitives(AssetManager &asset_manager) {
     graphics::line_cube.draw_start[0] = 0;
     graphics::line_cube.draw_count[0] = sizeof(line_cube_vertices) / (2.0 * sizeof(*line_cube_vertices));
 
-    asset_manager.loadMeshAssimp(&graphics::grid, "data/models/grid.obj");
+    asset_manager.loadMeshFile(&graphics::water_grid, "data/mesh/water_grid.mesh");
 
     graphics::simplex_gradient = asset_manager.createTexture("data/textures/2d_simplex_gradient_seamless.png");
     asset_manager.loadTexture(graphics::simplex_gradient, "data/textures/2d_simplex_gradient_seamless.png", GL_RGB);
@@ -791,8 +808,8 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Texture* skybox, 
             glUniform4fv(shader::water_uniforms[shader::unified_bloom].deep_color, 1, &water->deep_color[0]);
             glUniform4fv(shader::water_uniforms[shader::unified_bloom].foam_color, 1, &water->foam_color[0]);
 
-            glBindVertexArray(graphics::grid.vao);
-            glDrawElements(graphics::grid.draw_mode, graphics::grid.draw_count[0], graphics::grid.draw_type, (GLvoid*)(sizeof(GLubyte)*graphics::grid.draw_start[0]));
+            glBindVertexArray(graphics::water_grid.vao);
+            glDrawElements(graphics::water_grid.draw_mode, graphics::water_grid.draw_count[0], graphics::water_grid.draw_type, (GLvoid*)(sizeof(GLubyte)*graphics::water_grid.draw_start[0]));
 
             //glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
             glDepthFunc(GL_LESS);

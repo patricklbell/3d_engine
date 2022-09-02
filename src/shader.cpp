@@ -44,6 +44,7 @@ namespace shader {
 	struct JfaUniforms jfa_uniforms;
 
 	GLuint jfa_distance_program;
+	struct JfaDistanceUniforms jfa_distance_uniforms;
 
 	GLuint debug_program;
 	struct DebugUniforms debug_uniforms;
@@ -345,6 +346,8 @@ void loadJfaDistanceShader(std::string path) {
 		jfa_distance_program = tmp;
 		return;
 	}
+
+	jfa_distance_uniforms.dimensions = glGetUniformLocation(jfa_distance_program, "dimensions");
 
 	glUseProgram(jfa_distance_program);
 	// Set fixed locations for textures in GL_TEXTUREi

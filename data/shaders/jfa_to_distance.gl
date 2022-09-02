@@ -18,12 +18,13 @@ in vec2 texcoord;
 out vec4 out_color;
   
 uniform sampler2D image;
+uniform vec2 dimensions;
 
 vec4 make_distance_transform(in vec2 fragcoord) {
     vec4 data = texture2D(image, texcoord);
 
     vec2 seed_coord = data.xy;
-    float dist = length(seed_coord - texcoord);        
+    float dist = length(dimensions*(seed_coord - texcoord));        
 
     return vec4(vec3(dist), 1.0);
 }

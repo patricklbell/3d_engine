@@ -64,6 +64,9 @@ namespace shader {
     } jfa_uniforms;
 
     extern GLuint jfa_distance_program;
+    extern struct JfaDistanceUniforms {
+        GLuint dimensions;
+    } jfa_distance_uniforms;
 
     extern GLuint debug_program;
     extern struct DebugUniforms {

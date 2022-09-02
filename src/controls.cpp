@@ -424,10 +424,13 @@ void handleEditorControls(Camera &editor_camera, Camera &level_camera, EntityMan
 
 void handleGameControls() {
     static int p_key_prev = GLFW_PRESS;
+    static bool backtick_key_prev = false;
 
-    if (glfwGetKey(window, GLFW_KEY_P) && !p_key_prev) {
+    if (glfwGetKey(window, GLFW_KEY_P) && !p_key_prev)
         playing = !playing;
-    }
+    if (glfwGetKey(window, GLFW_KEY_GRAVE_ACCENT) && !backtick_key_prev)
+        editor::do_terminal = !editor::do_terminal;
 
+    backtick_key_prev = glfwGetKey(window, GLFW_KEY_GRAVE_ACCENT);
     p_key_prev = glfwGetKey(window, GLFW_KEY_P);
 }
