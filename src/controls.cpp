@@ -244,7 +244,8 @@ void handleEditorControls(Camera &editor_camera, Camera &level_camera, EntityMan
 
     if (right_mouse_click_release) {
         if (editor::editor_mode == EditorMode::COLLIDERS) {
-            auto collider = pickColliderWithMouse(camera, entity_manager, glm::vec3());
+            glm::vec3 n;
+            auto collider = pickColliderWithMouse(camera, entity_manager, n);
             if (collider != nullptr) {
                 entity_manager.deleteEntity(collider->id);
             }

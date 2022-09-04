@@ -34,7 +34,7 @@ vec4 step_jfa(in vec2 fragcoord, in float level) {
         for (int x = -1; x <= 1; ++x) {
             vec2 sampler_coord = texcoord + (vec2(x,y) * step_width) / resolution.xy;
                 
-            vec4 data = texture2D(image, sampler_coord);
+            vec4 data = texture(image, sampler_coord);
             vec2 seed_coord = data.xy;
 
             float dist = length(seed_coord - texcoord);
