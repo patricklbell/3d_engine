@@ -1,0 +1,12 @@
+# Blender MTL File: 'generator.blend'
+# Material Count: 1
+
+newmtl Material.002
+Ns 0.074380
+Ka 0.181818 0.181818 0.181818
+Kd 0.013848 0.012676 0.013326
+Ks 0.500000 0.500000 0.500000
+Ke 0.0 0.0 0.0
+Ni 1.450000
+d 1.000000
+illum 3

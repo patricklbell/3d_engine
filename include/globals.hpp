@@ -18,6 +18,10 @@
 #ifdef _WINDOWS
 #define NOMINMAX 
 #endif
+#include <soloud.h>
+#include <soloud_thread.h>
+#include <soloud_wav.h>
+#include <soloud_wavstream.h>
 
 extern GLFWwindow* window;
 extern std::string glsl_version;
@@ -33,5 +37,7 @@ extern bool playing;
 
 struct ThreadPool;
 extern ThreadPool *global_thread_pool;
+
+extern SoLoud::Soloud soloud;
 
 #endif

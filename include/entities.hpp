@@ -27,7 +27,7 @@ enum EntityType : uint64_t {
     ENTITY          = 0,
     MESH_ENTITY     = 1 << 0,
     WATER_ENTITY    = 1 << 1,
-    COLLIDER_ENTITY = (1 << 2) | MESH_ENTITY,
+    COLLIDER_ENTITY =(1 << 2) | MESH_ENTITY,
 };
 
 struct Entity {

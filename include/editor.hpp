@@ -83,7 +83,6 @@ enum class EditorMode {
 
 namespace editor {
     extern EditorMode editor_mode;
-    extern AssetManager editor_assets;
 
     extern GizmoMode gizmo_mode;
     extern glm::vec3 translation_snap;

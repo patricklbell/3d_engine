@@ -79,27 +79,31 @@ Entity* pickEntityWithMouse(Camera &camera, EntityManager &entity_manager) {
             if (m_e->mesh == nullptr) continue;
 
             const auto& mesh = m_e->mesh;
-            const auto trans = createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
+            const auto g_trans = createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
+
             for (int j = 0; j <= mesh->num_indices - 3; j += 3) {
-                if (mesh->indices[j] >= mesh->num_vertices ||
+                if (mesh->indices[j    ] >= mesh->num_vertices ||
                     mesh->indices[j + 1] >= mesh->num_vertices ||
                     mesh->indices[j + 2] >= mesh->num_vertices)
                     continue;
-                const auto p1 = mesh->vertices[mesh->indices[j]];
+                const auto p1 = mesh->vertices[mesh->indices[j]    ];
                 const auto p2 = mesh->vertices[mesh->indices[j + 1]];
                 const auto p3 = mesh->vertices[mesh->indices[j + 2]];
-                glm::vec3 triangle[3] = {
-                    glm::vec3(trans * glm::vec4(p1, 1.0)),
-                    glm::vec3(trans * glm::vec4(p2, 1.0)),
-                    glm::vec3(trans * glm::vec4(p3, 1.0))
-                };
-                double u, v, t;
-                if (rayIntersectsTriangle(triangle, out_origin, out_direction, t, u, v)) {
-                    auto collision_distance = glm::length((out_origin + out_direction * (float)t) - camera.position);
-                    if (collision_distance < min_collision_distance) {
-                        min_collision_distance = collision_distance;
-                        closest_e = m_e;
-                        camera.target = m_e->position;
+                for (int k = 0; k < mesh->num_meshes; k++) {
+                    auto trans = mesh->transforms[k] * g_trans;
+                    glm::vec3 triangle[3] = {
+                        glm::vec3(trans * glm::vec4(p1, 1.0)),
+                        glm::vec3(trans * glm::vec4(p2, 1.0)),
+                        glm::vec3(trans * glm::vec4(p3, 1.0))
+                    };
+                    double u, v, t;
+                    if (rayIntersectsTriangle(triangle, out_origin, out_direction, t, u, v)) {
+                        auto collision_distance = glm::length((out_origin + out_direction * (float)t) - camera.position);
+                        if (collision_distance < min_collision_distance) {
+                            min_collision_distance = collision_distance;
+                            closest_e = m_e;
+                            camera.target = m_e->position;
+                        }
                     }
                 }
             }

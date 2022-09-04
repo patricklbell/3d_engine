@@ -22,24 +22,29 @@ if( CMAKE_BINARY_DIR MATCHES " " )
 	message( "Your Build Directory contains spaces. If you experience problems when compiling, this can be the cause." )
 endif()
 
-# Compile external dependencies 
-add_subdirectory (external)
 
 include_directories(
 	external/glfw-3.3.7/include/
 	external/glm-0.9.7.1/
+	external/soloud20200207/include/
 	external/glew-2.1.0/include/
 	external/imgui/include/
 	external/assimp-5.1.5/include/
 	external/stb/
 	include/
 )
+
+# Compile external dependencies 
+add_subdirectory (external)
+
 set(ALL_LIBS
 	${OPENGL_LIBRARY}
 	glfw
 	GLEW_210
 	assimp
+	SOLOUD
 )
+
 
 add_definitions(
 	-DTW_STATIC

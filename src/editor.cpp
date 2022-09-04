@@ -39,7 +39,6 @@
 
 namespace editor {
     EditorMode editor_mode = EditorMode::ENTITY;
-    AssetManager editor_assets;
     Mesh arrow_mesh;
     Mesh block_arrow_mesh;
     Mesh ring_mesh;
@@ -1171,17 +1170,22 @@ void drawMeshWireframe(const Mesh &mesh, const glm::vec3 &pos, const glm::quat &
     //glLineWidth(200.0);
 
     glUseProgram(shader::debug_program);
-    auto mvp = camera.projection * camera.view * createModelMatrix(pos, rot, scl);
-    glUniformMatrix4fv(shader::debug_uniforms.mvp, 1, GL_FALSE, &mvp[0][0]);
-    glUniformMatrix4fv(shader::debug_uniforms.model, 1, GL_FALSE, &pos[0]);
     glUniform4f(shader::debug_uniforms.color, 1.0, 1.0, 1.0, 1.0);
     glUniform4f(shader::debug_uniforms.color_flash_to, 1.0, 0.0, 1.0, 1.0);
     glUniform1f(shader::debug_uniforms.time, glfwGetTime());
     glUniform1f(shader::debug_uniforms.shaded, 0.0);
     glUniform1f(shader::debug_uniforms.flashing, flash ? 1.0: 0.0);
 
-    for (int j = 0; j < mesh.num_materials; ++j) {
-        glBindVertexArray(mesh.vao);
+    auto g_model = createModelMatrix(pos, rot, scl);
+    auto vp = camera.projection * camera.view;
+
+    glBindVertexArray(mesh.vao);
+    for (int j = 0; j < mesh.num_meshes; ++j) {
+        auto model = mesh.transforms[j] * g_model;
+        auto mvp = vp * model;
+        glUniformMatrix4fv(shader::debug_uniforms.mvp, 1, GL_FALSE, &mvp[0][0]);
+        glUniformMatrix4fv(shader::debug_uniforms.model, 1, GL_FALSE, &model[0][0]);
+
         glDrawElements(mesh.draw_mode, mesh.draw_count[j], mesh.draw_type, (GLvoid*)(sizeof(GLubyte)*mesh.draw_start[j]));
     }
     

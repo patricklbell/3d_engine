@@ -46,6 +46,7 @@ std::string GL_version, GL_vendor, GL_renderer;
 std::string level_path = "";
 ThreadPool *global_thread_pool;
 bool playing = false;
+SoLoud::Soloud soloud;
 
 int main() {
     exepath = getexepath();
@@ -125,6 +126,8 @@ int main() {
     GL_renderer = std::string((char*)glGetString(GL_RENDERER));
     std::cout << "OpenGL Info:\nVersion: \t" << GL_version << "\nVendor: \t" << GL_vendor << "\nRenderer: \t" << GL_renderer << "\n";
 
+    soloud.init();
+
 #if DO_MULTITHREAD
     ThreadPool thread_pool;
     thread_pool.start();
@@ -188,6 +191,20 @@ int main() {
 
     AssetManager asset_manager;
     EntityManager entity_manager;
+
+    // Load background sample
+    auto bg_music = asset_manager.createAudio("data/audio/time.wav");
+    if (bg_music->wav_stream.load(bg_music->handle.c_str()) != SoLoud::SO_NO_ERROR)
+        std::cout << "Error loading wav\n";
+    bg_music->wav_stream.setLooping(1);                          // Tell SoLoud to loop the sound
+    int handle1 = soloud.play(bg_music->wav_stream);             // Play it
+    soloud.setVolume(handle1, 0.5f);            // Set volume; 1.0f is "normal"
+    soloud.setPan(handle1, -0.2f);              // Set pan; -1 is left, 1 is right
+    soloud.setRelativePlaySpeed(handle1, 1.0f); // Play a bit slower; 1.0f is normal
+
+    auto test = (MeshEntity*)entity_manager.createEntity(MESH_ENTITY);
+    test->mesh = asset_manager.createMesh("data/models/test.glb");
+    asset_manager.loadMeshAssimp(test->mesh, test->mesh->handle);
 
     //level_path = "data/levels/water_test.level";
     //loadLevel(entity_manager, asset_manager, level_path);
@@ -309,6 +326,9 @@ int main() {
 #endif
     } // Check if the ESC key was pressed or the window was closed
     while( glfwGetKey(window, GLFW_KEY_ESCAPE ) != GLFW_PRESS && glfwWindowShouldClose(window) == 0 );
+
+    // Clean up SoLoud
+    soloud.deinit();
 
 #if DO_MULTITHREAD
     thread_pool.stop();

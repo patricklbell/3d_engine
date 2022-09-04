@@ -63,4 +63,68 @@ set(ASSIMP_BUILD_ALL_IMPORTERS_BY_DEFAULT OFF)
 set(ASSIMP_BUILD_GLTF_IMPORTER ON)
 set(ASSIMP_BUILD_OBJ_IMPORTER ON)
 set(ASSIMP_BUILD_FBX_IMPORTER ON)
+set(ASSIMP_BUILD_COLLADA_IMPORTER ON)
 add_subdirectory( assimp-5.1.5 )
+
+### SoLoud ###
+cmake_policy(SET CMP0091 NEW)
+add_compile_definitions(WITH_WINMM)
+
+set(SOLOUD_SOURCE
+  soloud20200207/src/audiosource/monotone/soloud_monotone.cpp
+  soloud20200207/src/audiosource/noise/soloud_noise.cpp
+  soloud20200207/src/audiosource/openmpt/soloud_openmpt.cpp
+  soloud20200207/src/audiosource/openmpt/soloud_openmpt_dll.c
+  soloud20200207/src/audiosource/sfxr/soloud_sfxr.cpp
+  soloud20200207/src/audiosource/speech/darray.cpp
+  soloud20200207/src/audiosource/speech/klatt.cpp
+  soloud20200207/src/audiosource/speech/resonator.cpp
+  soloud20200207/src/audiosource/speech/soloud_speech.cpp
+  soloud20200207/src/audiosource/speech/tts.cpp
+  soloud20200207/src/audiosource/tedsid/sid.cpp
+  soloud20200207/src/audiosource/tedsid/soloud_tedsid.cpp
+  soloud20200207/src/audiosource/tedsid/ted.cpp
+  soloud20200207/src/audiosource/vic/soloud_vic.cpp
+  soloud20200207/src/audiosource/vizsn/soloud_vizsn.cpp
+  soloud20200207/src/audiosource/wav/dr_impl.cpp
+  soloud20200207/src/audiosource/wav/soloud_wav.cpp
+  soloud20200207/src/audiosource/wav/soloud_wavstream.cpp
+  soloud20200207/src/audiosource/wav/stb_vorbis.c
+  soloud20200207/src/backend/null/soloud_null.cpp
+  soloud20200207/src/backend/winmm/soloud_winmm.cpp
+  soloud20200207/src/core/soloud.cpp
+  soloud20200207/src/core/soloud_audiosource.cpp
+  soloud20200207/src/core/soloud_bus.cpp
+  soloud20200207/src/core/soloud_core_3d.cpp
+  soloud20200207/src/core/soloud_core_basicops.cpp
+  soloud20200207/src/core/soloud_core_faderops.cpp
+  soloud20200207/src/core/soloud_core_filterops.cpp
+  soloud20200207/src/core/soloud_core_getters.cpp
+  soloud20200207/src/core/soloud_core_setters.cpp
+  soloud20200207/src/core/soloud_core_voicegroup.cpp
+  soloud20200207/src/core/soloud_core_voiceops.cpp
+  soloud20200207/src/core/soloud_fader.cpp
+  soloud20200207/src/core/soloud_fft.cpp
+  soloud20200207/src/core/soloud_fft_lut.cpp
+  soloud20200207/src/core/soloud_file.cpp
+  soloud20200207/src/core/soloud_filter.cpp
+  soloud20200207/src/core/soloud_misc.cpp
+  soloud20200207/src/core/soloud_queue.cpp
+  soloud20200207/src/core/soloud_thread.cpp
+  soloud20200207/src/filter/soloud_bassboostfilter.cpp
+  soloud20200207/src/filter/soloud_biquadresonantfilter.cpp
+  soloud20200207/src/filter/soloud_dcremovalfilter.cpp
+  soloud20200207/src/filter/soloud_echofilter.cpp
+  soloud20200207/src/filter/soloud_fftfilter.cpp
+  soloud20200207/src/filter/soloud_flangerfilter.cpp
+  soloud20200207/src/filter/soloud_freeverbfilter.cpp
+  soloud20200207/src/filter/soloud_lofifilter.cpp
+  soloud20200207/src/filter/soloud_robotizefilter.cpp
+  soloud20200207/src/filter/soloud_waveshaperfilter.cpp
+)
+
+
+add_library(SOLOUD STATIC 
+	${SOLOUD_SOURCE}
+	${SOLOUD_INCLUDE}
+)

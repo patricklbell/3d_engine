@@ -232,13 +232,15 @@ void bindDrawShadowMap(const EntityManager &entity_manager, const Camera &camera
         auto m_e = reinterpret_cast<MeshEntity*>(entity_manager.entities[i]);
         if(m_e == nullptr || !(m_e->type & EntityType::MESH_ENTITY) || m_e->mesh == nullptr || !m_e->casts_shadow) continue;
 
-        auto model = createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
-        glUniformMatrix4fv(shader::null_uniforms.model, 1, GL_FALSE, &model[0][0]);
+        auto g_model = createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
 
-        auto &mesh = m_e->mesh;
-        for (int j = 0; j < mesh->num_materials; ++j) {
-            glBindVertexArray(mesh->vao);
-            glDrawElements(mesh->draw_mode, mesh->draw_count[j], mesh->draw_type, (GLvoid*)(sizeof(GLubyte)*mesh->draw_start[j]));
+        auto& mesh = m_e->mesh;
+        glBindVertexArray(mesh->vao);
+        for (int j = 0; j < mesh->num_meshes; ++j) {
+            auto model = g_model * mesh->transforms[j];
+            glUniformMatrix4fv(shader::null_uniforms.model, 1, GL_FALSE, &model[0][0]);
+
+            glDrawElements(mesh->draw_mode, mesh->draw_count[j], mesh->draw_type, (GLvoid*)(sizeof(*mesh->indices)*mesh->draw_start[j]));
         }
     }
     glCullFace(GL_BACK);
@@ -640,7 +642,7 @@ void initGraphicsPrimitives(AssetManager &asset_manager) {
     graphics::line_cube.draw_start[0] = 0;
     graphics::line_cube.draw_count[0] = sizeof(line_cube_vertices) / (2.0 * sizeof(*line_cube_vertices));
 
-    asset_manager.loadMeshFile(&graphics::water_grid, "data/mesh/water_grid.mesh");
+    asset_manager.loadMeshAssimp(&graphics::water_grid, "data/models/water_grid.obj");
 
     graphics::simplex_gradient = asset_manager.createTexture("data/textures/2d_simplex_gradient_seamless.png");
     asset_manager.loadTexture(graphics::simplex_gradient, "data/textures/2d_simplex_gradient_seamless.png", GL_RGB);
@@ -741,14 +743,17 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Texture* skybox, 
         glUniform1f(shader::unified_uniforms[shader::unified_bloom].metal_mult,     m_e->metal_mult);
         glUniform1f(shader::unified_uniforms[shader::unified_bloom].ao_mult,        m_e->ao_mult);
 
-        auto model = createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
-        auto mvp = vp * model;
-        glUniformMatrix4fv(shader::unified_uniforms[shader::unified_bloom].mvp, 1, GL_FALSE, &mvp[0][0]);
-        glUniformMatrix4fv(shader::unified_uniforms[shader::unified_bloom].model, 1, GL_FALSE, &model[0][0]);
+        auto g_model = createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
 
         auto &mesh = m_e->mesh;
-        for (int j = 0; j < mesh->num_materials; ++j) {
-            auto &mat = mesh->materials[j];
+        glBindVertexArray(mesh->vao);
+        for (int j = 0; j < mesh->num_meshes; ++j) {
+            auto model = mesh->transforms[j] * g_model;
+            auto mvp   = vp * model;
+            glUniformMatrix4fv(shader::unified_uniforms[shader::unified_bloom].mvp, 1, GL_FALSE, &mvp[0][0]);
+            glUniformMatrix4fv(shader::unified_uniforms[shader::unified_bloom].model, 1, GL_FALSE, &model[0][0]);
+
+            auto &mat = mesh->materials[mesh->material_indices[j]];
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, mat.t_albedo->id);
 
@@ -765,8 +770,7 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Texture* skybox, 
             glBindTexture(GL_TEXTURE_2D, mat.t_ambient->id);
 
             // Bind VAO and draw
-            glBindVertexArray(mesh->vao);
-            glDrawElements(mesh->draw_mode, mesh->draw_count[j], mesh->draw_type, (GLvoid*)(sizeof(GLubyte)*mesh->draw_start[j]));
+            glDrawElements(mesh->draw_mode, mesh->draw_count[j], mesh->draw_type, (GLvoid*)(sizeof(*mesh->indices) * mesh->draw_start[j]));
         }
     }
 
@@ -809,7 +813,7 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Texture* skybox, 
             glUniform4fv(shader::water_uniforms[shader::unified_bloom].foam_color, 1, &water->foam_color[0]);
 
             glBindVertexArray(graphics::water_grid.vao);
-            glDrawElements(graphics::water_grid.draw_mode, graphics::water_grid.draw_count[0], graphics::water_grid.draw_type, (GLvoid*)(sizeof(GLubyte)*graphics::water_grid.draw_start[0]));
+            glDrawElements(graphics::water_grid.draw_mode, graphics::water_grid.draw_count[0], graphics::water_grid.draw_type, (GLvoid*)(sizeof(*graphics::water_grid.indices)*graphics::water_grid.draw_start[0]));
 
             //glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
             glDepthFunc(GL_LESS);

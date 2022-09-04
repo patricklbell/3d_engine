@@ -294,6 +294,7 @@ void initDefaultMaterial(AssetManager &asset_manager){
 Mesh::~Mesh(){
     glDeleteVertexArrays(1, &vao);
     free(materials);
+    free(material_indices);
     free(indices);
     free(vertices);
     free(normals);
@@ -312,7 +313,7 @@ enum class MeshAttributes : char {
     ALL      = VERTICES | NORMALS | TANGENTS | UVS,
 };
 
-constexpr uint8_t MESH_FILE_VERSION = 2U;
+constexpr uint8_t MESH_FILE_VERSION = 3U;
 // For now dont worry about size of types on different platforms
 bool AssetManager::writeMeshFile(const Mesh *mesh, const std::string &path){
     std::cout << "--------------------Save Mesh " << path << "--------------------\n";
@@ -331,10 +332,10 @@ bool AssetManager::writeMeshFile(const Mesh *mesh, const std::string &path){
     fwrite(mesh->indices, sizeof(*mesh->indices), mesh->num_indices, f);
 
     // @todo For now just assume every mesh has every attribute
-    char attributes = (char)MeshAttributes::VERTICES | (char)MeshAttributes::NORMALS | (char)MeshAttributes::TANGENTS | (char)MeshAttributes::UVS;
+    MeshAttributes attributes = (MeshAttributes)((char)MeshAttributes::VERTICES | (char)MeshAttributes::NORMALS | (char)MeshAttributes::TANGENTS | (char)MeshAttributes::UVS);
     fwrite(&attributes, sizeof(attributes), 1, f);
 
-    fwrite(&mesh->num_vertices, sizeof(int), 1, f);
+    fwrite(&mesh->num_vertices, sizeof(mesh->num_vertices), 1, f);
 
     fwrite(mesh->vertices, sizeof(*mesh->vertices), mesh->num_vertices, f);
     fwrite(mesh->normals,  sizeof(*mesh->normals ), mesh->num_vertices, f);
@@ -343,7 +344,7 @@ bool AssetManager::writeMeshFile(const Mesh *mesh, const std::string &path){
     fwrite(mesh->uvs,      sizeof(*mesh->uvs     ), mesh->num_vertices, f);
 
     // Write materials as list of image paths
-    fwrite(&mesh->num_materials, sizeof(int), 1, f);
+    fwrite(&mesh->num_materials, sizeof(mesh->num_materials), 1, f);
 
     const auto write_texture = [&f](Texture* tex) {
         char is_color = tex->is_color;
@@ -368,9 +369,13 @@ bool AssetManager::writeMeshFile(const Mesh *mesh, const std::string &path){
         write_texture(mat.t_roughness);
     }
 
+    fwrite(&mesh->num_meshes, sizeof(mesh->num_meshes), 1, f);
+
     // Write material indice ranges
-    fwrite(mesh->draw_start, sizeof(GLint), mesh->num_materials, f);
-    fwrite(mesh->draw_count, sizeof(GLint), mesh->num_materials, f);
+    fwrite(mesh->material_indices, sizeof(*mesh->material_indices), mesh->num_meshes, f);
+    fwrite(mesh->draw_start,       sizeof(*mesh->draw_start),       mesh->num_meshes, f);
+    fwrite(mesh->draw_count,       sizeof(*mesh->draw_count),       mesh->num_meshes, f);
+    fwrite(mesh->transforms,       sizeof(*mesh->transforms),       mesh->num_meshes, f);
 
     fclose(f);
     return true;
@@ -389,27 +394,27 @@ static void createMeshVao(Mesh *mesh){
 
 	// Load the packed vector data into a VBO
 	glBindBuffer(GL_ARRAY_BUFFER, mesh->vertices_vbo);
-	glBufferData(GL_ARRAY_BUFFER, mesh->num_vertices * sizeof(glm::fvec3), &mesh->vertices[0], GL_STATIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, mesh->num_vertices * sizeof(*mesh->vertices), &mesh->vertices[0], GL_STATIC_DRAW);
 	glVertexAttribPointer(0, 3, GL_FLOAT, false, 0, 0);
 	glEnableVertexAttribArray(0);
 
     glBindBuffer(GL_ARRAY_BUFFER, mesh->normals_vbo);
-	glBufferData(GL_ARRAY_BUFFER, mesh->num_vertices * sizeof(glm::fvec3), &mesh->normals[0], GL_STATIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, mesh->num_vertices * sizeof(*mesh->normals), &mesh->normals[0], GL_STATIC_DRAW);
 	glVertexAttribPointer(1, 3, GL_FLOAT, false, 0, 0);
 	glEnableVertexAttribArray(1);
 
     glBindBuffer(GL_ARRAY_BUFFER, mesh->tangents_vbo);
-	glBufferData(GL_ARRAY_BUFFER, mesh->num_vertices * sizeof(glm::fvec3), &mesh->tangents[0], GL_STATIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, mesh->num_vertices * sizeof(*mesh->tangents), &mesh->tangents[0], GL_STATIC_DRAW);
 	glVertexAttribPointer(2, 3, GL_FLOAT, false, 0, 0);
 	glEnableVertexAttribArray(2);
 
 	glBindBuffer(GL_ARRAY_BUFFER, mesh->uvs_vbo);
-	glBufferData(GL_ARRAY_BUFFER, mesh->num_vertices * sizeof(glm::fvec2), &mesh->uvs[0], GL_STATIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, mesh->num_vertices * sizeof(*mesh->uvs), &mesh->uvs[0], GL_STATIC_DRAW);
 	glVertexAttribPointer(3, 2, GL_FLOAT, false, 0, 0);
 	glEnableVertexAttribArray(3);
 
    	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh->indices_vbo);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, mesh->num_indices * sizeof(unsigned short), &mesh->indices[0], GL_STATIC_DRAW);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, mesh->num_indices * sizeof(*mesh->indices), &mesh->indices[0], GL_STATIC_DRAW);
 
 	glBindVertexArray(0); //Unbind the VAO
 }
@@ -437,7 +442,7 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
     mesh->indices = reinterpret_cast<decltype(mesh->indices)>(malloc(sizeof(*mesh->indices)*mesh->num_indices));
     fread(mesh->indices, sizeof(*mesh->indices), mesh->num_indices, f);
 
-    char attributes;
+    MeshAttributes attributes;
     fread(&attributes, sizeof(attributes), 1, f);
     
     // @todo For now just assume all attributes
@@ -534,14 +539,16 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
     }
 #endif
 
-    // @hardcoded
-	mesh->draw_mode = GL_TRIANGLES;
-	mesh->draw_type = GL_UNSIGNED_SHORT;
+    fread(&mesh->num_meshes, sizeof(mesh->num_meshes), 1, f);
 
-    mesh->draw_start = reinterpret_cast<decltype(mesh->draw_start)>(malloc(sizeof(*mesh->draw_start)*mesh->num_materials));
-    mesh->draw_count = reinterpret_cast<decltype(mesh->draw_count)>(malloc(sizeof(*mesh->draw_count)*mesh->num_materials));
-    fread(mesh->draw_start, sizeof(GLint), mesh->num_materials, f);
-    fread(mesh->draw_count, sizeof(GLint), mesh->num_materials, f);
+    mesh->material_indices = reinterpret_cast<decltype(mesh->material_indices)>(malloc(sizeof(*mesh->material_indices)*mesh->num_meshes));
+    mesh->draw_start       = reinterpret_cast<decltype(mesh->draw_start)      >(malloc(sizeof(*mesh->draw_start      )*mesh->num_meshes));
+    mesh->draw_count       = reinterpret_cast<decltype(mesh->draw_count)      >(malloc(sizeof(*mesh->draw_count      )*mesh->num_meshes));
+    mesh->transforms       = reinterpret_cast<decltype(mesh->transforms)      >(malloc(sizeof(*mesh->transforms      ) * mesh->num_meshes));
+    fread(mesh->material_indices, sizeof(*mesh->material_indices), mesh->num_meshes, f);
+    fread(mesh->draw_start,       sizeof(*mesh->draw_start      ), mesh->num_meshes, f);
+    fread(mesh->draw_count,       sizeof(*mesh->draw_count      ), mesh->num_meshes, f);
+    fread(mesh->transforms,       sizeof(*mesh->transforms      ), mesh->num_meshes, f);
     
     fclose(f);
 
@@ -553,11 +560,11 @@ static constexpr auto ai_import_flags = aiProcess_JoinIdenticalVertices |
     aiProcess_Triangulate |
     aiProcess_GenNormals |
     aiProcess_CalcTangentSpace |
+    aiProcess_GenUVCoords |
     //aiProcess_RemoveComponent (remove colors) |
     aiProcess_LimitBoneWeights |
     aiProcess_ImproveCacheLocality |
     aiProcess_RemoveRedundantMaterials |
-    aiProcess_GenUVCoords |
     aiProcess_SortByPType |
     aiProcess_FindDegenerates |
     aiProcess_FindInvalidData |
@@ -572,33 +579,20 @@ bool AssetManager::loadMeshAssimp(Mesh *mesh, const std::string &path) {
 	Assimp::Importer importer;
 
 	const aiScene* scene = importer.ReadFile(path, ai_import_flags);
-	if( !scene) {
+    if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode)
+    {
         std::cerr << "Error loading mesh: " << importer.GetErrorString() << "\n";
-		return false;
-	}
+        return false;
+    }
 
-	// Allocate arrays for each mesh 
-	mesh->num_materials = scene->mNumMeshes;
-    mesh->draw_start = reinterpret_cast<decltype(mesh->draw_start)>(malloc(sizeof(*mesh->draw_start)*mesh->num_materials));
-    mesh->draw_count = reinterpret_cast<decltype(mesh->draw_count)>(malloc(sizeof(*mesh->draw_count)*mesh->num_materials));
-    mesh->materials =  reinterpret_cast<decltype(mesh->materials )>(malloc(sizeof(*mesh->materials )*mesh->num_materials));
+    // Allocate arrays for each material 
+    mesh->num_materials = scene->mNumMaterials;
+    mesh->materials = reinterpret_cast<decltype(mesh->materials)>(malloc(sizeof(*mesh->materials)*mesh->num_materials));
 
-	mesh->draw_mode = GL_TRIANGLES;
-	mesh->draw_type = GL_UNSIGNED_SHORT;
-
-    int indice_offset = 0;
-	for (int i = 0; i < scene->mNumMeshes; ++i) {
-		const aiMesh* ai_mesh = scene->mMeshes[i]; 
-
-		mesh->draw_start[i] = indice_offset;
-        indice_offset += 3*ai_mesh->mNumFaces;
-		mesh->draw_count[i] = 3*ai_mesh->mNumFaces;
-        mesh->num_vertices += ai_mesh->mNumVertices;
-        mesh->num_indices += 3*ai_mesh->mNumFaces;
-
+    for (int i = 0; i < mesh->num_materials; ++i) {
         // Load material from assimp
-		auto ai_mat = scene->mMaterials[scene->mMeshes[i]->mMaterialIndex];
-		auto &mat = mesh->materials[i];
+        auto ai_mat = scene->mMaterials[i];
+        auto& mat = mesh->materials[i];
 
         if (!loadTextureFromAssimp(mat.t_ambient, ai_mat, scene, aiTextureType_AMBIENT_OCCLUSION, GL_SRGB)) {
             if (!loadTextureFromAssimp(mat.t_ambient, ai_mat, scene, aiTextureType_AMBIENT, GL_SRGB)) {
@@ -620,8 +614,7 @@ bool AssetManager::loadMeshAssimp(Mesh *mesh, const std::string &path) {
                     mat.t_albedo->color = color;
                 }
             }
-        }        
-
+        }
 
         if (!loadTextureFromAssimp(mat.t_metallic, ai_mat, scene, aiTextureType_METALNESS, GL_RGB)) {
             if (!loadTextureFromAssimp(mat.t_metallic, ai_mat, scene, aiTextureType_REFLECTION, GL_RGB)) {
@@ -631,6 +624,7 @@ bool AssetManager::loadMeshAssimp(Mesh *mesh, const std::string &path) {
                         mat.t_metallic = default_material->t_metallic;
                     }
                     else {
+                        shininess = glm::clamp(shininess, 0.0f, 1.0f);
                         auto color = glm::vec3(shininess);
                         mat.t_metallic = getColorTexture(color);
                         mat.t_metallic->is_color = true;
@@ -647,6 +641,7 @@ bool AssetManager::loadMeshAssimp(Mesh *mesh, const std::string &path) {
                     mat.t_roughness = default_material->t_roughness;
                 }
                 else {
+                    roughness = glm::clamp(roughness, 0.0f, 1.0f);
                     auto color = glm::vec3(roughness);
                     mat.t_roughness = getColorTexture(color);
                     mat.t_roughness->is_color = true;
@@ -655,13 +650,65 @@ bool AssetManager::loadMeshAssimp(Mesh *mesh, const std::string &path) {
             }
         }
 
-		// @note Since mtl files specify normals as bump maps assume all bump maps are really normals
+        // @note Since mtl files specify normals as bump maps assume all bump maps are really normals
         if (!loadTextureFromAssimp(mat.t_normal, ai_mat, scene, aiTextureType_NORMALS, GL_RGB)) {
             if (!loadTextureFromAssimp(mat.t_normal, ai_mat, scene, aiTextureType_HEIGHT, GL_RGB)) {
                 mat.t_normal = default_material->t_normal;
             }
         }
+    }
+
+    std::function<void(aiNode* node, const aiScene* scene, std::vector<aiMesh*> &meshes, std::vector<aiMatrix4x4*> &transforms)> recursive_node_meshes;
+    recursive_node_meshes = [&recursive_node_meshes](aiNode* node, const aiScene* scene, std::vector<aiMesh*> &meshes, std::vector<aiMatrix4x4*> &transforms)->void {
+        // process all the node's meshes (if any)
+        for (int i = 0; i < node->mNumMeshes; i++) {
+            auto ai_mesh = scene->mMeshes[node->mMeshes[i]];
+            std::cout << "Primitive type: " << ai_mesh->mPrimitiveTypes << "\n";
+            if (ai_mesh->mPrimitiveTypes != aiPrimitiveType_TRIANGLE) continue;
+
+            meshes.push_back(ai_mesh);
+            // @note duplicates transforms, could have node indices etc..
+            transforms.push_back(&node->mTransformation);
+        }
+        // then do the same for each of its children
+        for (int i = 0; i < node->mNumChildren; i++) {
+            recursive_node_meshes(node->mChildren[i], scene, meshes, transforms);
+        }
+    };
+
+    std::vector<aiMesh*> ai_meshes;
+    std::vector<aiMatrix4x4*> ai_transforms;
+    recursive_node_meshes(scene->mRootNode, scene, ai_meshes, ai_transforms);
+
+    // Allocate arrays for each mesh 
+    mesh->num_meshes = ai_meshes.size();
+    std::cout << "Number of meshes is " << mesh->num_meshes << "\n";
+    mesh->draw_start = reinterpret_cast<decltype(mesh->draw_start)>(malloc(sizeof(*mesh->draw_start) * mesh->num_meshes));
+    mesh->draw_count = reinterpret_cast<decltype(mesh->draw_count)>(malloc(sizeof(*mesh->draw_count) * mesh->num_meshes));
+    mesh->transforms = reinterpret_cast<decltype(mesh->transforms)>(malloc(sizeof(*mesh->transforms) * mesh->num_meshes));
+
+    mesh->material_indices = reinterpret_cast<decltype(mesh->material_indices)>(malloc(sizeof(*mesh->material_indices) * mesh->num_meshes));
+
+	for (int i = 0; i < mesh->num_meshes; ++i) {
+		const aiMesh* ai_mesh = ai_meshes[i]; 
+
+		mesh->draw_start[i] = mesh->num_indices;
+		mesh->draw_count[i] = 3*ai_mesh->mNumFaces;
+        mesh->num_indices += 3*ai_mesh->mNumFaces;
+
+        mesh->num_vertices += ai_mesh->mNumVertices;
+
+        mesh->material_indices[i] = ai_mesh->mMaterialIndex;
+
+        auto& t = *ai_transforms[i];
+        mesh->transforms[i] = glm::mat4x4(
+            t.a1, t.b1, t.c1, t.d1, 
+            t.a2, t.b2, t.c2, t.d2,
+            t.a3, t.b3, t.c3, t.d3,
+            t.a4, t.b4, t.c4, t.d4
+        );
 	}
+
     mesh->vertices = reinterpret_cast<decltype(mesh->vertices)>(malloc(sizeof(*mesh->vertices)*mesh->num_vertices));
     mesh->normals  = reinterpret_cast<decltype(mesh->normals )>(malloc(sizeof(*mesh->normals )*mesh->num_vertices));
     mesh->tangents = reinterpret_cast<decltype(mesh->tangents)>(malloc(sizeof(*mesh->tangents)*mesh->num_vertices));
@@ -670,8 +717,9 @@ bool AssetManager::loadMeshAssimp(Mesh *mesh, const std::string &path) {
     mesh->indices  = reinterpret_cast<decltype(mesh->indices )>(malloc(sizeof(*mesh->indices )*mesh->num_indices));
 
     int vertices_offset = 0, indices_offset = 0;
-    for (int j = 0; j < scene->mNumMeshes; ++j) {
-		const aiMesh* ai_mesh = scene->mMeshes[j]; 
+    for (int j = 0; j < mesh->num_meshes; ++j) {
+        const aiMesh* ai_mesh = ai_meshes[j];
+
 		for(unsigned int i=0; i<ai_mesh->mNumVertices; i++){
             mesh->vertices[vertices_offset + i] = glm::fvec3(
                 ai_mesh->mVertices[i].x,
@@ -708,10 +756,11 @@ bool AssetManager::loadMeshAssimp(Mesh *mesh, const std::string &path) {
 		
 		for (unsigned int i=0; i<ai_mesh->mNumFaces; i++){
 			// Assumes the model has only triangles.
-			mesh->indices[indices_offset + 3*i] = ai_mesh->mFaces[i].mIndices[0];
-			mesh->indices[indices_offset + 3*i + 1] = ai_mesh->mFaces[i].mIndices[1];
-			mesh->indices[indices_offset + 3*i + 2] = ai_mesh->mFaces[i].mIndices[2];
+			mesh->indices[indices_offset + 3*i    ] = vertices_offset + ai_mesh->mFaces[i].mIndices[0];
+			mesh->indices[indices_offset + 3*i + 1] = vertices_offset + ai_mesh->mFaces[i].mIndices[1];
+			mesh->indices[indices_offset + 3*i + 2] = vertices_offset + ai_mesh->mFaces[i].mIndices[2];
 		}
+
         vertices_offset += ai_mesh->mNumVertices;
         indices_offset += ai_mesh->mNumFaces*3;
     }
@@ -803,6 +852,19 @@ bool AssetManager::loadCubemapTexture(Texture *tex, const std::array<std::string
     return true;
 }
 
+//
+// ---------------------------------- Audio ------------------------------------
+//
+
+// @note that these function could cause you to "lose" audio if the path is 
+// the same as one already in manager
+
+Audio* AssetManager::createAudio(const std::string& handle) {
+    auto audio = &handle_audio_map.try_emplace(handle).first->second;
+    audio->handle = handle;
+    return audio;
+}
+
 // 
 // -----------------------------------------------------------------------------
 //
@@ -844,5 +906,6 @@ Texture* AssetManager::getColorTexture(const glm::vec3 &col, GLint internal_form
 void AssetManager::clear() {
     handle_mesh_map.clear();
     handle_texture_map.clear();
+    handle_audio_map.clear();
     color_texture_map.clear();
 }
