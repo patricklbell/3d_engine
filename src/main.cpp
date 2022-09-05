@@ -27,9 +27,9 @@ GLFWwindow* window;
 #include <glm/gtc/type_ptr.hpp>
 
 #include "globals.hpp"
+#include "utilities.hpp"
 #include "shader.hpp"
 #include "texture.hpp"
-#include "utilities.hpp"
 #include "graphics.hpp"
 #include "controls.hpp"
 #include "editor.hpp"
@@ -202,16 +202,10 @@ int main() {
     soloud.setPan(handle1, -0.2f);              // Set pan; -1 is left, 1 is right
     soloud.setRelativePlaySpeed(handle1, 1.0f); // Play a bit slower; 1.0f is normal
 
-    auto test = (MeshEntity*)entity_manager.createEntity(MESH_ENTITY);
-    test->mesh = asset_manager.createMesh("data/models/test.glb");
-    asset_manager.loadMeshAssimp(test->mesh, test->mesh->handle);
 
     //level_path = "data/levels/water_test.level";
-    //loadLevel(entity_manager, asset_manager, level_path);
-
-    //auto t_e = new TerrainEntity();
-    //t_e->texture = createTextureAsset(assets, "data/textures/iceland_heightmap.png");
-    //entity_manager.setEntity(entity_manager.getFreeId().i, t_e);
+    //loadLevel(entity_manager, asset_manager, level_path, level_camera);
+    //editor_camera = level_camera;
 
     /*std::array<std::string,6> skybox_paths = {"data/textures/cloudy/bluecloud_ft.jpg", "data/textures/cloudy/bluecloud_bk.jpg",
                                               "data/textures/cloudy/bluecloud_up.jpg", "data/textures/cloudy/bluecloud_dn.jpg",
@@ -264,20 +258,7 @@ int main() {
                 } 
             }
         }
-        // @todo make better systems for determining when to update shadow map
-        if (!playing && frame_num % 100 == 0) {
-            // @debug for now render collision map every frame
-            if (entity_manager.water != NULLID) {
-                auto water = (WaterEntity*)entity_manager.getEntity(entity_manager.water);
-                if (water != nullptr) {
-                    bindDrawWaterColliderMap(entity_manager, water);
-                    blurWaterFbo(water);
-                }
-                else {
-                    entity_manager.water = NULLID;
-                }
-            }
-        }
+
 
         bindDrawShadowMap(entity_manager, camera);
 
@@ -289,7 +270,7 @@ int main() {
             handleEditorControls(editor_camera, level_camera, entity_manager, asset_manager, true_dt);
         }
         else {
-            handleGameControls();
+            handleGameControls(level_camera, entity_manager, asset_manager, true_dt);
         }
 
         int blur_buffer_index = 0;

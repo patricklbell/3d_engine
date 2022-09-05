@@ -11,8 +11,8 @@
 #define NULLID Id(-1, -1)
 
 struct Id {
-    uint64_t i;
-    uint16_t v = 0;
+    uint64_t i = -1;
+    uint16_t v = -1;
 
     constexpr bool operator!=(const Id& other) const {
         return (i != other.i) || (v != other.v);
@@ -21,6 +21,7 @@ struct Id {
         return (i == other.i) && (v == other.v);
     }
     Id(int _i, int _v) : i(_i), v(_v){}
+    Id() : i(-1), v(-1) {}
 };
 
 enum EntityType : uint64_t {
@@ -71,6 +72,7 @@ struct ColliderEntity : MeshEntity {
     glm::vec3 collider_position  = glm::vec3(0.0);
     glm::quat collider_rotation  = glm::quat(0.0, 0.0, 0.0, 1.0);
     glm::mat3 collider_scale     = glm::mat3(1.0);
+    bool selectable = false;
 
     ColliderEntity(Id _id = NULLID) : MeshEntity(_id) {
         type = EntityType::COLLIDER_ENTITY;

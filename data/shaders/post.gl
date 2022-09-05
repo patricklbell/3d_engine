@@ -134,28 +134,31 @@ void main()
     vec3 hdr_color = texsample(screen_map, gl_FragCoord.xy).xyz;
     #endif
 
+    vec3 skybox_color = texture(skybox, vs_in.position).xyz;
+    
+    const float fog_near = FAR - 80.0;
+    const float fog_far = FAR;
+
+    // Calculate fog
+    float fog_amount = 1.0 - (fog_far - dist) / (fog_far - fog_near);
+    fog_amount = clamp(fog_amount, 0.0, 1.0);
+    //float fog_amount = smoothstep(fog_near, fog_far, dist);
+    hdr_color = mix(hdr_color, skybox_color, fog_amount);
+
 #ifdef BLOOM
     // Don't fxaa bloom since it is blurred
     vec3 bloom_color = texsample(bloom_map, gl_FragCoord.xy).xyz;
     hdr_color += bloom_color; // additive blending 
 #endif
-
-    const float gamma = 1.6;
-
+  
     // Reinhard tone mapping
     vec3 mapped = reinhard_tonemap(hdr_color);
     //vec3 mapped = uncharted2_tonemap(hdr_color);
 
     // gamma correction 
+    const float gamma = 1.6;
     mapped = pow(mapped, vec3(1.0 / gamma));
 
-    vec3 skybox_color = texture(skybox, vs_in.position).xyz;
-    
-    const float fog_near = FAR - 50.0;
-    const float fog_far = FAR;
-    float fog_amount = smoothstep(fog_near, fog_far, dist);
-    vec3 blended = mix(mapped, skybox_color, fog_amount);
-  
-    out_color = vec4(blended, 1.0);
+    out_color = vec4(mapped, 1.0);
 } 
 #endif

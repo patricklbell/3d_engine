@@ -22,11 +22,11 @@ int    window_width;
 int    window_height;
 bool   window_resized;
 namespace graphics{
-    GLuint bloom_fbos[2];
-    GLuint bloom_buffers[2];
-    GLuint hdr_fbo;
-    GLuint hdr_buffers[2];
-    GLuint hdr_depth;
+    GLuint bloom_fbos[2] = {GL_FALSE};
+    GLuint bloom_buffers[2] = { GL_FALSE };
+    GLuint hdr_fbo = { GL_FALSE };
+    GLuint hdr_buffers[2] = { GL_FALSE };
+    GLuint hdr_depth = { GL_FALSE };
     // Used by water pass to write and read from same depth buffer
     GLuint hdr_depth_copy;
 
@@ -38,7 +38,7 @@ namespace graphics{
     glm::mat4x4 shadow_vps[shadow_num + 1];
     GLuint shadow_fbo, shadow_buffer, shadow_matrices_ubo;
 
-    GLuint water_collider_fbos[2], water_collider_buffers[2];
+    GLuint water_collider_fbos[2] = { GL_FALSE }, water_collider_buffers[2] = { GL_FALSE };
     int water_collider_final_fbo = 0;
 
     Mesh quad, cube, line_cube, water_grid;
@@ -408,7 +408,7 @@ void blurWaterFbo(WaterEntity* water) {
 }
 
 void initBloomFbo(bool resize){
-    if(!resize){
+    if(!resize || graphics::bloom_fbos[0] == GL_FALSE){
         glGenFramebuffers(2, graphics::bloom_fbos);
         glGenTextures(2, graphics::bloom_buffers);
     }
@@ -432,7 +432,7 @@ void initBloomFbo(bool resize){
 void initHdrFbo(bool resize){
     int num_buffers = (int)shader::unified_bloom + 1;
 
-    if(!resize){
+    if(!resize || graphics::hdr_fbo == GL_FALSE){
         glGenFramebuffers(1, &graphics::hdr_fbo);
         glBindFramebuffer(GL_FRAMEBUFFER, graphics::hdr_fbo);
 
@@ -451,7 +451,7 @@ void initHdrFbo(bool resize){
         // attach texture to framebuffer
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0 + i, GL_TEXTURE_2D, graphics::hdr_buffers[i], 0);
     }
-    if(!resize){
+    if(!resize || graphics::hdr_depth == GL_FALSE){
         // create and attach depth buffer
         glGenTextures(1, &graphics::hdr_depth);
         glGenTextures(1, &graphics::hdr_depth_copy);
@@ -690,7 +690,18 @@ void bindHdr(){
 
 void clearFramebuffer(const glm::vec4 &color){
     glClearColor(color.x, color.y, color.z, color.w);
+    
+    if (shader::unified_bloom) {
+        static const GLuint attachments[] = { GL_COLOR_ATTACHMENT0 };
+        glDrawBuffers(1, attachments);
+    }
+
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+
+    if (shader::unified_bloom) {
+        static const GLuint attachments[] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
+        glDrawBuffers(2, attachments);
+    }
 }
 
 void drawSkybox(const Texture* skybox, const Camera &camera) {

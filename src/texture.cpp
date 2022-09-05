@@ -22,8 +22,16 @@ GLuint create1x1Texture(const unsigned char color[3], const GLint internal_forma
 	return texture_id;
 }
 
+GLuint create1x1TextureFloat(const glm::vec3 &color, const GLint internal_format) {
+	GLuint texture_id;
+	glGenTextures(1, &texture_id);
+	glBindTexture(GL_TEXTURE_2D, texture_id);
+	glTexImage2D(GL_TEXTURE_2D, 0, internal_format, 1, 1, 0, GL_RGB, GL_FLOAT, &color[0]);
+	return texture_id;
+}
+
 bool loadImageData(ImageData *img, const std::string& imagepath, const GLint internal_format) {
-	std::cout << "Loading texture (no GL) at path " << imagepath << "\n";
+	std::cout << "Loading texture bytes at path " << imagepath << "\n";
 
 	if (internal_format == GL_RGB)		 img->data = stbi_load(imagepath.c_str(), &img->x, &img->y, &img->n, STBI_rgb);
 	else if (internal_format == GL_R16F) img->data = stbi_load(imagepath.c_str(), &img->x, &img->y, &img->n, STBI_grey);
@@ -38,6 +46,7 @@ bool loadImageData(ImageData *img, const std::string& imagepath, const GLint int
 }
 
 GLuint createGLTextureFromData(ImageData *img, const GLint internal_format) {
+	std::cout << "Created a gl texture.\n";
 	// @note mostly redundant
 	if (img->data == NULL) 
 		return GL_FALSE;

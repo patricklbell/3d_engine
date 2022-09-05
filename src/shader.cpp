@@ -23,7 +23,7 @@
 #include "globals.hpp"
 
 namespace shader {
-	bool unified_bloom = false;
+	bool unified_bloom = true;
 
     GLuint null_program;
     struct NullUniforms null_uniforms;

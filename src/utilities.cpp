@@ -283,6 +283,20 @@ bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const
         }
     }
     fclose(f);
+
+    // Update water collision map
+    if (entity_manager.water != NULLID) {
+        // @todo make better systems for determining when to update shadow map
+        auto water = (WaterEntity*)entity_manager.getEntity(entity_manager.water);
+        if (water != nullptr) {
+            bindDrawWaterColliderMap(entity_manager, water);
+            blurWaterFbo(water);
+        }
+        else {
+            entity_manager.water = NULLID;
+        }
+    }
+
     return true;
 }
 

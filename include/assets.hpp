@@ -112,24 +112,24 @@ struct Audio {
 
 // Define hash for vec3 so AssetManager can be default initialized
 namespace std {
-  template <typename T, glm::precision P>
-  struct hash<glm::tvec3<T, P>>
-  {
-    std::size_t operator()(const glm::tvec3<T, P>& k) const
+    template <typename T, glm::precision P>
+    struct hash<glm::tvec3<T, P>>
     {
-      using std::size_t;
-      using std::hash;
-      using std::string;
+        std::size_t operator()(const glm::tvec3<T, P>& k) const
+        {
+            using std::size_t;
+            using std::hash;
+            using std::string;
 
-      // Compute individual hash values for first,
-      // second and third and combine them using XOR
-      // and bit shifting:
+            // Compute individual hash values for first,
+            // second and third and combine them using XOR
+            // and bit shifting:
 
-      return ((hash<T>()(k.x)
-               ^ (hash<T>()(k.y) << 1)) >> 1)
-               ^ (hash<T>()(k.z) << 1);
-    }
-  };
+            return ((hash<T>()(k.x)
+                ^ (hash<T>()(k.y) << 1)) >> 1)
+                ^ (hash<T>()(k.z) << 1);
+        }
+    };
 }
 
 struct AssetManager {
@@ -151,9 +151,9 @@ struct AssetManager {
 
     // @note that this function could cause you to "lose" a texture if the path is the same
     Texture* createTexture(const std::string &handle);
-    bool loadTextureFromAssimp(Texture *tex, aiMaterial* mat, const aiScene* scene, aiTextureType texture_type, GLint internal_format=GL_SRGB);
-    static bool loadTexture(Texture *tex, const std::string &path, GLint internal_format=GL_SRGB);
-    static bool loadCubemapTexture(Texture *tex, const std::array<std::string,FACE_NUM_FACES> &paths, GLint internal_format=GL_SRGB);
+    bool loadTextureFromAssimp(Texture *tex, aiMaterial* mat, const aiScene* scene, aiTextureType texture_type, GLint internal_format=GL_RGB16F);
+    static bool loadTexture(Texture *tex, const std::string &path, GLint internal_format=GL_RGB16F);
+    static bool loadCubemapTexture(Texture *tex, const std::array<std::string,FACE_NUM_FACES> &paths, GLint internal_format=GL_RGB16F);
 
     Audio* createAudio(const std::string& handle);
 

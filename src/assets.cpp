@@ -478,8 +478,13 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
         if (is_color) {
             glm::vec3 color;
             fread(&color, sizeof(color), 1, f);
-            // @note this writes the color fields again
-            tex = this->getColorTexture(color);
+            if (color.x > 1 || color.y > 1 || color.z > 1) {
+                tex = this->getColorTexture(color, GL_RGB16F);
+            }
+            else {
+                // @note this writes the color fields again
+                tex = this->getColorTexture(color);
+            }
         }
         else {
             uint8_t len;
@@ -519,7 +524,7 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
     for (auto& tpl : texture_imagedata_default_list) {
         ImageData* img_ptr = std::get<1>(tpl);
         std::string path = (*std::get<0>(tpl))->handle;
-        global_thread_pool->queueJob(std::bind(loadImageData, img_ptr, path, GL_SRGB));
+        global_thread_pool->queueJob(std::bind(loadImageData, img_ptr, path, GL_RGB16F));
     }
 
     // Block main thread until texture loading is finished
@@ -544,7 +549,7 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
     mesh->material_indices = reinterpret_cast<decltype(mesh->material_indices)>(malloc(sizeof(*mesh->material_indices)*mesh->num_meshes));
     mesh->draw_start       = reinterpret_cast<decltype(mesh->draw_start)      >(malloc(sizeof(*mesh->draw_start      )*mesh->num_meshes));
     mesh->draw_count       = reinterpret_cast<decltype(mesh->draw_count)      >(malloc(sizeof(*mesh->draw_count      )*mesh->num_meshes));
-    mesh->transforms       = reinterpret_cast<decltype(mesh->transforms)      >(malloc(sizeof(*mesh->transforms      ) * mesh->num_meshes));
+    mesh->transforms       = reinterpret_cast<decltype(mesh->transforms)      >(malloc(sizeof(*mesh->transforms      )*mesh->num_meshes));
     fread(mesh->material_indices, sizeof(*mesh->material_indices), mesh->num_meshes, f);
     fread(mesh->draw_start,       sizeof(*mesh->draw_start      ), mesh->num_meshes, f);
     fread(mesh->draw_count,       sizeof(*mesh->draw_count      ), mesh->num_meshes, f);
@@ -594,31 +599,44 @@ bool AssetManager::loadMeshAssimp(Mesh *mesh, const std::string &path) {
         auto ai_mat = scene->mMaterials[i];
         auto& mat = mesh->materials[i];
 
-        if (!loadTextureFromAssimp(mat.t_ambient, ai_mat, scene, aiTextureType_AMBIENT_OCCLUSION, GL_SRGB)) {
-            if (!loadTextureFromAssimp(mat.t_ambient, ai_mat, scene, aiTextureType_AMBIENT, GL_SRGB)) {
+        if (!loadTextureFromAssimp(mat.t_ambient, ai_mat, scene, aiTextureType_AMBIENT_OCCLUSION, GL_RGB16F)) {
+            if (!loadTextureFromAssimp(mat.t_ambient, ai_mat, scene, aiTextureType_AMBIENT, GL_RGB16F)) {
                 mat.t_ambient = default_material->t_ambient;
             }
         }
 
-        if (!loadTextureFromAssimp(mat.t_albedo, ai_mat, scene, aiTextureType_BASE_COLOR, GL_SRGB)) {
+        if (!loadTextureFromAssimp(mat.t_albedo, ai_mat, scene, aiTextureType_BASE_COLOR, GL_RGB16F)) {
             // If base color isnt present assume diffuse is really an albedo
-            if (!loadTextureFromAssimp(mat.t_albedo, ai_mat, scene, aiTextureType_DIFFUSE, GL_SRGB)) {
-                aiColor3D col(0.f, 0.f, 0.f);
-                if (ai_mat->Get(AI_MATKEY_COLOR_DIFFUSE, col) != AI_SUCCESS) {
-                    mat.t_albedo = default_material->t_albedo;
+            if (!loadTextureFromAssimp(mat.t_albedo, ai_mat, scene, aiTextureType_DIFFUSE, GL_RGB16F)) {
+                aiColor4D col(0.f, 0.f, 0.f, 1.0f);
+                bool flag = true;
+                if (ai_mat->Get(AI_MATKEY_BASE_COLOR, col) != AI_SUCCESS) {
+                    if (ai_mat->Get(AI_MATKEY_COLOR_DIFFUSE, col) != AI_SUCCESS) {
+                        mat.t_albedo = default_material->t_albedo;
+                        flag = false;
+                    }
                 }
-                else {
+                if(flag) {
                     auto color = glm::vec3(col.r, col.g, col.b);
-                    mat.t_albedo = getColorTexture(color);
+
+                    aiColor3D emission_color;
+                    if (ai_mat->Get(AI_MATKEY_COLOR_EMISSIVE, emission_color) == AI_SUCCESS) {
+                        auto ec = glm::vec3(emission_color.r, emission_color.g, emission_color.b);
+                        if (ec.length() != 0) {
+                            color *= ec;
+                            std::cout << "Emmission color: " << ec << "\n";
+                        }
+                    }
+                    mat.t_albedo = getColorTexture(color, GL_RGB16F);
                     mat.t_albedo->is_color = true;
                     mat.t_albedo->color = color;
                 }
             }
         }
 
-        if (!loadTextureFromAssimp(mat.t_metallic, ai_mat, scene, aiTextureType_METALNESS, GL_RGB)) {
-            if (!loadTextureFromAssimp(mat.t_metallic, ai_mat, scene, aiTextureType_REFLECTION, GL_RGB)) {
-                if (!loadTextureFromAssimp(mat.t_metallic, ai_mat, scene, aiTextureType_SPECULAR, GL_RGB)) {
+        if (!loadTextureFromAssimp(mat.t_metallic, ai_mat, scene, aiTextureType_METALNESS, GL_RGB16F)) {
+            if (!loadTextureFromAssimp(mat.t_metallic, ai_mat, scene, aiTextureType_REFLECTION, GL_RGB16F)) {
+                if (!loadTextureFromAssimp(mat.t_metallic, ai_mat, scene, aiTextureType_SPECULAR, GL_RGB16F)) {
                     float shininess;
                     if (ai_mat->Get(AI_MATKEY_SHININESS_STRENGTH, shininess) != AI_SUCCESS) {
                         mat.t_metallic = default_material->t_metallic;
@@ -634,8 +652,8 @@ bool AssetManager::loadMeshAssimp(Mesh *mesh, const std::string &path) {
             }
         }
 
-        if (!loadTextureFromAssimp(mat.t_roughness, ai_mat, scene, aiTextureType_DIFFUSE_ROUGHNESS, GL_RGB)) {
-            if (!loadTextureFromAssimp(mat.t_roughness, ai_mat, scene, aiTextureType_SHININESS, GL_RGB)) {
+        if (!loadTextureFromAssimp(mat.t_roughness, ai_mat, scene, aiTextureType_DIFFUSE_ROUGHNESS, GL_RGB16F)) {
+            if (!loadTextureFromAssimp(mat.t_roughness, ai_mat, scene, aiTextureType_SHININESS, GL_RGB16F)) {
                 float roughness;
                 if (ai_mat->Get(AI_MATKEY_SHININESS, roughness) != AI_SUCCESS) {
                     mat.t_roughness = default_material->t_roughness;
@@ -651,8 +669,8 @@ bool AssetManager::loadMeshAssimp(Mesh *mesh, const std::string &path) {
         }
 
         // @note Since mtl files specify normals as bump maps assume all bump maps are really normals
-        if (!loadTextureFromAssimp(mat.t_normal, ai_mat, scene, aiTextureType_NORMALS, GL_RGB)) {
-            if (!loadTextureFromAssimp(mat.t_normal, ai_mat, scene, aiTextureType_HEIGHT, GL_RGB)) {
+        if (!loadTextureFromAssimp(mat.t_normal, ai_mat, scene, aiTextureType_NORMALS, GL_RGB16F)) {
+            if (!loadTextureFromAssimp(mat.t_normal, ai_mat, scene, aiTextureType_HEIGHT, GL_RGB16F)) {
                 mat.t_normal = default_material->t_normal;
             }
         }
@@ -689,6 +707,8 @@ bool AssetManager::loadMeshAssimp(Mesh *mesh, const std::string &path) {
 
     mesh->material_indices = reinterpret_cast<decltype(mesh->material_indices)>(malloc(sizeof(*mesh->material_indices) * mesh->num_meshes));
 
+    mesh->num_indices  = 0;
+    mesh->num_vertices = 0;
 	for (int i = 0; i < mesh->num_meshes; ++i) {
 		const aiMesh* ai_mesh = ai_meshes[i]; 
 
@@ -886,13 +906,8 @@ Texture* AssetManager::getTexture(const std::string &path) {
 Texture* AssetManager::getColorTexture(const glm::vec3 &col, GLint internal_format) {
     auto lu = color_texture_map.find(col);
     if (lu == color_texture_map.end()) {
-        unsigned char col256[3];
-        col256[0] = col.x*255;
-        col256[1] = col.y*255;
-        col256[2] = col.z*255;
-
         auto tex = &color_texture_map.try_emplace(col).first->second;
-        tex->id = create1x1Texture(col256, internal_format);
+        tex->id = create1x1TextureFloat(col, internal_format);
         tex->is_color = true;
         tex->color = col;
         return tex;

@@ -18,6 +18,7 @@
 #include "graphics.hpp"
 #include "utilities.hpp"
 #include "globals.hpp"
+#include "assets.hpp"
 
 namespace controls {
     glm::vec2 scroll_offset;
@@ -113,7 +114,7 @@ Entity* pickEntityWithMouse(Camera &camera, EntityManager &entity_manager) {
     return closest_e;
 }
 
-ColliderEntity* pickColliderWithMouse(Camera& camera, EntityManager& entity_manager, glm::vec3 &normal) {
+ColliderEntity* pickColliderWithMouse(Camera& camera, EntityManager& entity_manager, glm::vec3 &normal, bool only_selectable=false) {
     glm::vec3 out_origin;
     glm::vec3 out_direction;
     screenPosToWorldRay(mouse_position, camera.view, camera.projection, out_origin, out_direction);
@@ -126,11 +127,13 @@ ColliderEntity* pickColliderWithMouse(Camera& camera, EntityManager& entity_mana
     for (int i = 0; i < ENTITY_COUNT; ++i) {
         auto c = (ColliderEntity*)entity_manager.entities[i];
         if (c == nullptr || !(c->type & COLLIDER_ENTITY)) continue;
+        if (only_selectable && !c->selectable) continue;
+        std::cout << "testing collider entity\n";
 
         float t;
         glm::vec3 n;
-        auto scl = glm::vec3(c->scale[0][0], c->scale[1][1], c->scale[2][2]);
-        if (lineIntersectsCube(c->collider_position, glm::vec3(scl), out_origin, out_direction, t, n)) {
+        auto scl = glm::vec3(c->collider_scale[0][0], c->collider_scale[1][1], c->collider_scale[2][2]);
+        if (lineIntersectsCube(c->collider_position, scl, out_origin, out_direction, t, n)) {
             if (nearest_c == nullptr || t < min_t) {
                 min_t = t;
                 normal = n;
@@ -150,9 +153,9 @@ void handleEditorControls(Camera &editor_camera, Camera &level_camera, EntityMan
     static bool f_key_prev               = false;
     static bool b_key_prev               = false;
     static bool delete_key_prev          = false;
-    static bool mouse_left_prev         = false;
-    static bool mouse_right_prev        = false;
-    static bool ctrl_v_prev             = false;
+    static bool mouse_left_prev          = false;
+    static bool mouse_right_prev         = false;
+    static bool ctrl_v_prev              = false;
     static bool backtick_key_prev        = false;
 
     static double mouse_left_press_time = glfwGetTime();
@@ -281,7 +284,8 @@ void handleEditorControls(Camera &editor_camera, Camera &level_camera, EntityMan
             auto pick_c = pickColliderWithMouse(camera, entity_manager, normal);
             if (pick_c != nullptr) {
                 std::cout << "Collided, normal: " << normal << "\n";
-                auto c = new ColliderEntity(entity_manager.getFreeId());
+                auto c = (ColliderEntity*)copyEntity(pick_c);
+                c->id = entity_manager.getFreeId();
                 c->mesh = pick_c->mesh;
                 
                 c->position = pick_c->position + 2.0f * normal;
@@ -426,15 +430,139 @@ void handleEditorControls(Camera &editor_camera, Camera &level_camera, EntityMan
     mouse_right_prev   = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT);
 }
 
-void handleGameControls() {
-    static int p_key_prev = GLFW_PRESS;
-    static bool backtick_key_prev = false;
+static struct CollisionNeighbours {
+    std::unordered_map<glm::ivec3, Id> loc_to_id;
+    std::vector<Id> psuedo_entities;
+};
+
+// This is obviously slow, when logic becomes more complicated change
+static CollisionNeighbours findColliderNeighbours(EntityManager &entity_manager, ColliderEntity* c) {
+    CollisionNeighbours neighbours;
+    for (int i = 0; i < ENTITY_COUNT; ++i) {
+        auto c_e = (ColliderEntity*)entity_manager.entities[i];
+        if (c == c_e || c_e == nullptr || !(c_e->type & EntityType::COLLIDER_ENTITY)) continue;
+
+        for (int x = -1; x <= 1; ++x) {
+            for (int y = -1; y <= 1; ++y) {
+                for (int z = -1; z <= 1; ++z) {
+                    auto offset = glm::ivec3(x, y, z);
+                    if (glm::ivec3(c->collider_position) == glm::ivec3(c_e->collider_position) + 2*offset) {
+                        neighbours.loc_to_id[offset] = c_e->id;
+                    }
+                }
+            }
+        }
+    }
+    return neighbours;
+}
+
+static void addPsuedoNeighbours(EntityManager& entity_manager, AssetManager& asset_manager, ColliderEntity* c, CollisionNeighbours& neighbours) {
+    auto psuedo_mesh = asset_manager.getMesh("data/mesh/o_wire.mesh");
+    if (psuedo_mesh == nullptr) {
+        psuedo_mesh = asset_manager.createMesh("data/mesh/o_wire.mesh");
+        if (!asset_manager.loadMesh(psuedo_mesh, "data/mesh/o_wire.mesh", true)) {
+            std::cerr << "Failed to load psuedo_mesh at path data/mesh/o_wire.mesh in addPsuedoNeighbours\n";
+            return;
+        }
+    }
+    for (auto& p : neighbours.loc_to_id) {
+        std::cout << "Neighbour at position " << glm::vec3(p.first) << "\n";
+    }
+
+    for (int i = 0; i < 2; ++i) {
+        for (int xz = -1; xz <= 1; xz += 2) {
+            auto offset = glm::ivec3((i == 0) * xz, 0, (i == 1) * xz);
+            std::cout << "Testing offset " << glm::vec3(offset) << "\n";
+            // There is either a collider there or not one below
+            if (neighbours.loc_to_id.find(offset)                       != neighbours.loc_to_id.end() ||
+                neighbours.loc_to_id.find(offset + glm::ivec3(0, 1, 0)) == neighbours.loc_to_id.end()) 
+                continue;
+            std::cout << "Passed\n";
+
+            auto psuedo = (ColliderEntity*)entity_manager.createEntity(COLLIDER_ENTITY);
+            psuedo->mesh = psuedo_mesh;
+            // @note uses collider position for mesh position as it assume o_wire is correctly placed
+            psuedo->position          = c->collider_position - glm::vec3(2*offset);
+            psuedo->collider_position = c->collider_position - glm::vec3(2*offset);
+            psuedo->selectable = true;
+            neighbours.psuedo_entities.emplace_back(psuedo->id);
+        }
+    }
+}
+
+static bool isPickPsuedo(ColliderEntity* c, CollisionNeighbours& neighbours) {
+    for (const auto& id : neighbours.psuedo_entities) {
+        std::cout << "Comparing id " << id.i << " and " << c->id.i << "\n";
+        if (id == c->id) 
+            return true;
+    }
+    return false;
+}
+
+static void clearNeighbour(EntityManager& entity_manager, CollisionNeighbours& neighbours) {
+    for (auto& id : neighbours.psuedo_entities) {
+        entity_manager.deleteEntity(id);
+    }
+    neighbours.psuedo_entities.clear();
+}
+
+void handleGameControls(Camera& camera, EntityManager& entity_manager, AssetManager& asset_manager, float dt) {
+    static bool p_key_prev          = false;
+    static bool backtick_key_prev   = false;
+    static bool mouse_left_prev     = false;
+
+    ImGuiIO& io = ImGui::GetIO();
+    controls::left_mouse_click_press = !io.WantCaptureMouse && glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) && !mouse_left_prev;
+    // Unlike other inputs, calculate delta but update mouse position immediately
+    glm::dvec2 delta_mouse_position = mouse_position;
+    glfwGetCursorPos(window, &mouse_position.x, &mouse_position.y);
+    delta_mouse_position = mouse_position - delta_mouse_position;
 
     if (glfwGetKey(window, GLFW_KEY_P) && !p_key_prev)
         playing = !playing;
     if (glfwGetKey(window, GLFW_KEY_GRAVE_ACCENT) && !backtick_key_prev)
         editor::do_terminal = !editor::do_terminal;
 
-    backtick_key_prev = glfwGetKey(window, GLFW_KEY_GRAVE_ACCENT);
-    p_key_prev = glfwGetKey(window, GLFW_KEY_P);
+    // 
+    // Selection and Actions
+    //
+    static Id selected_id = NULLID;
+    static CollisionNeighbours selected_neighbours;
+    
+    if (controls::left_mouse_click_press) {
+        auto collider = pickColliderWithMouse(camera, entity_manager, glm::vec3(), true);
+
+        if (collider != nullptr) {
+            if (isPickPsuedo(collider, selected_neighbours)) {
+                clearNeighbour(entity_manager, selected_neighbours);
+
+                auto s = (ColliderEntity*)entity_manager.getEntity(selected_id);
+                auto offset = collider->collider_position - s->collider_position;
+                s->collider_position += offset;
+                s->position += offset;
+
+                selected_neighbours = findColliderNeighbours(entity_manager, collider);
+                addPsuedoNeighbours(entity_manager, asset_manager, s, selected_neighbours);
+            }
+            else if (collider->id != selected_id){
+                selected_id = collider->id;
+                selected_neighbours = findColliderNeighbours(entity_manager, collider);
+                addPsuedoNeighbours(entity_manager, asset_manager, collider, selected_neighbours);
+            }
+        }
+        else {
+            clearNeighbour(entity_manager, selected_neighbours);
+            selected_id = NULLID;
+        }
+    }
+
+    // For now just use wireframe, in future some kind of edge detection, or saturation effect
+    auto s = (ColliderEntity*)entity_manager.getEntity(selected_id);
+    if (s != nullptr && (s->type & COLLIDER_ENTITY) && s->mesh != nullptr) {
+        drawMeshWireframe(*s->mesh, s->position, s->rotation, s->scale, camera, true);
+    }
+
+    backtick_key_prev   = glfwGetKey(window, GLFW_KEY_GRAVE_ACCENT);
+    p_key_prev          = glfwGetKey(window, GLFW_KEY_P);
+    mouse_left_prev     = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT);
 }

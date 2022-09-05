@@ -8,6 +8,7 @@
 #include <condition_variable>
 #include <queue>
 #include <atomic>
+#include <unordered_map>
 
 #include <glm/glm.hpp>
 

@@ -265,9 +265,9 @@ void initEditorGui(AssetManager &asset_manager){
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init(glsl_version.c_str());
 
-    asset_manager.loadMeshAssimp(&arrow_mesh, "data/models/arrow.obj");
-    asset_manager.loadMeshAssimp(&block_arrow_mesh, "data/models/block_arrow.obj");
-    asset_manager.loadMeshAssimp(&ring_mesh, "data/models/ring.obj");
+    asset_manager.loadMeshFile(&arrow_mesh, "data/mesh/arrow.mesh");
+    asset_manager.loadMeshFile(&block_arrow_mesh, "data/mesh/block_arrow.mesh");
+    asset_manager.loadMeshFile(&ring_mesh, "data/mesh/ring.mesh");
 }
 
 static bool echoCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager, Camera &camera) {
@@ -505,9 +505,12 @@ static bool addWaterCommand(std::vector<std::string>& input_tokens, std::string&
 static bool toggleBloomCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager, Camera& camera) {
     shader::unified_bloom = !shader::unified_bloom;
     if (shader::unified_bloom) {
+        initBloomFbo(true);
+        initHdrFbo(true);
         output += "Enabled bloom\n";
     }
     else {
+        initHdrFbo(true);
         output += "Disabled bloom\n";
     }
     return true;
@@ -1186,7 +1189,7 @@ void drawMeshWireframe(const Mesh &mesh, const glm::vec3 &pos, const glm::quat &
         glUniformMatrix4fv(shader::debug_uniforms.mvp, 1, GL_FALSE, &mvp[0][0]);
         glUniformMatrix4fv(shader::debug_uniforms.model, 1, GL_FALSE, &model[0][0]);
 
-        glDrawElements(mesh.draw_mode, mesh.draw_count[j], mesh.draw_type, (GLvoid*)(sizeof(GLubyte)*mesh.draw_start[j]));
+        glDrawElements(mesh.draw_mode, mesh.draw_count[j], mesh.draw_type, (GLvoid*)(sizeof(*mesh.indices)*mesh.draw_start[j]));
     }
     
     glEnable(GL_CULL_FACE);
@@ -1362,6 +1365,7 @@ void drawEditorGui(Camera &editor_camera, Camera& level_camera, EntityManager &e
             const float img_w = glm::min(sidebar_w - pad, 70.0f);
             static const std::vector<std::string> image_file_extensions = { ".jpg", ".png", ".bmp", ".tiff", ".tga" };
 
+            auto button_size = ImVec2(ImGui::GetWindowWidth() / 2.0f - pad, 2.0f * pad);
             if (selection.type & EntityType::MESH_ENTITY) {
                 auto m_e = (MeshEntity*)fe;
                 TransformType edited_transform;
@@ -1390,6 +1394,16 @@ void drawEditorGui(Camera &editor_camera, Camera& level_camera, EntityManager &e
                     for (const auto& id : selection.ids) {
                         auto e = (MeshEntity*)entity_manager.getEntity(id);
                         e->casts_shadow = casts_shadow;
+                    }
+                }
+                if (selection.type & EntityType::COLLIDER_ENTITY) {
+                    auto c_e = (ColliderEntity*)m_e;
+                    bool selectable = c_e->selectable;
+                    if (ImGui::Checkbox("Selectable", &selectable)) {
+                        for (const auto& id : selection.ids) {
+                            auto e = (ColliderEntity*)entity_manager.getEntity(id);
+                            e->selectable = selectable;
+                        }
                     }
                 }
 
@@ -1519,10 +1533,14 @@ void drawEditorGui(Camera &editor_camera, Camera& level_camera, EntityManager &e
                 }
                 void* tex_water_collider = (void*)(intptr_t)graphics::water_collider_buffers[graphics::water_collider_final_fbo];
                 ImGui::Image(tex_water_collider, ImVec2(sidebar_w, sidebar_w));
+
+                if (ImGui::Button("Update", button_size)) {
+                    bindDrawWaterColliderMap(entity_manager, w_e);
+                    blurWaterFbo(w_e);
+                }
             }   
 
             ImGui::SetCursorPosY(ImGui::GetCursorPosY() + ImGui::GetTextLineHeight());
-            auto button_size = ImVec2(ImGui::GetWindowWidth()/2.0f - pad, 2.0f*pad);
             if(!(selection.type & WATER_ENTITY)){
                 if (ImGui::Button("Duplicate", button_size)) {
                     if (camera.state == Camera::TYPE::TRACKBALL && selection.type & MESH_ENTITY) {
