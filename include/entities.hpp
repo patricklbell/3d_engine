@@ -25,10 +25,11 @@ struct Id {
 };
 
 enum EntityType : uint64_t {
-    ENTITY          = 0,
-    MESH_ENTITY     = 1 << 0,
-    WATER_ENTITY    = 1 << 1,
-    COLLIDER_ENTITY =(1 << 2) | MESH_ENTITY,
+    ENTITY              = 0,
+    MESH_ENTITY         = 1 << 0,
+    WATER_ENTITY        = 1 << 1,
+    COLLIDER_ENTITY     =(1 << 2) | MESH_ENTITY,
+    VEGETATION_ENTITY   = 1 << 3,
 };
 
 struct Entity {
@@ -79,8 +80,28 @@ struct ColliderEntity : MeshEntity {
     }
 };
 
+
+struct VegetationEntity : Entity {
+    Texture *texture = nullptr;
+
+    glm::vec3 position      = glm::vec3(0.0);
+    glm::quat rotation      = glm::quat(0.0,0.0,0.0,1.0);
+    glm::mat3 scale         = glm::mat3(1.0);
+
+    // @todo implement shadow casting
+    bool casts_shadow = true;
+
+    VegetationEntity(Id _id=NULLID) : Entity(_id){
+        type = EntityType::VEGETATION_ENTITY;
+    }
+};
+
+
+
 inline Entity *allocateEntity(Id id, EntityType type){
     switch (type) {
+        case VEGETATION_ENTITY:
+            return new VegetationEntity(id);
         case COLLIDER_ENTITY:
             return new ColliderEntity(id);
         case MESH_ENTITY:
@@ -93,6 +114,8 @@ inline Entity *allocateEntity(Id id, EntityType type){
 }
 inline constexpr size_t entitySize(EntityType type){
     switch (type) {
+        case VEGETATION_ENTITY:
+            return sizeof(VegetationEntity);
         case COLLIDER_ENTITY:
             return sizeof(ColliderEntity);
         case MESH_ENTITY:

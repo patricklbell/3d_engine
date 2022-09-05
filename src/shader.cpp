@@ -57,6 +57,9 @@ namespace shader {
 
 	GLuint depth_only_program;
 	struct MvpUniforms depth_only_uniforms;
+
+	GLuint vegetation_program;
+	struct VegetationUniforms vegetation_uniforms;
 }
 
 using namespace shader;
@@ -475,6 +478,23 @@ void loadDepthOnlyShader(std::string path){
 	// Grab uniforms to modify during rendering
 	depth_only_uniforms.mvp = glGetUniformLocation(depth_only_program, "mvp");
 }
+void loadVegetationShader(std::string path){
+	// Create and compile our GLSL program from the shaders
+	auto tmp = vegetation_program;
+	vegetation_program = loadShader(path);
+	if (vegetation_program == GL_FALSE) {
+		vegetation_program = tmp;
+		return;
+	}
+
+	// Grab uniforms to modify during rendering
+	vegetation_uniforms.mvp  = glGetUniformLocation(vegetation_program, "mvp");
+	vegetation_uniforms.time = glGetUniformLocation(vegetation_program, "time");
+
+	glUseProgram(vegetation_program);
+	// Set fixed locations for textures in GL_TEXTUREi
+	glUniform1i(glGetUniformLocation(vegetation_program, "image"), 0);
+}
 void deleteShaderPrograms(){
     glDeleteProgram(null_program);
     glDeleteProgram(debug_program);
@@ -489,6 +509,7 @@ void deleteShaderPrograms(){
 	glDeleteProgram(post_program[1]);
 	glDeleteProgram(skybox_programs[0]);
 	glDeleteProgram(skybox_programs[1]);
+	glDeleteProgram(vegetation_program);
 }
 
 void loadShader(std::string path, TYPE type) {
@@ -526,5 +547,10 @@ void loadShader(std::string path, TYPE type) {
         case shader::TYPE::DEPTH_ONLY_SHADER:
             loadDepthOnlyShader(path);
             break;
+        case shader::TYPE::VEGETATION_SHADER:
+            loadVegetationShader(path);
+            break;
+        default:
+        	break;
     }
 }

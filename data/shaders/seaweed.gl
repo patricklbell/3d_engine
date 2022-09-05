@@ -1,0 +1,43 @@
+#ifdef COMPILING_VS
+#load lib/constants.gl
+
+layout (location = 0) in vec3 in_vertex;
+layout (location = 3) in vec2 in_texcoord;
+
+out VS_OUT {
+    vec2 texcoord;
+} vs_out; 
+
+uniform mat4 mvp;
+uniform float time;
+
+void main()
+{
+    vec3 vertex = in_vertex;
+    vertex.x += (1.0 - in_texcoord.x)*0.3*sin(1.8*time + (1.0 - in_texcoord.x*in_texcoord.x)*7.0*in_texcoord.x);
+    //vertex.x += 0.1*sin(time + in_texcoord.y);
+
+    gl_Position = mvp * vec4(vertex, 1.0);
+	vs_out.texcoord = vec2(in_texcoord.y, in_texcoord.x);
+}
+#endif
+
+
+#ifdef COMPILING_FS
+
+in VS_OUT {
+    vec2 texcoord;
+} fs_in; 
+
+out vec4 out_color;
+
+uniform sampler2D image;
+
+void main()
+{             
+    out_color = texture(image, fs_in.texcoord);
+    if(out_color.a < 0.1)
+        discard;
+} 
+
+#endif

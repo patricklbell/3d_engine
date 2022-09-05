@@ -41,7 +41,7 @@ namespace graphics{
     GLuint water_collider_fbos[2] = { GL_FALSE }, water_collider_buffers[2] = { GL_FALSE };
     int water_collider_final_fbo = 0;
 
-    Mesh quad, cube, line_cube, water_grid;
+    Mesh quad, cube, line_cube, water_grid, seaweed;
     Texture * simplex_gradient;
     Texture * simplex_value;
     const int MSAA_SAMPLES = 2;
@@ -643,6 +643,7 @@ void initGraphicsPrimitives(AssetManager &asset_manager) {
     graphics::line_cube.draw_count[0] = sizeof(line_cube_vertices) / (2.0 * sizeof(*line_cube_vertices));
 
     asset_manager.loadMeshAssimp(&graphics::water_grid, "data/models/water_grid.obj");
+    asset_manager.loadMeshAssimp(&graphics::seaweed, "data/models/seaweed.obj");
 
     graphics::simplex_gradient = asset_manager.createTexture("data/textures/2d_simplex_gradient_seamless.png");
     asset_manager.loadTexture(graphics::simplex_gradient, "data/textures/2d_simplex_gradient_seamless.png", GL_RGB);
@@ -689,13 +690,19 @@ void bindHdr(){
 }
 
 void clearFramebuffer(const glm::vec4 &color){
-    glClearColor(color.x, color.y, color.z, color.w);
     
     if (shader::unified_bloom) {
-        static const GLuint attachments[] = { GL_COLOR_ATTACHMENT0 };
+        GLuint attachments[] = { GL_COLOR_ATTACHMENT1 };
+        glDrawBuffers(1, attachments);
+
+        glClearColor(0,0,0,1);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+
+        attachments[0] = { GL_COLOR_ATTACHMENT0 };
         glDrawBuffers(1, attachments);
     }
 
+    glClearColor(color.x, color.y, color.z, color.w);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
     if (shader::unified_bloom) {
@@ -732,6 +739,10 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Texture* skybox, 
     // @note face culling wont work with certain techniques i.e. grass
     glEnable(GL_CULL_FACE);
 
+
+    // 
+    // Draw normal PBR mesh entities
+    //
     glUseProgram(shader::unified_programs[shader::unified_bloom]);
     glUniform3fv(shader::unified_uniforms[shader::unified_bloom].sun_color, 1, &sun_color[0]);
     glUniform3fv(shader::unified_uniforms[shader::unified_bloom].sun_direction, 1, &sun_direction[0]);
@@ -785,6 +796,39 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Texture* skybox, 
         }
     }
 
+    // 
+    // Draw vegetation/alpha clipped quads
+    // @todo instanced rendering
+    //
+    glDisable(GL_CULL_FACE);
+
+    glUseProgram(shader::vegetation_program);
+    glUniform1f(shader::vegetation_uniforms.time, glfwGetTime());
+    
+    // @otod do shadow casting on vegetation
+    // glActiveTexture(GL_TEXTURE5);
+    // glBindTexture(GL_TEXTURE_2D_ARRAY, graphics::shadow_buffer);
+    // glUniform1fv(shader::unified_uniforms[shader::unified_bloom].shadow_cascade_distances, graphics::shadow_num, graphics::shadow_cascade_distances);
+    // glUniform1f(shader::unified_uniforms[shader::unified_bloom].far_plane, camera.far_plane);
+
+    for (int i = 0; i < ENTITY_COUNT; ++i) {
+        auto v_e = reinterpret_cast<VegetationEntity*>(entity_manager.entities[i]);
+        if(v_e == nullptr || !(v_e->type & EntityType::VEGETATION_ENTITY) || v_e->texture == nullptr) continue;
+
+        auto mvp   = vp * createModelMatrix(v_e->position, v_e->rotation, v_e->scale);
+        glUniformMatrix4fv(shader::vegetation_uniforms.mvp, 1, GL_FALSE, &mvp[0][0]);
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, v_e->texture->id);
+
+        // @todo Use fewer tri mesh/find some way to make this better
+        glBindVertexArray(graphics::seaweed.vao);
+        glDrawElements(graphics::seaweed.draw_mode, graphics::seaweed.draw_count[0], graphics::seaweed.draw_type, 
+                       (GLvoid*)(sizeof(*graphics::seaweed.indices)*graphics::seaweed.draw_start[0]));
+    }
+
+    glEnable(GL_CULL_FACE);
+
     //drawSkybox(skybox, camera);
     if (entity_manager.water != NULLID) {
         auto water = (WaterEntity*)entity_manager.getEntity(entity_manager.water);
@@ -824,7 +868,8 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Texture* skybox, 
             glUniform4fv(shader::water_uniforms[shader::unified_bloom].foam_color, 1, &water->foam_color[0]);
 
             glBindVertexArray(graphics::water_grid.vao);
-            glDrawElements(graphics::water_grid.draw_mode, graphics::water_grid.draw_count[0], graphics::water_grid.draw_type, (GLvoid*)(sizeof(*graphics::water_grid.indices)*graphics::water_grid.draw_start[0]));
+            glDrawElements(graphics::water_grid.draw_mode, graphics::water_grid.draw_count[0], graphics::water_grid.draw_type, 
+                           (GLvoid*)(sizeof(*graphics::water_grid.indices)*graphics::water_grid.draw_start[0]));
 
             //glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
             glDepthFunc(GL_LESS);

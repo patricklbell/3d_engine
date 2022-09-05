@@ -13,6 +13,7 @@ void loadGaussianBlurShader(std::string path);
 void loadPostShader(std::string path);
 void loadDebugShader(std::string path);
 void loadSkyboxShader(std::string path);
+void loadVegetationShader(std::string path);
 void deleteShaderPrograms();
 
 namespace shader {
@@ -29,8 +30,8 @@ namespace shader {
         POST_SHADER,
         DEBUG_SHADER,
         SKYBOX_SHADER,
-        WHITE_SHADER,
         DEPTH_ONLY_SHADER,
+        VEGETATION_SHADER,
         NUM_SHADER_TYPES,
     };
     extern GLuint null_program;
@@ -87,6 +88,11 @@ namespace shader {
 	extern struct MvpUniforms {
 		GLuint mvp;
 	} depth_only_uniforms;
+
+	extern GLuint vegetation_program;
+	extern struct VegetationUniforms {
+		GLuint mvp, time;
+	} vegetation_uniforms;
 
 }
 

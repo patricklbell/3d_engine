@@ -127,6 +127,11 @@ int main() {
     std::cout << "OpenGL Info:\nVersion: \t" << GL_version << "\nVendor: \t" << GL_vendor << "\nRenderer: \t" << GL_renderer << "\n";
 
     soloud.init();
+    if(soloud.getBackendString() == NULL) {
+        std::cout << "Soloud failed to initialize\n";
+    } else {
+        std::cout << "Soloud backend string: " << soloud.getBackendString() << "\n";
+    }
 
 #if DO_MULTITHREAD
     ThreadPool thread_pool;
@@ -178,6 +183,7 @@ int main() {
         {"data/shaders/post.gl", shader::TYPE::POST_SHADER, empty_file_time},
         {"data/shaders/debug.gl", shader::TYPE::DEBUG_SHADER, empty_file_time},
         {"data/shaders/depth_only.gl", shader::TYPE::DEPTH_ONLY_SHADER, empty_file_time},
+        {"data/shaders/seaweed.gl", shader::TYPE::VEGETATION_SHADER, empty_file_time},
         //{"data/shaders/skybox.gl", shader::TYPE::SKYBOX_SHADER, empty_file_time},
     };
 
@@ -202,10 +208,13 @@ int main() {
     soloud.setPan(handle1, -0.2f);              // Set pan; -1 is left, 1 is right
     soloud.setRelativePlaySpeed(handle1, 1.0f); // Play a bit slower; 1.0f is normal
 
-
-    //level_path = "data/levels/water_test.level";
-    //loadLevel(entity_manager, asset_manager, level_path, level_camera);
-    //editor_camera = level_camera;
+    // level_path = "data/levels/test.level";
+    // loadLevel(entity_manager, asset_manager, level_path, level_camera);
+    // editor_camera = level_camera;
+    
+    auto veg = (VegetationEntity*)entity_manager.createEntity(VEGETATION_ENTITY);
+    veg->texture = asset_manager.createTexture("data/textures/extern/Leaves/Leaves_Pine_Texture.png");
+    asset_manager.loadTexture(veg->texture, veg->texture->handle, GL_RGBA);
 
     /*std::array<std::string,6> skybox_paths = {"data/textures/cloudy/bluecloud_ft.jpg", "data/textures/cloudy/bluecloud_bk.jpg",
                                               "data/textures/cloudy/bluecloud_up.jpg", "data/textures/cloudy/bluecloud_dn.jpg",
@@ -214,7 +223,8 @@ int main() {
                                                 "data/textures/simple_skybox/0005.png", "data/textures/simple_skybox/0004.png",
                                                 "data/textures/simple_skybox/0003.png", "data/textures/simple_skybox/0001.png" };
     auto skybox = global_assets.createTexture("skybox");
-    AssetManager::loadCubemapTexture(skybox, skybox_paths);
+    global_assets.loadCubemapTexture(skybox, skybox_paths);
+
 #ifndef NDEBUG 
     checkGLError("Pre-loop");
 #endif
