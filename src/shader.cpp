@@ -77,6 +77,7 @@ static std::string read_line(char* data, int data_len, int &line_len) {
 			return line;
 		}
 	}
+	return "";
 }
 
 static char *read_file_contents(std::string path, int &num_bytes) {

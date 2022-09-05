@@ -68,7 +68,14 @@ add_subdirectory( assimp-5.1.5 )
 
 ### SoLoud ###
 cmake_policy(SET CMP0091 NEW)
-add_compile_definitions(WITH_WINMM)
+
+if(WIN32)
+	add_compile_definitions(WITH_WINMM)
+elseif(APPLE)
+	## @todo
+elseif(UNIX)
+	add_compile_definitions(WITH_ALSA)
+endif()
 
 set(SOLOUD_SOURCE
   soloud20200207/src/audiosource/monotone/soloud_monotone.cpp
@@ -92,6 +99,7 @@ set(SOLOUD_SOURCE
   soloud20200207/src/audiosource/wav/stb_vorbis.c
   soloud20200207/src/backend/null/soloud_null.cpp
   soloud20200207/src/backend/winmm/soloud_winmm.cpp
+  soloud20200207/src/backend/alsa/soloud_alsa.cpp
   soloud20200207/src/core/soloud.cpp
   soloud20200207/src/core/soloud_audiosource.cpp
   soloud20200207/src/core/soloud_bus.cpp
@@ -128,3 +136,12 @@ add_library(SOLOUD STATIC
 	${SOLOUD_SOURCE}
 	${SOLOUD_INCLUDE}
 )
+
+if(UNIX)
+	find_package(ALSA REQUIRED)                                    
+	if (ALSA_FOUND)                                                
+    	include_directories(${ALSA_INCLUDE_DIRS})                  
+    	target_link_libraries(SOLOUD ${ALSA_LIBRARIES})      
+	endif(ALSA_FOUND)
+	add_compile_definitions(WITH_ALSA)
+endif()

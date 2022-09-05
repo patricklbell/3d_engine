@@ -88,7 +88,7 @@ int main() {
     // to prevent 1200x800 from becoming 2400x1600
     glfwWindowHint(GLFW_COCOA_RETINA_FRAMEBUFFER, GLFW_FALSE);
 #endif
-    std::ios_base::sync_with_stdio(false);
+    //std::ios_base::sync_with_stdio(false);
 
     // Open a window and create its OpenGL context
     window = glfwCreateWindow(1024, 700, "Window", NULL, NULL);

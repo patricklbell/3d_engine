@@ -49,7 +49,7 @@ void drawColliders(const EntityManager& entity_manager, const Camera& camera);
 
 struct ReferenceSelection {
     void addEntity(Entity* e);
-    void ReferenceSelection::toggleEntity(const EntityManager& entity_manager, Entity* e);
+    void toggleEntity(const EntityManager& entity_manager, Entity* e);
     void clear();
 
     std::vector<Id> ids;
@@ -61,7 +61,7 @@ struct CopySelection {
     // @note owns memory
     std::vector<Entity*> entities;
     
-    void CopySelection::free_clear();
+    void free_clear();
     ~CopySelection();
 };
 
