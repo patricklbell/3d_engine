@@ -431,7 +431,7 @@ void handleEditorControls(Camera &editor_camera, Camera &level_camera, EntityMan
     mouse_right_prev   = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT);
 }
 
-static struct CollisionNeighbours {
+struct CollisionNeighbours {
     std::unordered_map<glm::ivec3, Id> loc_to_id;
     std::vector<Id> psuedo_entities;
 };
@@ -531,7 +531,8 @@ void handleGameControls(Camera& camera, EntityManager& entity_manager, AssetMana
     static CollisionNeighbours selected_neighbours;
     
     if (controls::left_mouse_click_press) {
-        auto collider = pickColliderWithMouse(camera, entity_manager, glm::vec3(), true);
+        glm::vec3 n;
+        auto collider = pickColliderWithMouse(camera, entity_manager, n, true);
 
         if (collider != nullptr) {
             if (isPickPsuedo(collider, selected_neighbours)) {
