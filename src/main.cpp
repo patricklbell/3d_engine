@@ -142,6 +142,7 @@ int main() {
     initDefaultMaterial(global_assets);
     initGraphicsPrimitives(global_assets);
     initShadowFbo();
+    initAnimationUbo();
     initWaterColliderFbo();
     initHdrFbo();
     if(shader::unified_bloom){
@@ -173,8 +174,10 @@ int main() {
     };
 
     std::vector<ShaderData> shader_update_times {
+        {"data/shaders/null_anim.gl", shader::TYPE::ANIMATED_NULL_SHADER, empty_file_time},
         {"data/shaders/null.gl", shader::TYPE::NULL_SHADER, empty_file_time},
         {"data/shaders/unified.gl", shader::TYPE::UNIFIED_SHADER, empty_file_time},
+        {"data/shaders/unified_anim.gl", shader::TYPE::ANIMATED_UNIFIED_SHADER, empty_file_time},
         {"data/shaders/water.gl", shader::TYPE::WATER_SHADER, empty_file_time},
         {"data/shaders/gaussian_blur.gl", shader::TYPE::GAUSSIAN_BLUR_SHADER, empty_file_time},
         {"data/shaders/plane_projection.gl", shader::TYPE::PLANE_PROJECTION_SHADER, empty_file_time},
@@ -212,9 +215,14 @@ int main() {
     // loadLevel(entity_manager, asset_manager, level_path, level_camera);
     // editor_camera = level_camera;
     
-    auto veg = (VegetationEntity*)entity_manager.createEntity(VEGETATION_ENTITY);
+    /*auto veg = (VegetationEntity*)entity_manager.createEntity(VEGETATION_ENTITY);
     veg->texture = asset_manager.createTexture("data/textures/extern/Leaves/Leaves_Pine_Texture.png");
-    asset_manager.loadTexture(veg->texture, veg->texture->handle, GL_RGBA);
+    asset_manager.loadTexture(veg->texture, veg->texture->handle, GL_RGBA);*/
+
+    auto anim_entity = (AnimatedMeshEntity*)entity_manager.createEntity(ANIMATED_MESH_ENTITY);
+    anim_entity->animesh = asset_manager.createAnimatedMesh("data/models/extern/dancing_vampire/dancing_vampire.fbx");
+    asset_manager.loadAnimatedMeshAssimp(anim_entity->animesh, anim_entity->animesh->handle);
+    if (anim_entity->play("Armature|dance", 0.0, 1.0, true));
 
     /*std::array<std::string,6> skybox_paths = {"data/textures/cloudy/bluecloud_ft.jpg", "data/textures/cloudy/bluecloud_bk.jpg",
                                               "data/textures/cloudy/bluecloud_up.jpg", "data/textures/cloudy/bluecloud_dn.jpg",
@@ -268,7 +276,7 @@ int main() {
                 } 
             }
         }
-
+        entity_manager.tickAnimatedMeshes(dt);
 
         bindDrawShadowMap(entity_manager, camera);
 

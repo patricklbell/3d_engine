@@ -64,6 +64,7 @@ set(SOURCES
 	src/editor.cpp
 	src/graphics.cpp
 	src/assets.cpp
+	src/entities.cpp
 
     external/imgui/imgui_draw.cpp
     external/imgui/imgui_impl_glfw.cpp

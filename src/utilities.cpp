@@ -38,6 +38,10 @@ std::ostream &operator<<(std::ostream &os, const glm::tvec4<T, P> &v) {
     return os << v.x << ", " << v.y << ", " << v.z << ", " << v.w;
 }
 
+float linearstep(float e1, float e2, float x) {
+    return (x - e1) / (e2 - e1);
+}
+
 std::vector<std::string> split(std::string s, std::string delimiter) {
     size_t pos_start = 0, pos_end, delim_len = delimiter.length();
     std::string token;
@@ -225,7 +229,13 @@ bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const
 
                 // In future this should probably be true for all meshes
                 mesh = asset_manager.createMesh(mesh_path);
-                asset_manager.loadMesh(mesh, mesh_path, endsWith(mesh_path, ".mesh"));
+                if (endsWith(mesh_path, ".mesh")) {
+                    asset_manager.loadMeshFile(mesh, mesh_path);
+                }
+                else {
+                    std::cerr << "Warning, new mesh is being loaded with assimp\n";
+                    asset_manager.loadMeshAssimp(mesh, mesh_path);
+                }
 
                 index_to_mesh[mesh_index] = mesh;
             } else {
@@ -300,6 +310,7 @@ bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const
     return true;
 }
 
+// @perf These could probably be made more efficient
 glm::mat4x4 createModelMatrix(const glm::vec3 &pos, const glm::quat &rot, const glm::mat3x3 &scl){
     return glm::translate(glm::mat4x4(1.0), pos) * glm::mat4_cast(rot) * glm::mat4x4(scl);
 }
@@ -308,6 +319,13 @@ glm::mat4x4 createModelMatrix(const glm::vec3& pos, const glm::mat3x3& rot, cons
     return glm::translate(glm::mat4x4(1.0), pos) * glm::mat4x4(rot) * glm::mat4x4(scl);
 }
 
+glm::mat4x4 createModelMatrix(const glm::vec3& pos, const glm::mat3x3& rot, const glm::vec3& scl) {
+    return glm::translate(glm::mat4x4(1.0), pos) * glm::mat4x4(rot) * glm::scale(glm::mat4(1.0f), scl);
+}
+
+glm::mat4x4 createModelMatrix(const glm::vec3& pos, const glm::quat& rot, const glm::vec3& scl) {
+    return glm::translate(glm::mat4x4(1.0), pos) * glm::mat4_cast(rot) * glm::scale(glm::mat4(1.0f), scl);
+}
 
 // https://cadxfem.org/inf/Fast%20MinimumStorage%20RayTriangle%20Intersection.pdf
 // Cornell university paper describing ray intersection algorithms

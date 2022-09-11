@@ -1,12 +1,13 @@
 #ifndef ENTITIES_HPP
 #define ENTITIES_HPP
 #include <cstddef>
+#include <stack>
+
 #include <glm/gtc/quaternion.hpp>
 
 #include "globals.hpp"
-#include "assets.hpp"
 #include "graphics.hpp"
-#include <stack>
+#include "assets.hpp"
 
 #define NULLID Id(-1, -1)
 
@@ -25,11 +26,12 @@ struct Id {
 };
 
 enum EntityType : uint64_t {
-    ENTITY              = 0,
-    MESH_ENTITY         = 1 << 0,
-    WATER_ENTITY        = 1 << 1,
-    COLLIDER_ENTITY     =(1 << 2) | MESH_ENTITY,
-    VEGETATION_ENTITY   = 1 << 3,
+    ENTITY                  = 0,
+    MESH_ENTITY             = 1 << 0,
+    WATER_ENTITY            = 1 << 1,
+    COLLIDER_ENTITY         =(1 << 2) | MESH_ENTITY,
+    VEGETATION_ENTITY       = 1 << 3,
+    ANIMATED_MESH_ENTITY    = 1 << 4,
 };
 
 struct Entity {
@@ -54,6 +56,36 @@ struct MeshEntity : Entity {
     MeshEntity(Id _id=NULLID) : Entity(_id){
         type = EntityType::MESH_ENTITY;
     }
+};
+
+
+struct AnimatedMeshEntity : Entity {
+    AnimatedMesh* animesh = nullptr;
+    // Produced by traversing node tree and updated per tick
+    std::array<glm::mat4, MAX_BONES> final_bone_matrices = { glm::mat4(1.0f) };
+
+    float current_time = 0.0f;
+    float time_scale = 1.0f;
+    bool loop = false;
+    bool playing = false;
+    AnimatedMesh::Animation* animation = nullptr;
+
+    glm::vec3 albedo_mult = glm::vec3(1.0);
+    float roughness_mult = 1.0;
+    float metal_mult = 1.0;
+    float ao_mult = 1.0;
+
+    glm::vec3 position = glm::vec3(0.0);
+    glm::quat rotation = glm::quat(0.0, 0.0, 0.0, 1.0);
+    glm::mat3 scale = glm::mat3(1.0);
+    bool casts_shadow = true;
+
+    AnimatedMeshEntity(Id _id = NULLID) : Entity(_id) {
+        type = EntityType::ANIMATED_MESH_ENTITY;
+    }
+
+    bool tick(float dt);
+    bool play(const std::string& name, float start_time, float _time_scale, bool _loop);
 };
 
 struct WaterEntity : Entity {
@@ -100,6 +132,8 @@ struct VegetationEntity : Entity {
 
 inline Entity *allocateEntity(Id id, EntityType type){
     switch (type) {
+        case ANIMATED_MESH_ENTITY:
+            return new AnimatedMeshEntity(id);
         case VEGETATION_ENTITY:
             return new VegetationEntity(id);
         case COLLIDER_ENTITY:
@@ -114,6 +148,8 @@ inline Entity *allocateEntity(Id id, EntityType type){
 }
 inline constexpr size_t entitySize(EntityType type){
     switch (type) {
+        case ANIMATED_MESH_ENTITY:
+            return sizeof(AnimatedMeshEntity);
         case VEGETATION_ENTITY:
             return sizeof(VegetationEntity);
         case COLLIDER_ENTITY:
@@ -207,6 +243,17 @@ struct EntityManager {
         auto e = allocateEntity(id, type);
         setEntity(id.i, e);
         return e;
+    }
+
+    void tickAnimatedMeshes(float dt) {
+        for (int i = 0; i < ENTITY_COUNT; ++i) {
+            auto e = reinterpret_cast<AnimatedMeshEntity*>(entities[i]);
+            
+            if (e != nullptr && e->type & EntityType::ANIMATED_MESH_ENTITY) {
+                e->tick(dt);
+                continue;
+            }
+        }
     }
 };
 

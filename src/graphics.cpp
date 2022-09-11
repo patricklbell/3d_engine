@@ -41,6 +41,8 @@ namespace graphics{
     GLuint water_collider_fbos[2] = { GL_FALSE }, water_collider_buffers[2] = { GL_FALSE };
     int water_collider_final_fbo = 0;
 
+    GLuint bone_matrices_ubo;
+
     Mesh quad, cube, line_cube, water_grid, seaweed;
     Texture * simplex_gradient;
     Texture * simplex_value;
@@ -201,6 +203,7 @@ void initShadowFbo(){
     glBindBuffer(GL_UNIFORM_BUFFER, 0);
 }
 
+
 // Since shadow buffer wont need to be bound otherwise just combine these operations
 void bindDrawShadowMap(const EntityManager &entity_manager, const Camera &camera){
     glBindBuffer(GL_UNIFORM_BUFFER, graphics::shadow_matrices_ubo);
@@ -209,7 +212,6 @@ void bindDrawShadowMap(const EntityManager &entity_manager, const Camera &camera
         glBufferSubData(GL_UNIFORM_BUFFER, i * sizeof(glm::mat4x4), sizeof(glm::mat4x4), &graphics::shadow_vps[i]);
     }
 
-    glUseProgram(shader::null_program);
     glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
     glBindFramebuffer(GL_FRAMEBUFFER, graphics::shadow_fbo);
@@ -228,9 +230,21 @@ void bindDrawShadowMap(const EntityManager &entity_manager, const Camera &camera
     //glDisable(GL_BLEND);
     glClear(GL_DEPTH_BUFFER_BIT);
 
+    std::vector<AnimatedMeshEntity*> anim_mesh_entities;
+
+    // 
+    // Draw normal static mesh entities
+    //
+    glUseProgram(shader::null_program);
     for (int i = 0; i < ENTITY_COUNT; ++i) {
+        if (entity_manager.entities[i] == nullptr) continue;
+
         auto m_e = reinterpret_cast<MeshEntity*>(entity_manager.entities[i]);
-        if(m_e == nullptr || !(m_e->type & EntityType::MESH_ENTITY) || m_e->mesh == nullptr || !m_e->casts_shadow) continue;
+        if (m_e->type & EntityType::ANIMATED_MESH_ENTITY) {
+            anim_mesh_entities.push_back((AnimatedMeshEntity*)m_e);
+            continue;
+        }
+        if(!(m_e->type & EntityType::MESH_ENTITY) || m_e->mesh == nullptr) continue;
 
         auto g_model = createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
 
@@ -243,11 +257,49 @@ void bindDrawShadowMap(const EntityManager &entity_manager, const Camera &camera
             glDrawElements(mesh->draw_mode, mesh->draw_count[j], mesh->draw_type, (GLvoid*)(sizeof(*mesh->indices)*mesh->draw_start[j]));
         }
     }
-    glCullFace(GL_BACK);
 
+    // 
+    // Draw animated PBR mesh entities, same as static with some extra uniforms
+    //
+    if (anim_mesh_entities.size() > 0) {
+        glUseProgram(shader::animated_null_program);
+
+        for (const auto& a_e : anim_mesh_entities) {
+            if (a_e->animesh == nullptr) continue;
+
+            // @note if something else binds another ubo to 1 then this will be overwritten
+            // Reloads ubo everytime, this is slow but don't know any other way
+            glBindBuffer(GL_UNIFORM_BUFFER, graphics::bone_matrices_ubo);
+            for (size_t i = 0; i < MAX_BONES; ++i)
+            {
+                glBufferSubData(GL_UNIFORM_BUFFER, i * sizeof(glm::mat4x4), sizeof(glm::mat4x4), &a_e->final_bone_matrices[i]);
+            }
+            glBindBuffer(GL_UNIFORM_BUFFER, 1);
+
+            auto model = createModelMatrix(a_e->position, a_e->rotation, a_e->scale);
+            glUniformMatrix4fv(shader::animated_null_uniforms.model, 1, GL_FALSE, &model[0][0]);
+
+            auto mesh = &a_e->animesh->mesh;
+            glBindVertexArray(mesh->vao);
+            for (int j = 0; j < mesh->num_meshes; ++j) {
+                //auto model = mesh->transforms[j] * g_model; // Shouldn't be needed since this is baked into bone matrices
+                // Bind VAO and draw
+                glDrawElements(mesh->draw_mode, mesh->draw_count[j], mesh->draw_type, (GLvoid*)(sizeof(*mesh->indices) * mesh->draw_start[j]));
+            }
+        }
+    }
+
+    glCullFace(GL_BACK);
     // Reset bound framebuffer and return to original viewport
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glViewport(0, 0, window_width, window_height);
+}
+
+void initAnimationUbo() {
+    glGenBuffers(1, &graphics::bone_matrices_ubo);
+    glBindBuffer(GL_UNIFORM_BUFFER, graphics::bone_matrices_ubo);
+    glBufferData(GL_UNIFORM_BUFFER, sizeof(glm::mat4x4) * (MAX_BONES), nullptr, GL_DYNAMIC_DRAW);
+    glBindBufferBase(GL_UNIFORM_BUFFER, 1, graphics::bone_matrices_ubo);
 }
 
 void initWaterColliderFbo(){
@@ -739,9 +791,11 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Texture* skybox, 
     // @note face culling wont work with certain techniques i.e. grass
     glEnable(GL_CULL_FACE);
 
+    // @todo in future entities should probably stored as vectors so you can traverse easily
+    std::vector<AnimatedMeshEntity*> anim_mesh_entities;
 
     // 
-    // Draw normal PBR mesh entities
+    // Draw normal static PBR mesh entities
     //
     glUseProgram(shader::unified_programs[shader::unified_bloom]);
     glUniform3fv(shader::unified_uniforms[shader::unified_bloom].sun_color, 1, &sun_color[0]);
@@ -756,8 +810,14 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Texture* skybox, 
     glUniform1f(shader::unified_uniforms[shader::unified_bloom].far_plane, camera.far_plane);
     auto vp = camera.projection * camera.view;
     for (int i = 0; i < ENTITY_COUNT; ++i) {
+        if (entity_manager.entities[i] == nullptr) continue;
+
         auto m_e = reinterpret_cast<MeshEntity*>(entity_manager.entities[i]);
-        if(m_e == nullptr || !(m_e->type & EntityType::MESH_ENTITY) || m_e->mesh == nullptr) continue;
+        if (m_e->type & EntityType::ANIMATED_MESH_ENTITY) {
+            anim_mesh_entities.push_back((AnimatedMeshEntity*)m_e);
+            continue;
+        }
+        if(!(m_e->type & EntityType::MESH_ENTITY) || m_e->mesh == nullptr) continue;
 
         // Material multipliers
         glUniform3fv(shader::unified_uniforms[shader::unified_bloom].albedo_mult, 1, &m_e->albedo_mult[0]);
@@ -793,6 +853,69 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Texture* skybox, 
 
             // Bind VAO and draw
             glDrawElements(mesh->draw_mode, mesh->draw_count[j], mesh->draw_type, (GLvoid*)(sizeof(*mesh->indices) * mesh->draw_start[j]));
+        }
+    }
+
+    // 
+    // Draw animated PBR mesh entities, same as static with some extra uniforms
+    //
+    if (anim_mesh_entities.size() > 0) {
+        glUseProgram(shader::animated_unified_programs[shader::unified_bloom]);
+        glUniform3fv(shader::animated_unified_uniforms[shader::unified_bloom].sun_color, 1, &sun_color[0]);
+        glUniform3fv(shader::animated_unified_uniforms[shader::unified_bloom].sun_direction, 1, &sun_direction[0]);
+        glUniform3fv(shader::animated_unified_uniforms[shader::unified_bloom].camera_position, 1, &camera.position[0]);
+        glUniformMatrix4fv(shader::animated_unified_uniforms[shader::unified_bloom].view, 1, GL_FALSE, &camera.view[0][0]);
+
+        glUniform1fv(shader::animated_unified_uniforms[shader::unified_bloom].shadow_cascade_distances, graphics::shadow_num, graphics::shadow_cascade_distances);
+        glUniform1f(shader::animated_unified_uniforms[shader::unified_bloom].far_plane, camera.far_plane);
+        auto vp = camera.projection * camera.view;
+        for (const auto &a_e : anim_mesh_entities) {
+            if (a_e->animesh == nullptr) continue;
+
+            // @note if something else binds another ubo to 1 then this will be overwritten
+            // Reloads ubo everytime, this is slow but don't know any other way
+            glBindBuffer(GL_UNIFORM_BUFFER, graphics::bone_matrices_ubo);
+            for (size_t i = 0; i < MAX_BONES; ++i)
+            {
+                glBufferSubData(GL_UNIFORM_BUFFER, i * sizeof(glm::mat4x4), sizeof(glm::mat4x4), &a_e->final_bone_matrices[i]);
+            }
+            glBindBuffer(GL_UNIFORM_BUFFER, 1);
+
+            // Material multipliers
+            glUniform3fv(shader::animated_unified_uniforms[shader::unified_bloom].albedo_mult, 1, &a_e->albedo_mult[0]);
+            glUniform1f(shader::animated_unified_uniforms[shader::unified_bloom].roughness_mult, a_e->roughness_mult);
+            glUniform1f(shader::animated_unified_uniforms[shader::unified_bloom].metal_mult, a_e->metal_mult);
+            glUniform1f(shader::animated_unified_uniforms[shader::unified_bloom].ao_mult, a_e->ao_mult);
+
+            auto model = createModelMatrix(a_e->position, a_e->rotation, a_e->scale);
+            auto mvp = vp * model;
+            glUniformMatrix4fv(shader::animated_unified_uniforms[shader::unified_bloom].mvp, 1, GL_FALSE, &mvp[0][0]);
+            glUniformMatrix4fv(shader::animated_unified_uniforms[shader::unified_bloom].model, 1, GL_FALSE, &model[0][0]);
+
+            auto mesh = &a_e->animesh->mesh;
+            glBindVertexArray(mesh->vao);
+            for (int j = 0; j < mesh->num_meshes; ++j) {
+                //auto model = mesh->transforms[j] * g_model; // Shouldn't be needed since this is baked into bone matrices
+
+                auto& mat = mesh->materials[mesh->material_indices[j]];
+                glActiveTexture(GL_TEXTURE0);
+                glBindTexture(GL_TEXTURE_2D, mat.t_albedo->id);
+
+                glActiveTexture(GL_TEXTURE1);
+                glBindTexture(GL_TEXTURE_2D, mat.t_normal->id);
+
+                glActiveTexture(GL_TEXTURE2);
+                glBindTexture(GL_TEXTURE_2D, mat.t_metallic->id);
+
+                glActiveTexture(GL_TEXTURE3);
+                glBindTexture(GL_TEXTURE_2D, mat.t_roughness->id);
+
+                glActiveTexture(GL_TEXTURE4);
+                glBindTexture(GL_TEXTURE_2D, mat.t_ambient->id);
+
+                // Bind VAO and draw
+                glDrawElements(mesh->draw_mode, mesh->draw_count[j], mesh->draw_type, (GLvoid*)(sizeof(*mesh->indices) * mesh->draw_start[j]));
+            }
         }
     }
 

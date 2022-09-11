@@ -63,6 +63,8 @@ void updateShadowVP(const Camera &camera);
 void initShadowFbo();
 void bindDrawShadowMap(const EntityManager &entity_manager, const Camera &camera);
 
+void initAnimationUbo();
+
 void initWaterColliderFbo();
 void bindDrawWaterColliderMap(const EntityManager &entity_manager, WaterEntity *water);
 void blurWaterFbo(WaterEntity* water);

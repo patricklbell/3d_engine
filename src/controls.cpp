@@ -461,7 +461,7 @@ static void addPsuedoNeighbours(EntityManager& entity_manager, AssetManager& ass
     auto psuedo_mesh = asset_manager.getMesh("data/mesh/o_wire.mesh");
     if (psuedo_mesh == nullptr) {
         psuedo_mesh = asset_manager.createMesh("data/mesh/o_wire.mesh");
-        if (!asset_manager.loadMesh(psuedo_mesh, "data/mesh/o_wire.mesh", true)) {
+        if (!asset_manager.loadMeshFile(psuedo_mesh, "data/mesh/o_wire.mesh")) {
             std::cerr << "Failed to load psuedo_mesh at path data/mesh/o_wire.mesh in addPsuedoNeighbours\n";
             return;
         }

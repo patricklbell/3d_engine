@@ -1,0 +1,57 @@
+#if COMPILING_VS
+
+layout (location = 0) in vec3  in_vertex;
+layout (location = 5) in ivec4 in_bone_ids;
+layout (location = 6) in vec4  in_weights;
+
+uniform mat4 model;
+
+const int MAX_BONES = 100;
+const int MAX_BONE_INFLUENCE = 100;
+layout(std140, binding=1) uniform BoneMatrices 
+{
+    mat4 bone_matrices[MAX_BONES];
+};
+
+void main() {
+    mat4 bone_transform = mat4(0.0);
+    for(int i = 0 ; i < MAX_BONE_INFLUENCE ; i++) {
+        if(in_bone_ids[i] == -1) 
+            continue;
+
+        bone_transform += bone_matrices[in_bone_ids[i]] * in_weights[i];
+    }
+
+    vec4 vertex = bone_transform * vec4(in_vertex, 1.0);
+
+    gl_Position = model * vertex;
+}
+
+#endif
+
+#ifdef COMPILING_GS
+layout(triangles, invocations=INVOCATIONS) in;
+layout(triangle_strip, max_vertices=3) out;
+layout(std140, binding=0) uniform ShadowVP 
+{
+    mat4 shadow_vps[INVOCATIONS];
+};
+
+void main()
+{
+    for(int i=0; i < 3; i++){
+        gl_Position = shadow_vps[gl_InvocationID] * gl_in[i].gl_Position;
+        gl_Layer    = gl_InvocationID;
+        EmitVertex();
+    }
+    EndPrimitive();
+}
+
+#endif
+
+#ifdef COMPILING_FS
+
+void main()
+{
+} 
+#endif

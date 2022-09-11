@@ -31,7 +31,6 @@ GLuint create1x1TextureFloat(const glm::vec3 &color, const GLint internal_format
 }
 
 bool loadImageData(ImageData *img, const std::string& imagepath, const GLint internal_format) {
-	std::cout << "Loading texture bytes at path " << imagepath << "\n";
 
 	if (internal_format == GL_RGB)		 img->data = stbi_load(imagepath.c_str(), &img->x, &img->y, &img->n, STBI_rgb);
 	else if (internal_format == GL_R16F) img->data = stbi_load(imagepath.c_str(), &img->x, &img->y, &img->n, STBI_grey);
@@ -42,6 +41,7 @@ bool loadImageData(ImageData *img, const std::string& imagepath, const GLint int
 		return false;
 	}
 
+	std::cout << "Loaded texture bytes at path " << imagepath << "\n";
 	return true;
 }
 
@@ -82,7 +82,10 @@ GLuint createGLTextureFromData(ImageData *img, const GLint internal_format) {
 
 GLuint loadImage(const std::string &imagepath, const GLint internal_format) {
 	auto img = ImageData();
-	loadImageData(&img, imagepath, internal_format);
+	if (!loadImageData(&img, imagepath, internal_format)) {
+		stbi_image_free(img.data);
+		return GL_FALSE;
+	}
 
 	return createGLTextureFromData(&img, internal_format);
 }

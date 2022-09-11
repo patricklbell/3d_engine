@@ -28,8 +28,14 @@ namespace shader {
     GLuint null_program;
     struct NullUniforms null_uniforms;
 
+	GLuint animated_null_program;
+	struct NullUniforms animated_null_uniforms;
+
     GLuint unified_programs[2];
     struct UnifiedUniforms unified_uniforms[2];
+
+	GLuint animated_unified_programs[2];
+	struct AnimatedUnifiedUniforms animated_unified_uniforms[2];
 
 	GLuint water_programs[2];
     struct WaterUniforms water_uniforms[2];
@@ -369,9 +375,21 @@ void loadNullShader(std::string path){
 
 	// Grab uniforms to modify
 	null_uniforms.model = glGetUniformLocation(null_program, "model");
-	
-	glUseProgram(null_program);
 }
+
+void loadAnimatedNullShader(std::string path) {
+	auto tmp = animated_null_program;
+	// Create and compile our GLSL program from the shaders
+	animated_null_program = loadShader(path, graphics::shadow_invocation_macro, true);
+	if (animated_null_program == GL_FALSE) {
+		animated_null_program = tmp;
+		return;
+	}
+
+	// Grab uniforms to modify
+	animated_null_uniforms.model = glGetUniformLocation(animated_null_program, "model");
+}
+
 void loadUnifiedShader(std::string path){
     static const std::string macros[] = {
         std::string("") + graphics::shadow_macro,
@@ -409,6 +427,45 @@ void loadUnifiedShader(std::string path){
 		glUniform1i(glGetUniformLocation(unified_programs[i], "shadow_map"),   5);
 	}
 }
+
+void loadAnimatedUnifiedShader(std::string path) {
+	static const std::string macros[] = {
+		std::string("") + graphics::shadow_macro,
+		std::string("#define BLOOM 1\n") + graphics::shadow_macro
+	};
+	for (int i = 0; i < 2; i++) {
+		// Create and compile our GLSL program from the shaders
+		auto tmp = animated_unified_programs[i];
+		animated_unified_programs[i] = loadShader(path, macros[i]);
+		if (animated_unified_programs[i] == GL_FALSE) {
+			animated_unified_programs[i] = tmp;
+			return;
+		}
+		// Grab uniforms to modify during rendering
+		animated_unified_uniforms[i].mvp = glGetUniformLocation(animated_unified_programs[i], "mvp");
+		animated_unified_uniforms[i].model = glGetUniformLocation(animated_unified_programs[i], "model");
+		animated_unified_uniforms[i].sun_color = glGetUniformLocation(animated_unified_programs[i], "sun_color");
+		animated_unified_uniforms[i].sun_direction = glGetUniformLocation(animated_unified_programs[i], "sun_direction");
+		animated_unified_uniforms[i].camera_position = glGetUniformLocation(animated_unified_programs[i], "camera_position");
+		animated_unified_uniforms[i].shadow_cascade_distances = glGetUniformLocation(animated_unified_programs[i], "shadow_cascade_distances");
+		animated_unified_uniforms[i].far_plane = glGetUniformLocation(animated_unified_programs[i], "far_plane");
+		animated_unified_uniforms[i].view = glGetUniformLocation(animated_unified_programs[i], "view");
+		animated_unified_uniforms[i].albedo_mult = glGetUniformLocation(animated_unified_programs[i], "albedo_mult");
+		animated_unified_uniforms[i].roughness_mult = glGetUniformLocation(animated_unified_programs[i], "roughness_mult");
+		animated_unified_uniforms[i].ao_mult = glGetUniformLocation(animated_unified_programs[i], "ao_mult");
+		animated_unified_uniforms[i].metal_mult = glGetUniformLocation(animated_unified_programs[i], "metal_mult");
+
+		glUseProgram(animated_unified_programs[i]);
+		// Set fixed locations for textures in GL_TEXTUREi
+		glUniform1i(glGetUniformLocation(animated_unified_programs[i], "albedo_map"), 0);
+		glUniform1i(glGetUniformLocation(animated_unified_programs[i], "normal_map"), 1);
+		glUniform1i(glGetUniformLocation(animated_unified_programs[i], "metallic_map"), 2);
+		glUniform1i(glGetUniformLocation(animated_unified_programs[i], "roughness_map"), 3);
+		glUniform1i(glGetUniformLocation(animated_unified_programs[i], "ao_map"), 4);
+		glUniform1i(glGetUniformLocation(animated_unified_programs[i], "shadow_map"), 5);
+	}
+}
+
 void loadWaterShader(std::string path){
     static const std::string macros[] = {
         std::string("") + graphics::shadow_macro,
@@ -517,9 +574,15 @@ void loadShader(std::string path, TYPE type) {
         case shader::TYPE::NULL_SHADER:
             loadNullShader(path);
             break;
+		case shader::TYPE::ANIMATED_NULL_SHADER:
+			loadAnimatedNullShader(path);
+			break;
         case shader::TYPE::UNIFIED_SHADER:
             loadUnifiedShader(path);
             break;
+		case shader::TYPE::ANIMATED_UNIFIED_SHADER:
+			loadAnimatedUnifiedShader(path);
+			break;
         case shader::TYPE::WATER_SHADER:
             loadWaterShader(path);
             break;

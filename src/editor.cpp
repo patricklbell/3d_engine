@@ -421,7 +421,7 @@ static bool addColliderCommand(std::vector<std::string>& input_tokens, std::stri
     auto collider_mesh = asset_manager.getMesh("data/mesh/cube.mesh");
     if (collider_mesh == nullptr) {
         collider->mesh = asset_manager.createMesh("data/mesh/cube.mesh");
-        if (!asset_manager.loadMesh(collider->mesh, "data/mesh/cube.mesh", true)) {
+        if (!asset_manager.loadMeshFile(collider->mesh, "data/mesh/cube.mesh")) {
             output += "Failed to load collider mesh";
             return false;
         }

@@ -29,6 +29,7 @@ std::ostream &operator<<(std::ostream &os, const glm::tvec3<T, P> &v);
 template<typename T, glm::precision P>
 std::ostream &operator<<(std::ostream &os, const glm::tvec4<T, P> &v);
 
+float linearstep(float e1, float e2, float x);
 std::vector<std::string> split(std::string s, std::string delimiter);
 
 void saveLevel(EntityManager& entity_manager, const std::string& level_path, const Camera &camera);
@@ -38,6 +39,8 @@ void checkGLError(std::string identifier="");
 
 glm::mat4x4 createModelMatrix(const glm::vec3 &pos, const glm::quat &rot, const glm::mat3x3 &scl);
 glm::mat4x4 createModelMatrix(const glm::vec3& pos, const glm::mat3x3& rot, const glm::mat3x3& scl);
+glm::mat4x4 createModelMatrix(const glm::vec3& pos, const glm::mat3x3& rot, const glm::vec3& scl);
+glm::mat4x4 createModelMatrix(const glm::vec3& pos, const glm::quat& rot, const glm::vec3& scl);
 
 void screenPosToWorldRay(glm::ivec2 mouse_position, glm::mat4 view, glm::mat4 projection, glm::vec3 &out_origin, glm::vec3 &out_direction);
 

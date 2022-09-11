@@ -7,7 +7,9 @@
 
 GLuint loadShader(std::string vertex_fragment_file_path, std::string macro_prepends, bool geometry);
 void loadNullShader(std::string path);
+void loadAnimatedNullShader(std::string path);
 void loadUnifiedShader(std::string path);
+void loadAnimatedUnifiedShader(std::string path);
 void loadWaterShader(std::string path);
 void loadGaussianBlurShader(std::string path);
 void loadPostShader(std::string path);
@@ -21,7 +23,9 @@ namespace shader {
 
     enum class TYPE {
         NULL_SHADER = 0,
+        ANIMATED_NULL_SHADER,
         UNIFIED_SHADER,
+        ANIMATED_UNIFIED_SHADER,
         WATER_SHADER,
         GAUSSIAN_BLUR_SHADER,
         PLANE_PROJECTION_SHADER,
@@ -39,10 +43,18 @@ namespace shader {
         GLuint model; 
     } null_uniforms;
 
+    extern GLuint animated_null_program;
+    extern NullUniforms animated_null_uniforms;
+
     extern GLuint unified_programs[2];
     extern struct UnifiedUniforms {
         GLuint mvp, model, sun_color, sun_direction, camera_position, shadow_cascade_distances, far_plane, view, albedo_mult, roughness_mult, ao_mult, metal_mult;
     } unified_uniforms[2];
+
+    extern GLuint animated_unified_programs[2];
+    extern struct AnimatedUnifiedUniforms {
+        GLuint mvp, model, sun_color, sun_direction, camera_position, shadow_cascade_distances, far_plane, view, albedo_mult, roughness_mult, ao_mult, metal_mult, bone_matrices;
+    } animated_unified_uniforms[2];
 
     extern GLuint water_programs[2];
     extern struct WaterUniforms {
