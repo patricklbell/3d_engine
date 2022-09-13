@@ -1537,7 +1537,7 @@ void drawEditorGui(Camera &editor_camera, Camera& level_camera, EntityManager &e
 
                 if (ImGui::Button("Update", button_size)) {
                     bindDrawWaterColliderMap(entity_manager, w_e);
-                    blurWaterFbo(w_e);
+                    distanceTransformWaterFbo(w_e);
                 }
             }   
 

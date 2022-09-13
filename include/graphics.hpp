@@ -66,25 +66,34 @@ void initAnimationUbo();
 
 void initWaterColliderFbo();
 void bindDrawWaterColliderMap(const EntityManager &entity_manager, WaterEntity *water);
-void blurWaterFbo(WaterEntity* water);
+void distanceTransformWaterFbo(WaterEntity* water);
 
-void clearFramebuffer(const glm::vec4 &color);
+void clearFramebuffer();
 void bindHdr();
 void drawSkybox(const Texture* skybox, const Camera &camera);
 void drawUnifiedHdr(const EntityManager &entity_manager, const Texture* skybox, const Camera &camera);
 
 void bindBackbuffer();
-void drawPost(int bloom_buffer_index, Texture *skybox, const Camera& camera);
+void drawPost(Texture *skybox, const Camera& camera);
 
-int blurBloomFbo();
+void blurBloomFbo();
 void initBloomFbo(bool resize=false);
+
 void initHdrFbo(bool resize=false);
 
-namespace graphics {
-    extern GLuint bloom_fbos[2];
-    extern GLuint bloom_buffers[2];
+struct BloomMipInfo {
+    glm::vec2 size;
+    GLuint texture;
+};
+
+constexpr int BLOOM_DOWNSAMPLES = 4;
+namespace graphics{
+    extern GLuint bloom_fbo;
+    extern std::vector<BloomMipInfo> bloom_mip_infos;
+
     extern GLuint hdr_fbo;
-    extern GLuint hdr_buffers[2];
+    extern GLuint hdr_buffer;
+
     extern const char *shadow_macro;
     extern const char * shadow_invocation_macro;
     extern GLuint shadow_buffer, shadow_fbo;

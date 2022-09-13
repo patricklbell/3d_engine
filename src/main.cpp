@@ -170,25 +170,27 @@ int main() {
 
     struct ShaderData {
         std::string path;
-        shader::TYPE type;
+        ShaderType type;
         std::filesystem::file_time_type update_time;
     };
 
     std::vector<ShaderData> shader_update_times {
-        {"data/shaders/null_anim.gl", shader::TYPE::ANIMATED_NULL_SHADER, empty_file_time},
-        {"data/shaders/null.gl", shader::TYPE::NULL_SHADER, empty_file_time},
-        {"data/shaders/unified.gl", shader::TYPE::UNIFIED_SHADER, empty_file_time},
-        {"data/shaders/unified_anim.gl", shader::TYPE::ANIMATED_UNIFIED_SHADER, empty_file_time},
-        {"data/shaders/water.gl", shader::TYPE::WATER_SHADER, empty_file_time},
-        {"data/shaders/gaussian_blur.gl", shader::TYPE::GAUSSIAN_BLUR_SHADER, empty_file_time},
-        {"data/shaders/plane_projection.gl", shader::TYPE::PLANE_PROJECTION_SHADER, empty_file_time},
-        {"data/shaders/jump_flood.gl", shader::TYPE::JFA_SHADER, empty_file_time},
-        {"data/shaders/jfa_to_distance.gl", shader::TYPE::JFA_DISTANCE_SHADER, empty_file_time},
-        {"data/shaders/post.gl", shader::TYPE::POST_SHADER, empty_file_time},
-        {"data/shaders/debug.gl", shader::TYPE::DEBUG_SHADER, empty_file_time},
-        {"data/shaders/depth_only.gl", shader::TYPE::DEPTH_ONLY_SHADER, empty_file_time},
-        {"data/shaders/seaweed.gl", shader::TYPE::VEGETATION_SHADER, empty_file_time},
-        //{"data/shaders/skybox.gl", shader::TYPE::SKYBOX_SHADER, empty_file_time},
+        {"data/shaders/null_anim.gl", ShaderType::ANIMATED_NULL, empty_file_time},
+        {"data/shaders/null.gl", ShaderType::_NULL, empty_file_time},
+        {"data/shaders/unified.gl", ShaderType::UNIFIED, empty_file_time},
+        {"data/shaders/unified_anim.gl", ShaderType::ANIMATED_UNIFIED, empty_file_time},
+        {"data/shaders/water.gl", ShaderType::WATER, empty_file_time},
+        {"data/shaders/gaussian_blur.gl", ShaderType::GAUSSIAN_BLUR, empty_file_time},
+        {"data/shaders/plane_projection.gl", ShaderType::PLANE_PROJECTION, empty_file_time},
+        {"data/shaders/jump_flood.gl", ShaderType::JFA, empty_file_time},
+        {"data/shaders/jfa_to_distance.gl", ShaderType::JFA_DISTANCE, empty_file_time},
+        {"data/shaders/post.gl", ShaderType::POST, empty_file_time},
+        {"data/shaders/debug.gl", ShaderType::DEBUG, empty_file_time},
+        {"data/shaders/depth_only.gl", ShaderType::DEPTH_ONLY, empty_file_time},
+        {"data/shaders/seaweed.gl", ShaderType::VEGETATION, empty_file_time},
+        {"data/shaders/downsample.gl", ShaderType::DOWNSAMPLE, empty_file_time},
+        {"data/shaders/blur_upsample.gl", ShaderType::UPSAMPLE, empty_file_time},
+        //{"data/shaders/skybox.gl", ShaderType::SKYBOX_SHADER, empty_file_time},
     };
 
     // Fill in with correct file time and actually load
@@ -279,7 +281,7 @@ int main() {
         bindDrawShadowMap(entity_manager, camera);
 
         bindHdr();
-        clearFramebuffer(glm::vec4(0.1,0.1,0.1,1.0));
+        clearFramebuffer();
         drawUnifiedHdr(entity_manager, skybox, camera);
 
         if (!playing) {
@@ -289,12 +291,11 @@ int main() {
             handleGameControls(level_camera, entity_manager, asset_manager, true_dt);
         }
 
-        int blur_buffer_index = 0;
         if (shader::unified_bloom) {
-            blur_buffer_index = blurBloomFbo();
+            blurBloomFbo();
         }
         bindBackbuffer();
-        drawPost(blur_buffer_index, skybox, camera);
+        drawPost(skybox, camera);
 
         if (!playing) {
             drawEditorGui(editor_camera, level_camera, entity_manager, asset_manager);

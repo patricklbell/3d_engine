@@ -35,6 +35,7 @@ uniform vec2 resolution;
 uniform sampler2D screen_map;
 uniform sampler2D depth_map;
 #ifdef BLOOM
+const float BLOOM_STRENGTH = 0.04f;
 uniform sampler2D bloom_map;
 #endif
 
@@ -128,11 +129,17 @@ vec3 reinhard_tonemap(vec3 x)
 void main()
 {
     float dist = depthToDist(texsample(depth_map, gl_FragCoord.xy).r);
-    #if FXAA
+#if FXAA
     vec3 hdr_color = fxaa(screen_map, gl_FragCoord.xy).xyz;
-    #else
+#else
     vec3 hdr_color = texsample(screen_map, gl_FragCoord.xy).xyz;
-    #endif
+#endif
+
+#ifdef BLOOM
+    // Don't fxaa bloom since it is blurred
+    vec3 bloom_color = texsample(bloom_map, gl_FragCoord.xy).rgb;
+    hdr_color = mix(hdr_color, bloom_color, BLOOM_STRENGTH);
+#endif
 
     vec3 skybox_color = texture(skybox, vs_in.position).xyz;
     
@@ -145,12 +152,6 @@ void main()
     //float fog_amount = smoothstep(fog_near, fog_far, dist);
     hdr_color = mix(hdr_color, skybox_color, fog_amount);
 
-#ifdef BLOOM
-    // Don't fxaa bloom since it is blurred
-    vec3 bloom_color = texsample(bloom_map, gl_FragCoord.xy).xyz;
-    hdr_color += bloom_color; // additive blending 
-#endif
-  
     // Reinhard tone mapping
     vec3 mapped = reinhard_tonemap(hdr_color);
     //vec3 mapped = uncharted2_tonemap(hdr_color);

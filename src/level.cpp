@@ -491,7 +491,7 @@ bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const
         auto water = (WaterEntity*)entity_manager.getEntity(entity_manager.water);
         if (water != nullptr) {
             bindDrawWaterColliderMap(entity_manager, water);
-            blurWaterFbo(water);
+            distanceTransformWaterFbo(water);
         }
         else {
             entity_manager.water = NULLID;

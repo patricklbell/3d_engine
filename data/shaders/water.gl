@@ -292,7 +292,7 @@ void main(){
     vec3 albedo = col.xyz;
     vec3 normal = normalize(dgwaves(vs_in.vertex));
     normal += 0.1*n1;
-    normal.y += 2.0*foam_dif;
+    //normal.z += 0.6*foam_dif; // @todo derivative
     normal = normalize(normal);
 
     // Maybe full brdf is unnecessary? test performance

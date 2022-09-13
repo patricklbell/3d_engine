@@ -22,10 +22,11 @@ int    window_width;
 int    window_height;
 bool   window_resized;
 namespace graphics{
-    GLuint bloom_fbos[2] = {GL_FALSE};
-    GLuint bloom_buffers[2] = { GL_FALSE };
+    GLuint bloom_fbo = {GL_FALSE};
+    std::vector<BloomMipInfo> bloom_mip_infos;
+
     GLuint hdr_fbo = { GL_FALSE };
-    GLuint hdr_buffers[2] = { GL_FALSE };
+    GLuint hdr_buffer = { GL_FALSE };
     GLuint hdr_depth = { GL_FALSE };
     // Used by water pass to write and read from same depth buffer
     GLuint hdr_depth_copy;
@@ -408,10 +409,7 @@ void bindDrawWaterColliderMap(const EntityManager& entity_manager, WaterEntity* 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glViewport(0, 0, window_width, window_height);
 }
-
-
-
-void blurWaterFbo(WaterEntity* water) {
+void distanceTransformWaterFbo(WaterEntity* water) {
     constexpr uint64_t num_steps = nextPowerOf2(WATER_COLLIDER_SIZE, WATER_COLLIDER_SIZE) - 2.0;
 
     glUseProgram(shader::jfa_program);
@@ -459,50 +457,72 @@ void blurWaterFbo(WaterEntity* water) {
     glViewport(0, 0, window_width, window_height);
 }
 
-void initBloomFbo(bool resize){
-    if(!resize || graphics::bloom_fbos[0] == GL_FALSE){
-        glGenFramebuffers(2, graphics::bloom_fbos);
-        glGenTextures(2, graphics::bloom_buffers);
+void clearBloomFbo() {
+    for(auto &mip : graphics::bloom_mip_infos) {
+        glDeleteTextures(1, &mip.texture);
     }
-    for (unsigned int i = 0; i < 2; i++){
-        glBindFramebuffer(GL_FRAMEBUFFER, graphics::bloom_fbos[i]);
-        glBindTexture(GL_TEXTURE_2D, graphics::bloom_buffers[i]);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, window_width, window_height, 0, GL_RGBA, GL_FLOAT, NULL);
+    graphics::bloom_mip_infos.clear();
+    glDeleteFramebuffers(1, &graphics::bloom_fbo);
+    graphics::bloom_fbo = GL_FALSE;
+}
+
+void initBloomFbo(bool resize){
+    clearBloomFbo();
+
+    glGenFramebuffers(1, &graphics::bloom_fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, graphics::bloom_fbo);
+
+    auto mip_size = glm::vec2(window_width, window_height);
+    for (int i = 0; i < BLOOM_DOWNSAMPLES; ++i){
+        auto &mip = graphics::bloom_mip_infos.emplace_back();
+
+        mip_size *= 0.5f;
+        mip.size = mip_size;
+
+        glGenTextures(1, &mip.texture);
+        glBindTexture(GL_TEXTURE_2D, mip.texture);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R11F_G11F_B10F, mip_size.x, mip_size.y, 0, GL_RGB, GL_FLOAT, NULL);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         // we clamp to the edge as the blur filter would otherwise sample repeated texture values
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, graphics::bloom_buffers[i], 0);
-        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE){
-            std::cerr << "Bloom framebuffer not complete.\n";
-        }
+
+        if(mip.size.x <= 1 || mip.size.y <= 1)
+            break;
+    }
+
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, graphics::bloom_mip_infos[0].texture, 0);
+    unsigned int attachments[1] = { GL_COLOR_ATTACHMENT0 };
+    glDrawBuffers(1, attachments);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE){
+        std::cerr << "Bloom framebuffer not complete.\n";
     }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 void initHdrFbo(bool resize){
-    int num_buffers = (int)shader::unified_bloom + 1;
-
     if(!resize || graphics::hdr_fbo == GL_FALSE){
         glGenFramebuffers(1, &graphics::hdr_fbo);
         glBindFramebuffer(GL_FRAMEBUFFER, graphics::hdr_fbo);
 
-        glGenTextures(num_buffers, graphics::hdr_buffers);
+        glGenTextures(1, &graphics::hdr_buffer);
     } else {
         glBindFramebuffer(GL_FRAMEBUFFER, graphics::hdr_fbo);
     }
-    for (unsigned int i = 0; i < num_buffers; i++){
-        glBindTexture(GL_TEXTURE_2D, graphics::hdr_buffers[i]);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, window_width, window_height, 0, GL_RGBA, GL_FLOAT, NULL);
-        //glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, 4, GL_RGBA16F, window_width, window_height, GL_TRUE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        // attach texture to framebuffer
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0 + i, GL_TEXTURE_2D, graphics::hdr_buffers[i], 0);
-    }
+
+    glBindTexture(GL_TEXTURE_2D, graphics::hdr_buffer);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, window_width, window_height, 0, GL_RGBA, GL_FLOAT, NULL);
+    //glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, 4, GL_RGBA16F, window_width, window_height, GL_TRUE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    // attach texture to framebuffer
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, graphics::hdr_buffer, 0);
+
+    // @fix if there is no water this copy is unnecessary
     if(!resize || graphics::hdr_depth == GL_FALSE){
         // create and attach depth buffer
         glGenTextures(1, &graphics::hdr_depth);
@@ -515,6 +535,7 @@ void initHdrFbo(bool resize){
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
     glBindTexture(GL_TEXTURE_2D, graphics::hdr_depth);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH24_STENCIL8, window_width, window_height, 0, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8, NULL);
     //glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, 4, GL_DEPTH24_STENCIL8, window_width, window_height, GL_TRUE);
@@ -527,13 +548,10 @@ void initHdrFbo(bool resize){
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE){
         std::cerr << "Hdr framebuffer not complete.\n";
     }
-    if(shader::unified_bloom){
-        static const GLuint attachments[] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
-        glDrawBuffers(2, attachments);
-    } else {
-        static const GLuint attachments[] = { GL_COLOR_ATTACHMENT0 };
-        glDrawBuffers(1, attachments);
-    }
+
+    static const GLuint attachments[] = { GL_COLOR_ATTACHMENT0 };
+    glDrawBuffers(1, attachments);
+
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
@@ -702,6 +720,8 @@ void initGraphicsPrimitives(AssetManager &asset_manager) {
     graphics::simplex_value = asset_manager.createTexture("data/textures/2d_simplex_value_seamless.png");
     asset_manager.loadTexture(graphics::simplex_value, "data/textures/2d_simplex_value_seamless.png", GL_RED);
 
+    // Set clear color
+    glClearColor(0.0, 0.0, 0.0, 1.0);
 }
 void drawCube(){
     glBindVertexArray(graphics::cube.vao);
@@ -715,52 +735,63 @@ void drawQuad(){
     glBindVertexArray(graphics::quad.vao);
     glDrawArrays(graphics::quad.draw_mode, graphics::quad.draw_start[0],  graphics::quad.draw_count[0]);
 }
-// Returns the index of the resulting blur buffer in bloom_buffers
-int blurBloomFbo(){
-    bool horizontal = true, first_iteration = true;
-    int amount = 3;
-    glUseProgram(shader::gaussian_blur_program);
-    for (unsigned int i = 0; i < amount; i++)
-    {
-        glBindFramebuffer(GL_FRAMEBUFFER, graphics::bloom_fbos[horizontal]); 
 
-        glUniform1i(shader::gaussian_blur_uniforms.horizontal, (int)horizontal);
-        
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, first_iteration ? graphics::hdr_buffers[1] : graphics::bloom_buffers[!horizontal]); 
+void blurBloomFbo(){
+    glBindFramebuffer(GL_FRAMEBUFFER, graphics::bloom_fbo);
+
+    // 
+    // Progressively downsample screen texture
+    //
+    glUseProgram(shader::downsample_program);
+    glUniform2f(shader::downsample_uniforms.resolution, window_width, window_height);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, graphics::hdr_buffer);
+
+    for(const auto &mip : graphics::bloom_mip_infos) {
+        glViewport(0, 0, mip.size.x, mip.size.y);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mip.texture, 0);
 
         drawQuad();
-        horizontal = !horizontal;
-        if (first_iteration) first_iteration = false;
+
+        // Set next iterations properties
+        glUniform2fv(shader::downsample_uniforms.resolution, 1, &mip.size[0]);
+        glBindTexture(GL_TEXTURE_2D, mip.texture);
     }
-    glBindFramebuffer(GL_FRAMEBUFFER, 0); 
-    return (int)!horizontal;
+
+    //
+    // Upscale and blur progressively back to half resolution
+    //
+    // Enable additive blending
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_ONE, GL_ONE);
+    glBlendEquation(GL_FUNC_ADD);
+
+    glUseProgram(shader::upsample_program);
+    for(int i = graphics::bloom_mip_infos.size() - 1; i > 0; i--) {
+        const auto &mip = graphics::bloom_mip_infos[i];
+        const auto &next_mip = graphics::bloom_mip_infos[i-1];
+
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, mip.texture);
+
+        glViewport(0, 0, next_mip.size.x, next_mip.size.y);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, next_mip.texture, 0);
+
+        drawQuad();
+    }
+
+    glDisable(GL_BLEND);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, window_width, window_height);
 }
 
 void bindHdr(){
     glBindFramebuffer(GL_FRAMEBUFFER, graphics::hdr_fbo);
 }
 
-void clearFramebuffer(const glm::vec4 &color){
-    
-    if (shader::unified_bloom) {
-        GLuint attachments[] = { GL_COLOR_ATTACHMENT1 };
-        glDrawBuffers(1, attachments);
-
-        glClearColor(0,0,0,1);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
-
-        attachments[0] = { GL_COLOR_ATTACHMENT0 };
-        glDrawBuffers(1, attachments);
-    }
-
-    glClearColor(color.x, color.y, color.z, color.w);
+void clearFramebuffer(){
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
-
-    if (shader::unified_bloom) {
-        static const GLuint attachments[] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
-        glDrawBuffers(2, attachments);
-    }
 }
 
 void drawSkybox(const Texture* skybox, const Camera &camera) {
@@ -772,7 +803,7 @@ void drawSkybox(const Texture* skybox, const Camera &camera) {
 
     glDisable(GL_CULL_FACE);
 
-    glUseProgram(shader::skybox_programs[shader::unified_bloom]);
+    glUseProgram(shader::skybox_program);
     auto untranslated_view = glm::mat4(glm::mat3(camera.view));
     glUniformMatrix4fv(shader::skybox_uniforms.view,       1, GL_FALSE, &untranslated_view[0][0]);
     glUniformMatrix4fv(shader::skybox_uniforms.projection, 1, GL_FALSE, &camera.projection[0][0]);
@@ -797,17 +828,17 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Texture* skybox, 
     // 
     // Draw normal static PBR mesh entities
     //
-    glUseProgram(shader::unified_programs[shader::unified_bloom]);
-    glUniform3fv(shader::unified_uniforms[shader::unified_bloom].sun_color, 1, &sun_color[0]);
-    glUniform3fv(shader::unified_uniforms[shader::unified_bloom].sun_direction, 1, &sun_direction[0]);
-    glUniform3fv(shader::unified_uniforms[shader::unified_bloom].camera_position, 1, &camera.position[0]);
-    glUniformMatrix4fv(shader::unified_uniforms[shader::unified_bloom].view, 1, GL_FALSE, &camera.view[0][0]);
+    glUseProgram(shader::unified_program);
+    glUniform3fv(shader::unified_uniforms.sun_color, 1, &sun_color[0]);
+    glUniform3fv(shader::unified_uniforms.sun_direction, 1, &sun_direction[0]);
+    glUniform3fv(shader::unified_uniforms.camera_position, 1, &camera.position[0]);
+    glUniformMatrix4fv(shader::unified_uniforms.view, 1, GL_FALSE, &camera.view[0][0]);
     
     glActiveTexture(GL_TEXTURE5);
     glBindTexture(GL_TEXTURE_2D_ARRAY, graphics::shadow_buffer);
 
-    glUniform1fv(shader::unified_uniforms[shader::unified_bloom].shadow_cascade_distances, graphics::shadow_num, graphics::shadow_cascade_distances);
-    glUniform1f(shader::unified_uniforms[shader::unified_bloom].far_plane, camera.far_plane);
+    glUniform1fv(shader::unified_uniforms.shadow_cascade_distances, graphics::shadow_num, graphics::shadow_cascade_distances);
+    glUniform1f(shader::unified_uniforms.far_plane, camera.far_plane);
     auto vp = camera.projection * camera.view;
     for (int i = 0; i < ENTITY_COUNT; ++i) {
         if (entity_manager.entities[i] == nullptr) continue;
@@ -820,10 +851,10 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Texture* skybox, 
         if(!(m_e->type & EntityType::MESH_ENTITY) || m_e->mesh == nullptr) continue;
 
         // Material multipliers
-        glUniform3fv(shader::unified_uniforms[shader::unified_bloom].albedo_mult, 1, &m_e->albedo_mult[0]);
-        glUniform1f(shader::unified_uniforms[shader::unified_bloom].roughness_mult, m_e->roughness_mult);
-        glUniform1f(shader::unified_uniforms[shader::unified_bloom].metal_mult,     m_e->metal_mult);
-        glUniform1f(shader::unified_uniforms[shader::unified_bloom].ao_mult,        m_e->ao_mult);
+        glUniform3fv(shader::unified_uniforms.albedo_mult, 1, &m_e->albedo_mult[0]);
+        glUniform1f(shader::unified_uniforms.roughness_mult, m_e->roughness_mult);
+        glUniform1f(shader::unified_uniforms.metal_mult,     m_e->metal_mult);
+        glUniform1f(shader::unified_uniforms.ao_mult,        m_e->ao_mult);
 
         auto g_model = createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
 
@@ -832,8 +863,8 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Texture* skybox, 
         for (int j = 0; j < mesh->num_meshes; ++j) {
             auto model = mesh->transforms[j] * g_model;
             auto mvp   = vp * model;
-            glUniformMatrix4fv(shader::unified_uniforms[shader::unified_bloom].mvp, 1, GL_FALSE, &mvp[0][0]);
-            glUniformMatrix4fv(shader::unified_uniforms[shader::unified_bloom].model, 1, GL_FALSE, &model[0][0]);
+            glUniformMatrix4fv(shader::unified_uniforms.mvp, 1, GL_FALSE, &mvp[0][0]);
+            glUniformMatrix4fv(shader::unified_uniforms.model, 1, GL_FALSE, &model[0][0]);
 
             auto &mat = mesh->materials[mesh->material_indices[j]];
             glActiveTexture(GL_TEXTURE0);
@@ -860,14 +891,14 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Texture* skybox, 
     // Draw animated PBR mesh entities, same as static with some extra uniforms
     //
     if (anim_mesh_entities.size() > 0) {
-        glUseProgram(shader::animated_unified_programs[shader::unified_bloom]);
-        glUniform3fv(shader::animated_unified_uniforms[shader::unified_bloom].sun_color, 1, &sun_color[0]);
-        glUniform3fv(shader::animated_unified_uniforms[shader::unified_bloom].sun_direction, 1, &sun_direction[0]);
-        glUniform3fv(shader::animated_unified_uniforms[shader::unified_bloom].camera_position, 1, &camera.position[0]);
-        glUniformMatrix4fv(shader::animated_unified_uniforms[shader::unified_bloom].view, 1, GL_FALSE, &camera.view[0][0]);
+        glUseProgram(shader::animated_unified_program);
+        glUniform3fv(shader::animated_unified_uniforms.sun_color, 1, &sun_color[0]);
+        glUniform3fv(shader::animated_unified_uniforms.sun_direction, 1, &sun_direction[0]);
+        glUniform3fv(shader::animated_unified_uniforms.camera_position, 1, &camera.position[0]);
+        glUniformMatrix4fv(shader::animated_unified_uniforms.view, 1, GL_FALSE, &camera.view[0][0]);
 
-        glUniform1fv(shader::animated_unified_uniforms[shader::unified_bloom].shadow_cascade_distances, graphics::shadow_num, graphics::shadow_cascade_distances);
-        glUniform1f(shader::animated_unified_uniforms[shader::unified_bloom].far_plane, camera.far_plane);
+        glUniform1fv(shader::animated_unified_uniforms.shadow_cascade_distances, graphics::shadow_num, graphics::shadow_cascade_distances);
+        glUniform1f(shader::animated_unified_uniforms.far_plane, camera.far_plane);
         auto vp = camera.projection * camera.view;
         for (const auto &a_e : anim_mesh_entities) {
             if (a_e->animesh == nullptr) continue;
@@ -882,15 +913,15 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Texture* skybox, 
             glBindBuffer(GL_UNIFORM_BUFFER, 1);
 
             // Material multipliers
-            glUniform3fv(shader::animated_unified_uniforms[shader::unified_bloom].albedo_mult, 1, &a_e->albedo_mult[0]);
-            glUniform1f(shader::animated_unified_uniforms[shader::unified_bloom].roughness_mult, a_e->roughness_mult);
-            glUniform1f(shader::animated_unified_uniforms[shader::unified_bloom].metal_mult, a_e->metal_mult);
-            glUniform1f(shader::animated_unified_uniforms[shader::unified_bloom].ao_mult, a_e->ao_mult);
+            glUniform3fv(shader::animated_unified_uniforms.albedo_mult, 1, &a_e->albedo_mult[0]);
+            glUniform1f(shader::animated_unified_uniforms.roughness_mult, a_e->roughness_mult);
+            glUniform1f(shader::animated_unified_uniforms.metal_mult, a_e->metal_mult);
+            glUniform1f(shader::animated_unified_uniforms.ao_mult, a_e->ao_mult);
 
             auto model = createModelMatrix(a_e->position, a_e->rotation, a_e->scale);
             auto mvp = vp * model;
-            glUniformMatrix4fv(shader::animated_unified_uniforms[shader::unified_bloom].mvp, 1, GL_FALSE, &mvp[0][0]);
-            glUniformMatrix4fv(shader::animated_unified_uniforms[shader::unified_bloom].model, 1, GL_FALSE, &model[0][0]);
+            glUniformMatrix4fv(shader::animated_unified_uniforms.mvp, 1, GL_FALSE, &mvp[0][0]);
+            glUniformMatrix4fv(shader::animated_unified_uniforms.model, 1, GL_FALSE, &model[0][0]);
 
             auto mesh = &a_e->animesh->mesh;
             glBindVertexArray(mesh->vao);
@@ -956,15 +987,15 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Texture* skybox, 
     if (entity_manager.water != NULLID) {
         auto water = (WaterEntity*)entity_manager.getEntity(entity_manager.water);
         if (water != nullptr) {
-            glUseProgram(       shader::water_programs[shader::unified_bloom]);
-            glUniform1fv(       shader::water_uniforms[shader::unified_bloom].shadow_cascade_distances, graphics::shadow_num, graphics::shadow_cascade_distances);
-            glUniform1f(        shader::water_uniforms[shader::unified_bloom].far_plane, camera.far_plane);
-            glUniform3fv(       shader::water_uniforms[shader::unified_bloom].sun_color, 1, &sun_color[0]);
-            glUniform3fv(       shader::water_uniforms[shader::unified_bloom].sun_direction, 1, &sun_direction[0]);
-            glUniform3fv(       shader::water_uniforms[shader::unified_bloom].camera_position, 1, &camera.position[0]);
-            glUniform2f(        shader::water_uniforms[shader::unified_bloom].resolution, window_width, window_height);
-            glUniform1f(        shader::water_uniforms[shader::unified_bloom].time, glfwGetTime());
-            glUniformMatrix4fv( shader::water_uniforms[shader::unified_bloom].view, 1, GL_FALSE, &camera.view[0][0]);
+            glUseProgram(       shader::water_program);
+            glUniform1fv(       shader::water_uniforms.shadow_cascade_distances, graphics::shadow_num, graphics::shadow_cascade_distances);
+            glUniform1f(        shader::water_uniforms.far_plane, camera.far_plane);
+            glUniform3fv(       shader::water_uniforms.sun_color, 1, &sun_color[0]);
+            glUniform3fv(       shader::water_uniforms.sun_direction, 1, &sun_direction[0]);
+            glUniform3fv(       shader::water_uniforms.camera_position, 1, &camera.position[0]);
+            glUniform2f(        shader::water_uniforms.resolution, window_width, window_height);
+            glUniform1f(        shader::water_uniforms.time, glfwGetTime());
+            glUniformMatrix4fv( shader::water_uniforms.view, 1, GL_FALSE, &camera.view[0][0]);
             // @debug the geometry shader and tesselation
             //glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
@@ -974,7 +1005,7 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Texture* skybox, 
             glBindTexture(GL_TEXTURE_2D, graphics::hdr_depth_copy);
             glCopyTextureSubImage2D(graphics::hdr_depth_copy, 0, 0, 0, 0, 0, window_width, window_height);
             glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, graphics::hdr_buffers[0]);
+            glBindTexture(GL_TEXTURE_2D, graphics::hdr_buffer);
             glActiveTexture(GL_TEXTURE2);
             glBindTexture(GL_TEXTURE_2D, graphics::simplex_gradient->id);
             glActiveTexture(GL_TEXTURE3);
@@ -984,11 +1015,11 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Texture* skybox, 
     
             auto model = createModelMatrix(water->position, glm::quat(), water->scale);
             auto mvp = vp * model;
-            glUniformMatrix4fv(shader::water_uniforms[shader::unified_bloom].mvp, 1, GL_FALSE, &mvp[0][0]);
-            glUniformMatrix4fv(shader::water_uniforms[shader::unified_bloom].model, 1, GL_FALSE, &model[0][0]);
-            glUniform4fv(shader::water_uniforms[shader::unified_bloom].shallow_color, 1, &water->shallow_color[0]);
-            glUniform4fv(shader::water_uniforms[shader::unified_bloom].deep_color, 1, &water->deep_color[0]);
-            glUniform4fv(shader::water_uniforms[shader::unified_bloom].foam_color, 1, &water->foam_color[0]);
+            glUniformMatrix4fv(shader::water_uniforms.mvp, 1, GL_FALSE, &mvp[0][0]);
+            glUniformMatrix4fv(shader::water_uniforms.model, 1, GL_FALSE, &model[0][0]);
+            glUniform4fv(shader::water_uniforms.shallow_color, 1, &water->shallow_color[0]);
+            glUniform4fv(shader::water_uniforms.deep_color, 1, &water->deep_color[0]);
+            glUniform4fv(shader::water_uniforms.foam_color, 1, &water->foam_color[0]);
 
             glBindVertexArray(graphics::water_grid.vao);
             glDrawElements(graphics::water_grid.draw_mode, graphics::water_grid.draw_count[0], graphics::water_grid.draw_type, 
@@ -1004,27 +1035,28 @@ void bindBackbuffer(){
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-void drawPost(int bloom_buffer_index, Texture *skybox, const Camera &camera){
+void drawPost(Texture *skybox, const Camera &camera){
     // Draw screen space quad so clearing is unnecessary
     //glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glDepthMask(GL_FALSE);
     glDisable(GL_DEPTH_TEST);
 
-    glUseProgram(shader::post_program[(int)shader::unified_bloom]);
+    glUseProgram(shader::post_programs[(int)shader::unified_bloom]);
 
     glUniform2f(shader::post_uniforms[shader::unified_bloom].resolution, window_width, window_height);
     
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, graphics::hdr_buffers[0]);
+    glBindTexture(GL_TEXTURE_2D, graphics::hdr_buffer);
 
     if(shader::unified_bloom){
         glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_2D, graphics::bloom_buffers[bloom_buffer_index]);
+        glBindTexture(GL_TEXTURE_2D, graphics::bloom_mip_infos[0].texture);
     }
 
     glActiveTexture(GL_TEXTURE2);
     glBindTexture(GL_TEXTURE_2D, graphics::hdr_depth);
 
+    // @note view uniform badly named as it is only for the skybox so must be untranslated
     auto untranslated_view = glm::mat4(glm::mat3(camera.view));
     glUniformMatrix4fv(shader::post_uniforms[shader::unified_bloom].view, 1, GL_FALSE, &untranslated_view[0][0]);
     glUniformMatrix4fv(shader::post_uniforms[shader::unified_bloom].projection, 1, GL_FALSE, &camera.projection[0][0]);
@@ -1032,5 +1064,6 @@ void drawPost(int bloom_buffer_index, Texture *skybox, const Camera &camera){
     glActiveTexture(GL_TEXTURE3);
     glBindTexture(GL_TEXTURE_CUBE_MAP, skybox->id);
 
+    // @todo there is 100% a way to do this with a quad
     drawCube();
 }

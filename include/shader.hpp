@@ -5,6 +5,27 @@
 
 #include <GLFW/glfw3.h>
 
+enum class ShaderType : uint16_t {
+    _NULL = 0,
+    ANIMATED_NULL,
+    UNIFIED,
+    ANIMATED_UNIFIED,
+    WATER,
+    GAUSSIAN_BLUR,
+    PLANE_PROJECTION,
+    JFA,
+    JFA_DISTANCE,
+    POST,
+    DEBUG,
+    SKYBOX,
+    DEPTH_ONLY,
+    VEGETATION,
+    DOWNSAMPLE,
+    UPSAMPLE,
+    NUM_TYPES,
+};
+
+
 GLuint loadShader(std::string vertex_fragment_file_path, std::string macro_prepends, bool geometry);
 void loadNullShader(std::string path);
 void loadAnimatedNullShader(std::string path);
@@ -16,28 +37,14 @@ void loadPostShader(std::string path);
 void loadDebugShader(std::string path);
 void loadSkyboxShader(std::string path);
 void loadVegetationShader(std::string path);
+void loadDownsampleShader(std::string path);
+void loadUpsampleShader(std::string path);
+void loadShader(std::string path, ShaderType type);
 void deleteShaderPrograms();
 
 namespace shader {
 	extern bool unified_bloom;
 
-    enum class TYPE {
-        NULL_SHADER = 0,
-        ANIMATED_NULL_SHADER,
-        UNIFIED_SHADER,
-        ANIMATED_UNIFIED_SHADER,
-        WATER_SHADER,
-        GAUSSIAN_BLUR_SHADER,
-        PLANE_PROJECTION_SHADER,
-        JFA_SHADER,
-        JFA_DISTANCE_SHADER,
-        POST_SHADER,
-        DEBUG_SHADER,
-        SKYBOX_SHADER,
-        DEPTH_ONLY_SHADER,
-        VEGETATION_SHADER,
-        NUM_SHADER_TYPES,
-    };
     extern GLuint null_program;
     extern struct NullUniforms {
         GLuint model; 
@@ -46,20 +53,20 @@ namespace shader {
     extern GLuint animated_null_program;
     extern NullUniforms animated_null_uniforms;
 
-    extern GLuint unified_programs[2];
+    extern GLuint unified_program;
     extern struct UnifiedUniforms {
         GLuint mvp, model, sun_color, sun_direction, camera_position, shadow_cascade_distances, far_plane, view, albedo_mult, roughness_mult, ao_mult, metal_mult;
-    } unified_uniforms[2];
+    } unified_uniforms;
 
-    extern GLuint animated_unified_programs[2];
+    extern GLuint animated_unified_program;
     extern struct AnimatedUnifiedUniforms {
         GLuint mvp, model, sun_color, sun_direction, camera_position, shadow_cascade_distances, far_plane, view, albedo_mult, roughness_mult, ao_mult, metal_mult, bone_matrices;
-    } animated_unified_uniforms[2];
+    } animated_unified_uniforms;
 
-    extern GLuint water_programs[2];
+    extern GLuint water_program;
     extern struct WaterUniforms {
         GLuint mvp, model, view, sun_color, sun_direction, camera_position, time, shallow_color, deep_color, foam_color, resolution, shadow_cascade_distances, far_plane;
-    } water_uniforms[2];
+    } water_uniforms;
 
     extern GLuint gaussian_blur_program;
     extern struct GaussianBlurUniforms {
@@ -86,12 +93,12 @@ namespace shader {
         GLuint mvp, model, sun_direction, time, flashing, shaded, color, color_flash_to;
     } debug_uniforms;
 
-    extern GLuint post_program[2];
+    extern GLuint post_programs[2];
     extern struct PostUniforms {
         GLuint resolution, view, projection;
     } post_uniforms[2];
 
-    extern GLuint skybox_programs[2];
+    extern GLuint skybox_program;
     extern struct SkyboxUniforms {
         GLuint view, projection;
     } skybox_uniforms;
@@ -106,8 +113,13 @@ namespace shader {
 		GLuint mvp, time;
 	} vegetation_uniforms;
 
+	extern GLuint downsample_program;
+	extern struct DownsampleUniforms {
+		GLuint resolution;
+	} downsample_uniforms;
+
+	extern GLuint upsample_program;
 }
 
-void loadShader(std::string path, shader::TYPE type);
 
 #endif
