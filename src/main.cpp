@@ -35,6 +35,7 @@ GLFWwindow* window;
 #include "editor.hpp"
 #include "assets.hpp"
 #include "entities.hpp"
+#include "level.hpp"
 
 // Defined in globals.hpp
 std::string glsl_version;
@@ -219,14 +220,11 @@ int main() {
     veg->texture = asset_manager.createTexture("data/textures/extern/Leaves/Leaves_Pine_Texture.png");
     asset_manager.loadTexture(veg->texture, veg->texture->handle, GL_RGBA);*/
 
-    auto anim_entity = (AnimatedMeshEntity*)entity_manager.createEntity(ANIMATED_MESH_ENTITY);
-    anim_entity->animesh = asset_manager.createAnimatedMesh("data/models/extern/dancing_vampire/dancing_vampire.fbx");
-    asset_manager.loadAnimatedMeshAssimp(anim_entity->animesh, anim_entity->animesh->handle);
-    if (anim_entity->play("Armature|dance", 0.0, 1.0, true));
+    //auto anim_entity = (AnimatedMeshEntity*)entity_manager.createEntity(ANIMATED_MESH_ENTITY);
+    //anim_entity->animesh = asset_manager.createAnimatedMesh("data/models/extern/dancing_vampire/dancing_vampire.fbx");
+    //asset_manager.loadAnimatedMeshAssimp(anim_entity->animesh, anim_entity->animesh->handle);
+    //anim_entity->play("Armature|dance", 0.0, 1.0, true);
 
-    /*std::array<std::string,6> skybox_paths = {"data/textures/cloudy/bluecloud_ft.jpg", "data/textures/cloudy/bluecloud_bk.jpg",
-                                              "data/textures/cloudy/bluecloud_up.jpg", "data/textures/cloudy/bluecloud_dn.jpg",
-                                              "data/textures/cloudy/bluecloud_rt.jpg", "data/textures/cloudy/bluecloud_lf.jpg"};*/
     std::array<std::string, 6> skybox_paths = { "data/textures/simple_skybox/0006.png", "data/textures/simple_skybox/0002.png",
                                                 "data/textures/simple_skybox/0005.png", "data/textures/simple_skybox/0004.png",
                                                 "data/textures/simple_skybox/0003.png", "data/textures/simple_skybox/0001.png" };

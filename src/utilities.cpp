@@ -1,5 +1,3 @@
-#include <glm/glm.hpp>
-#include <glm/gtc/quaternion.hpp>
 #include <limits>
 #include <thread>
 #include <vector>
@@ -7,36 +5,17 @@
 #include <set>
 #include <unordered_map>
 #include <iostream>
-#include "assets.hpp"
-#include "entities.hpp"
-#include "glm/detail/type_mat.hpp"
-#include "glm/detail/type_vec.hpp"
-#include "glm/fwd.hpp"
-#include "glm/gtc/matrix_transform.hpp"
-#include "globals.hpp"
-#include "graphics.hpp"
+
+#include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
+#include <glm/detail/type_mat.hpp>
+#include <glm/detail/type_vec.hpp>
+#include <glm/fwd.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+
 #include "utilities.hpp"
-#include "texture.hpp"
-
-template<typename T, glm::precision P>
-std::ostream &operator<<(std::ostream &os, const glm::tvec1<T, P> &v) {
-    return os << v.x;
-}
-
-template<typename T, glm::precision P>
-std::ostream &operator<<(std::ostream &os, const glm::tvec2<T, P> &v) {
-    return os << v.x << ", " << v.y;
-}
-
-template<typename T, glm::precision P>
-std::ostream &operator<<(std::ostream &os, const glm::tvec3<T, P> &v) {
-    return os << v.x << ", " << v.y << ", " << v.z;
-}
-
-template<typename T, glm::precision P>
-std::ostream &operator<<(std::ostream &os, const glm::tvec4<T, P> &v) {
-    return os << v.x << ", " << v.y << ", " << v.z << ", " << v.w;
-}
+#include "assets.hpp"
+#include "graphics.hpp"
 
 float linearstep(float e1, float e2, float x) {
     return (x - e1) / (e2 - e1);
@@ -126,188 +105,6 @@ void checkGLError(std::string identifier)
 
     std::cerr << "An internal OpenGL call failed in at '" + identifier + "' " +
                        "Error '" + error + "' description: " + description + "\n";
-}
-
-void saveLevel(EntityManager & entity_manager, const std::string & level_path, const Camera &camera){
-    std::cout << "----------- Saving Level " << level_path << "----------\n";
-
-    // @todo handle nullptr on mesh
-    std::set<Mesh*> used_meshes;
-    for(int i = 0; i < ENTITY_COUNT; i++){
-        auto e = entity_manager.entities[i];
-        if(e == nullptr || !(e->type & EntityType::MESH_ENTITY)) continue;
-        auto m_e = reinterpret_cast<MeshEntity*>(e);
-
-        used_meshes.emplace(m_e->mesh);
-    }
-
-    FILE *f;
-    f=fopen(level_path.c_str(), "wb");
-
-    // @note uses extra memory because writes matrices
-    fwrite(&camera, sizeof(camera), 1, f);
-
-    // Construct map between mesh pointers and index
-    std::unordered_map<intptr_t, uint64_t> asset_lookup;
-    uint64_t index = 0;
-    for(const auto &mesh : used_meshes){
-        asset_lookup[(intptr_t)mesh] = index;
-        fwrite(mesh->handle.data(), mesh->handle.size(), 1, f);
-
-        // std strings are not null terminated so add it
-        fputc('\0', f);
-        ++index;
-    }
-
-    // Write extra null terminator to signal end of asset paths
-    fputc('\0', f);
-
-    for(int i = 0; i < ENTITY_COUNT; i++){
-        auto e = entity_manager.entities[i];
-        if(e == nullptr || e->type == ENTITY) continue;
-
-        fwrite(&e->type, sizeof(EntityType), 1, f);
-
-        // Handle resource pointers with path lut
-        if(e->type & MESH_ENTITY) {
-            auto m_e = (MeshEntity*)e;
-
-            // Hacky way of writing pointers by mapping to indexes into a list
-            auto mesh = m_e->mesh;
-            
-            auto lookup = asset_lookup[reinterpret_cast<intptr_t>(mesh)];
-            m_e->mesh = reinterpret_cast<Mesh*>(lookup);
-
-            fwrite(e, entitySize(e->type), 1, f);
-                   
-            // Restore real pointer
-            m_e->mesh = mesh;
-        }
-        // Write entities which contain no pointers
-        else {
-            fwrite(e, entitySize(e->type), 1, f);
-        }
-    }
-
-    fclose(f);
-}
-
-// Overwrites existing entity indices
-// @todo if needed make loading asign new ids such that connections are maintained
-// @todo any entities that store ids must be resolved so that invalid ie wrong versions are NULLID 
-// since we dont maintain version either
-bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const std::string &level_path, Camera &camera) {
-    std::cout << "---------- Loading Level " << level_path << "----------\n";
-
-    FILE *f;
-    f=fopen(level_path.c_str(),"rb");
-
-    if (!f) {
-        // @debug
-        std::cerr << "Error in reading level file at path: " << level_path << ".\n";
-        return false;
-    }
-
-    entity_manager.clear();
-
-    fread(&camera, sizeof(camera), 1, f);
-
-    std::string mesh_path;
-    uint64_t mesh_index = 0;
-    std::unordered_map<uint64_t, Mesh*> index_to_mesh;
-
-    char c;
-    while((c = fgetc(f)) != EOF){
-        if(c == '\0'){
-            // Reached end of paths
-            if(mesh_path == "") break;
-
-            auto mesh = asset_manager.getMesh(mesh_path);
-            // Asset not loaded already so load from file 
-            if(mesh == nullptr){
-                std::cout << "Loading new mesh at path " << mesh_path << ".\n";
-
-                // In future this should probably be true for all meshes
-                mesh = asset_manager.createMesh(mesh_path);
-                if (endsWith(mesh_path, ".mesh")) {
-                    asset_manager.loadMeshFile(mesh, mesh_path);
-                }
-                else {
-                    std::cerr << "Warning, new mesh is being loaded with assimp\n";
-                    asset_manager.loadMeshAssimp(mesh, mesh_path);
-                }
-
-                index_to_mesh[mesh_index] = mesh;
-            } else {
-                std::cout << "Using existing asset at path " << mesh_path << ".\n";
-                index_to_mesh[mesh_index] = mesh;
-            }
-
-            mesh_path = "";
-            mesh_index++;
-        } else {
-            mesh_path += c;
-        }
-    }
-
-    while((c = fgetc(f)) != EOF){
-        ungetc(c, f);
-        // If needed we can write id as well to maintain during saves
-        EntityType type;
-        fread(&type, sizeof(EntityType), 1, f);
-
-        std::cout << "Reading entity of type " << type << ":\n";
-        if(type & WATER_ENTITY)
-        {
-            auto e = (WaterEntity*)allocateEntity(NULLID, type);
-            fread(e, entitySize(type), 1, f);
-            if(entity_manager.water == NULLID) {
-                entity_manager.setEntity(entity_manager.getFreeId().i, e);
-                entity_manager.water = e->id;
-            } else {
-                free(e);
-                std::cerr << "Duplicate water in level, skipping\n";
-            }
-        }
-        // Handle resource pointers with path lut
-        else if(type & MESH_ENTITY)
-        {
-            auto e = allocateEntity(NULLID, type);
-            fread(e, entitySize(type), 1, f);
-            entity_manager.setEntity(entity_manager.getFreeId().i, e);
-
-            auto m_e = (MeshEntity*)e;
-            
-            // Convert asset index to ptr
-            auto file_asset_index = reinterpret_cast<uint64_t>(m_e->mesh);
-            m_e->mesh = index_to_mesh[file_asset_index];
-
-            std::cout << "\tAsset index is " << file_asset_index << ".\n";
-            std::cout << "\tPosition is " << m_e->position << ".\n";
-        }
-        else
-        {
-            auto e = allocateEntity(NULLID, type);
-            fread(e, entitySize(type), 1, f);
-            entity_manager.setEntity(entity_manager.getFreeId().i, e);
-        }
-    }
-    fclose(f);
-
-    // Update water collision map
-    if (entity_manager.water != NULLID) {
-        // @todo make better systems for determining when to update shadow map
-        auto water = (WaterEntity*)entity_manager.getEntity(entity_manager.water);
-        if (water != nullptr) {
-            bindDrawWaterColliderMap(entity_manager, water);
-            blurWaterFbo(water);
-        }
-        else {
-            entity_manager.water = NULLID;
-        }
-    }
-
-    return true;
 }
 
 // @perf These could probably be made more efficient

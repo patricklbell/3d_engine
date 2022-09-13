@@ -19,6 +19,7 @@
 #include "utilities.hpp"
 #include "globals.hpp"
 #include "assets.hpp"
+#include "utilities.hpp"
 
 namespace controls {
     glm::vec2 scroll_offset;

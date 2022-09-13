@@ -70,6 +70,30 @@ void initDefaultMaterial(AssetManager &asset_manager){
     default_material->t_ambient->handle   = "DEFAULT:ambient";
 }
 
+std::ostream &operator<<(std::ostream &os, const Texture &t) {
+    if(t.is_color) {
+        os << std::string("color (") << t.color  << std::string(")");
+    } else {
+        os << std::string("texture (path: ") << t.handle << std::string(")");
+    }
+    return os;
+}
+
+std::ostream &operator<<(std::ostream &os, const Material &m) {
+    if(m.t_albedo != nullptr) 
+        os << std::string("\tAlbedo: ")    << *m.t_albedo << std::string("\n");
+    if(m.t_ambient != nullptr) 
+        os << std::string("\tAmbient: ")   << *m.t_ambient << std::string("\n");
+    if(m.t_roughness != nullptr) 
+        os << std::string("\tRoughness: ") << *m.t_roughness << std::string("\n");
+    if(m.t_metallic != nullptr) 
+        os << std::string("\tMetallic: ")  << *m.t_metallic << std::string("\n");
+    if(m.t_normal != nullptr) 
+        os << std::string("\tNormal: ")    << *m.t_normal;
+
+    return os;
+}
+
 //
 // ----------------------------------- Mesh ------------------------------------
 //
@@ -98,8 +122,8 @@ Mesh::~Mesh(){
     free(draw_count);
 }
 
-constexpr uint8_t MESH_FILE_VERSION = 3U;
-constexpr uint8_t MESH_FILE_MAGIC   = 75432957982158794U;
+constexpr uint16_t MESH_FILE_VERSION = 3U;
+constexpr uint16_t MESH_FILE_MAGIC   = 7543U;
 // For now dont worry about size of types on different platforms
 bool AssetManager::writeMeshFile(const Mesh *mesh, const std::string &path){
     std::cout << "--------------------Save Mesh " << path << "--------------------\n";
@@ -146,7 +170,7 @@ bool AssetManager::writeMeshFile(const Mesh *mesh, const std::string &path){
         else {
             uint8_t len = tex->handle.size();
             fwrite(&len, sizeof(len), 1, f);
-            fwrite(tex->handle.c_str(), tex->handle.size(), 1, f);
+            fwrite(tex->handle.data(), len, 1, f);
         }
     };
     for(int i = 0; i < mesh->num_materials; i++){
@@ -339,8 +363,7 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
         read_texture(mat.t_metallic, default_material->t_metallic);
         read_texture(mat.t_roughness, default_material->t_roughness);
 
-        std::cout << "Material " << i << "\nAlbedo: " << mat.t_albedo->handle << ", Normal: " << mat.t_normal->handle 
-            << ", Ambient: " << mat.t_ambient->handle << ", Metallic: " << mat.t_metallic->handle << ", Roughness: " << mat.t_roughness->handle << "\n";
+        std::cout << "Material " << i << ": \n" << mat << "\n";
     }
 
 #if DO_MULTITHREAD 
@@ -424,7 +447,7 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
         if (!loadTextureFromAssimp(mat.t_albedo, ai_mat, scene, aiTextureType_BASE_COLOR, GL_RGB16F)) {
             // If base color isnt present assume diffuse is really an albedo
             if (!loadTextureFromAssimp(mat.t_albedo, ai_mat, scene, aiTextureType_DIFFUSE, GL_RGB16F)) {
-                aiColor4D col(0.f, 0.f, 0.f, 1.0f);
+                aiColor4D col(1.f, 0.f, 1.f, 1.0f);
                 bool flag = true;
                 if (ai_mat->Get(AI_MATKEY_BASE_COLOR, col) != AI_SUCCESS) {
                     if (ai_mat->Get(AI_MATKEY_COLOR_DIFFUSE, col) != AI_SUCCESS) {
@@ -436,9 +459,11 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
                     auto color = glm::vec3(col.r, col.g, col.b);
 
                     aiColor3D emission_color;
+                    // @todo proper emissive color/texture
                     if (ai_mat->Get(AI_MATKEY_COLOR_EMISSIVE, emission_color) == AI_SUCCESS) {
                         auto ec = glm::vec3(emission_color.r, emission_color.g, emission_color.b);
-                        if (ec.length() != 0) {
+                        std::cout << "Emissive color is " << ec << "\n";
+                        if (glm::length(ec) > 1) {
                             color *= ec;
                         }
                     }
@@ -489,6 +514,8 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
                 mat.t_normal = default_material->t_normal;
             }
         }
+
+        std::cout << "Material " << i << ": \n" << mat << "\n";
     }
 
     // Allocate arrays for each mesh 
@@ -500,7 +527,7 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
 
     mesh->material_indices = reinterpret_cast<decltype(mesh->material_indices)>(malloc(sizeof(*mesh->material_indices) * mesh->num_meshes));
 
-    mesh->attributes = MESH_ATTRIBUTES_VERTICES;
+    mesh->attributes = (MeshAttributes)(MESH_ATTRIBUTES_VERTICES | MESH_ATTRIBUTES_NORMALS | MESH_ATTRIBUTES_TANGENTS | MESH_ATTRIBUTES_UVS);
     mesh->num_indices  = 0;
     mesh->num_vertices = 0;
 	for (int i = 0; i < mesh->num_meshes; ++i) {
@@ -516,29 +543,48 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
 
         mesh->transforms[i] = aiMat4x4ToGlm(ai_meshes_global_transforms[i]);
 
-        if (ai_mesh->mNormals != NULL) {
-            mesh->attributes = (MeshAttributes)(mesh->attributes | MESH_ATTRIBUTES_NORMALS);
+        if (ai_mesh->mNormals == NULL) {
+            mesh->attributes = (MeshAttributes)(mesh->attributes ^ MESH_ATTRIBUTES_NORMALS);
         }
-        if (ai_mesh->mTangents != NULL) {
-            mesh->attributes = (MeshAttributes)(mesh->attributes | MESH_ATTRIBUTES_TANGENTS);
+        if (ai_mesh->mTangents == NULL) {
+            mesh->attributes = (MeshAttributes)(mesh->attributes ^ MESH_ATTRIBUTES_TANGENTS);
         }
-        if (ai_mesh->mTextureCoords[0] != NULL) {
-            mesh->attributes = (MeshAttributes)(mesh->attributes | MESH_ATTRIBUTES_UVS);
+        if (ai_mesh->mTextureCoords[0] == NULL) {
+            mesh->attributes = (MeshAttributes)(mesh->attributes ^ MESH_ATTRIBUTES_UVS);
         }
 	}
+    std::cout << "Mesh attributes are " << (int)mesh->attributes << "\n";
+    std::cout << "Number of vertices is " << mesh->num_vertices << "\n";
 
+    bool mallocs_failed = false;
     mesh->vertices = reinterpret_cast<decltype(mesh->vertices)>(malloc(sizeof(*mesh->vertices)*mesh->num_vertices));
+    mallocs_failed |= mesh->vertices == NULL;
 
-    if (mesh->attributes & MESH_ATTRIBUTES_NORMALS)
+    if (mesh->attributes & MESH_ATTRIBUTES_NORMALS) {
         mesh->normals  = reinterpret_cast<decltype(mesh->normals )>(malloc(sizeof(*mesh->normals )*mesh->num_vertices));
-    if (mesh->attributes & MESH_ATTRIBUTES_TANGENTS)
+        mallocs_failed |= mesh->normals == NULL;
+    }
+    if (mesh->attributes & MESH_ATTRIBUTES_TANGENTS) {
         mesh->tangents = reinterpret_cast<decltype(mesh->tangents)>(malloc(sizeof(*mesh->tangents)*mesh->num_vertices));
-    if (mesh->attributes & MESH_ATTRIBUTES_UVS)
+        mallocs_failed |= mesh->normals == NULL;
+    }
+    if (mesh->attributes & MESH_ATTRIBUTES_UVS) {
         mesh->uvs      = reinterpret_cast<decltype(mesh->uvs     )>(malloc(sizeof(*mesh->uvs     )*mesh->num_vertices));
+        mallocs_failed |= mesh->uvs == NULL;
+    }
 
     mesh->indices  = reinterpret_cast<decltype(mesh->indices )>(malloc(sizeof(*mesh->indices )*mesh->num_indices));
+    mallocs_failed |= mesh->indices == NULL;
 
-    std::cout << "Mesh attributes are " << (int)mesh->attributes << "\n";
+    if(mallocs_failed) {
+        std::cerr << "Mallocs failed in mesh loader, freeing mesh\n";
+        free(mesh->vertices);
+        free(mesh->normals);
+        free(mesh->tangents);
+        free(mesh->uvs);
+        free(mesh->indices);
+        return false;
+    }
 
     int vertices_offset = 0, indices_offset = 0;
     for (int j = 0; j < mesh->num_meshes; ++j) {
@@ -697,14 +743,13 @@ static void extractBoneWeightsFromAiMesh(AnimatedMesh *animesh, aiMesh* ai_mesh,
         }
         assert(bone_id != -1);
 
-
         for (int weight_i = 0; weight_i < ai_bone->mNumWeights; ++weight_i) {
             auto& ai_weight = ai_bone->mWeights[weight_i];
 
             uint64_t vertex_id = ai_weight.mVertexId;
             float weight       = ai_weight.mWeight;
 
-            assert(vertex_id <= vertex_offset + animesh->mesh.num_vertices && vertex_id >= 0);
+            assert(vertex_id >= 0); // @todo
             setAnimatedMeshBoneData(&animesh->mesh, vertex_offset + vertex_id, bone_id, weight);
         }
     }
@@ -794,9 +839,16 @@ bool AssetManager::loadAnimatedMeshAssimp(AnimatedMesh* animesh, const std::stri
     // 
     // Extract per vertex bone ids and weights
     //
-    mesh.attributes = (MeshAttributes)(mesh.attributes | MESH_ATTRIBUTES_BONES);
     mesh.bone_ids = reinterpret_cast<decltype(mesh.bone_ids)>(malloc(sizeof(*mesh.bone_ids) * mesh.num_vertices));
     mesh.weights  = reinterpret_cast<decltype(mesh.weights) >(malloc(sizeof(*mesh.weights ) * mesh.num_vertices));
+    if(mesh.bone_ids == NULL || mesh.weights == NULL) {
+        std::cerr << "Mallocs failed in animated mesh loader, freeing bone weights and ids\n";
+        free(mesh.bone_ids);
+        free(mesh.weights);
+        createMeshVao(&mesh);
+        return false;
+    }
+    mesh.attributes = (MeshAttributes)(mesh.attributes | MESH_ATTRIBUTES_BONES);
     // Fill bone ids with -1 as a flag that this id is unmapped @note type dependant
     for (uint64_t i = 0; i < mesh.num_vertices; ++i) {
         mesh.bone_ids[i] = glm::ivec4(-1);
@@ -813,7 +865,6 @@ bool AssetManager::loadAnimatedMeshAssimp(AnimatedMesh* animesh, const std::stri
         vertex_offset += ai_mesh->mNumVertices;
     }
     createMeshVao(&mesh);
-
 
     //
     // Proccess each bone and each animation's keyframes
@@ -876,8 +927,8 @@ bool AssetManager::loadAnimatedMeshAssimp(AnimatedMesh* animesh, const std::stri
     return true;
 }
 
-constexpr uint8_t ANIMATION_FILE_VERSION = 3U;
-constexpr uint8_t ANIMATION_FILE_MAGIC   = 453291346190468431U;
+constexpr uint16_t ANIMATION_FILE_VERSION = 0U;
+constexpr uint16_t ANIMATION_FILE_MAGIC   = 32891U;
 static bool writeAnimationFile(const AnimatedMesh* animesh, const std::string& path) {
     std::cout << "--------------------Save Mesh " << path << "--------------------\n";
 
@@ -1164,9 +1215,6 @@ bool AssetManager::loadTextureFromAssimp(Texture *&tex, aiMaterial *mat, const a
             return true;
         }
     }
-    /*else {
-        std::cout << "Failed to get texture type: " << texture_type << " from assimp\n";
-    }*/
 	return false;
 }
 

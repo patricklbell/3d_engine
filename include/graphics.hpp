@@ -3,7 +3,6 @@
 
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
-
 #include <glm/glm.hpp>
 
 #include "assets.hpp"
@@ -32,7 +31,7 @@ struct PointLight {
 };
 
 struct Camera {
-    enum TYPE { 
+    enum TYPE : uint8_t { 
         TRACKBALL = 0,
         SHOOTER = 1,
         STATIC = 2,

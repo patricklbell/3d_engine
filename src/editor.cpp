@@ -36,6 +36,7 @@
 #include "assets.hpp"
 #include "controls.hpp"
 #include "entities.hpp"
+#include "level.hpp"
 
 namespace editor {
     EditorMode editor_mode = EditorMode::ENTITY;

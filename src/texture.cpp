@@ -90,6 +90,7 @@ GLuint loadImage(const std::string &imagepath, const GLint internal_format) {
 	return createGLTextureFromData(&img, internal_format);
 }
 
+// std array is expected to list {front, back, up, down, right, left}?
 GLuint loadCubemap(const std::array<std::string, FACE_NUM_FACES> &paths, const GLint internal_format) {
 	GLuint texture_id;
 

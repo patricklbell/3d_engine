@@ -56,15 +56,16 @@ add_definitions(
 
 
 set(SOURCES 
+	src/utilities.cpp
 	src/main.cpp
 	src/shader.cpp
 	src/texture.cpp
-	src/utilities.cpp
 	src/controls.cpp
 	src/editor.cpp
 	src/graphics.cpp
 	src/assets.cpp
 	src/entities.cpp
+	src/level.cpp
 
     external/imgui/imgui_draw.cpp
     external/imgui/imgui_impl_glfw.cpp

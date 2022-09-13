@@ -27,6 +27,15 @@
 #include <soloud_wav.h>
 #include <soloud_wavstream.h>
 
+enum AssetType : char {
+    MESH_ASSET = 0,
+    ANIMATED_MESH_ASSET,
+    TEXTURE_ASSET,
+    COLOR_ASSET,
+    AUDIO_ASSET,
+    NONE_ASSET,
+};
+
 struct Material;
 
 enum MeshAttributes : char {
@@ -237,7 +246,7 @@ struct AssetManager {
     bool loadMeshAssimp(Mesh *mesh, const std::string &path);
     bool loadMeshFile(Mesh *mesh, const std::string &path);
     static bool writeMeshFile(const Mesh *mesh, const std::string &path);
-    bool AssetManager::loadMeshAssimpScene(Mesh* mesh, const std::string& path, const aiScene* scene, 
+    bool loadMeshAssimpScene(Mesh* mesh, const std::string& path, const aiScene* scene, 
         const std::vector<aiMesh*>& ai_meshes, const std::vector<aiMatrix4x4>& ai_meshes_global_transforms);
 
     AnimatedMesh* createAnimatedMesh(const std::string& handle);
@@ -278,4 +287,6 @@ struct Material {
 extern Material* default_material;
 void initDefaultMaterial(AssetManager &asset_manager);
 
+std::ostream &operator<<(std::ostream &os, const Texture &t);
+std::ostream &operator<<(std::ostream &os, const Material &m);
 #endif

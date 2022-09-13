@@ -33,7 +33,6 @@ enum EntityType : uint64_t {
     VEGETATION_ENTITY       = 1 << 3,
     ANIMATED_MESH_ENTITY    = 1 << 4,
 };
-
 struct Entity {
     EntityType type = ENTITY;
     Id id;
@@ -41,17 +40,20 @@ struct Entity {
     }
 };
 
+
 struct MeshEntity : Entity {
+    glm::vec3 position      = glm::vec3(0.0);
+    glm::quat rotation      = glm::quat(0.0,0.0,0.0,1.0);
+    glm::mat3 scale         = glm::mat3(1.0);
+
     Mesh* mesh = nullptr;
+
     glm::vec3 albedo_mult = glm::vec3(1.0);
     float roughness_mult = 1.0;
     float metal_mult = 1.0;
     float ao_mult = 1.0;
 
-    glm::vec3 position      = glm::vec3(0.0);
-    glm::quat rotation      = glm::quat(0.0,0.0,0.0,1.0);
-    glm::mat3 scale         = glm::mat3(1.0);
-    bool casts_shadow = true;
+    uint8_t casts_shadow = true;
 
     MeshEntity(Id _id=NULLID) : Entity(_id){
         type = EntityType::MESH_ENTITY;
@@ -60,25 +62,26 @@ struct MeshEntity : Entity {
 
 
 struct AnimatedMeshEntity : Entity {
+    glm::vec3 position = glm::vec3(0.0);
+    glm::quat rotation = glm::quat(0.0, 0.0, 0.0, 1.0);
+    glm::mat3 scale = glm::mat3(1.0);
+
     AnimatedMesh* animesh = nullptr;
     // Produced by traversing node tree and updated per tick
     std::array<glm::mat4, MAX_BONES> final_bone_matrices = { glm::mat4(1.0f) };
-
-    float current_time = 0.0f;
-    float time_scale = 1.0f;
-    bool loop = false;
-    bool playing = false;
-    AnimatedMesh::Animation* animation = nullptr;
 
     glm::vec3 albedo_mult = glm::vec3(1.0);
     float roughness_mult = 1.0;
     float metal_mult = 1.0;
     float ao_mult = 1.0;
 
-    glm::vec3 position = glm::vec3(0.0);
-    glm::quat rotation = glm::quat(0.0, 0.0, 0.0, 1.0);
-    glm::mat3 scale = glm::mat3(1.0);
     bool casts_shadow = true;
+
+    float current_time = 0.0f;
+    float time_scale = 1.0f;
+    bool loop = false;
+    bool playing = false;
+    AnimatedMesh::Animation* animation = nullptr;
 
     AnimatedMeshEntity(Id _id = NULLID) : Entity(_id) {
         type = EntityType::ANIMATED_MESH_ENTITY;
@@ -88,9 +91,11 @@ struct AnimatedMeshEntity : Entity {
     bool play(const std::string& name, float start_time, float _time_scale, bool _loop);
 };
 
+
 struct WaterEntity : Entity {
     glm::vec3 position = glm::vec3(0.0);
     glm::mat3 scale    = glm::mat3(1.0);
+
     glm::vec4 shallow_color = glm::vec4(0.20, 0.7, 1.0, 1.0);
     glm::vec4 deep_color    = glm::vec4(0.08, 0.4, 0.8, 1.0);
     glm::vec4 foam_color    = glm::vec4(1.0,  1.0, 1.0, 1.0);
@@ -105,7 +110,8 @@ struct ColliderEntity : MeshEntity {
     glm::vec3 collider_position  = glm::vec3(0.0);
     glm::quat collider_rotation  = glm::quat(0.0, 0.0, 0.0, 1.0);
     glm::mat3 collider_scale     = glm::mat3(1.0);
-    bool selectable = false;
+
+    uint8_t selectable = false;
 
     ColliderEntity(Id _id = NULLID) : MeshEntity(_id) {
         type = EntityType::COLLIDER_ENTITY;
@@ -121,7 +127,7 @@ struct VegetationEntity : Entity {
     glm::mat3 scale         = glm::mat3(1.0);
 
     // @todo implement shadow casting
-    bool casts_shadow = true;
+    uint8_t casts_shadow = true;
 
     VegetationEntity(Id _id=NULLID) : Entity(_id){
         type = EntityType::VEGETATION_ENTITY;
@@ -132,16 +138,17 @@ struct VegetationEntity : Entity {
 
 inline Entity *allocateEntity(Id id, EntityType type){
     switch (type) {
-        case ANIMATED_MESH_ENTITY:
-            return new AnimatedMeshEntity(id);
-        case VEGETATION_ENTITY:
-            return new VegetationEntity(id);
-        case COLLIDER_ENTITY:
-            return new ColliderEntity(id);
         case MESH_ENTITY:
             return new MeshEntity(id);
         case WATER_ENTITY:
             return new WaterEntity(id);
+        case COLLIDER_ENTITY:
+            return new ColliderEntity(id);
+        case VEGETATION_ENTITY:
+            return new VegetationEntity(id);
+        case ANIMATED_MESH_ENTITY:
+            return new AnimatedMeshEntity(id);
+
         default:
             return new Entity(id);
     }
@@ -158,9 +165,13 @@ inline constexpr size_t entitySize(EntityType type){
             return sizeof(MeshEntity);
         case WATER_ENTITY:
             return sizeof(WaterEntity);
+
         default:
             return sizeof(Entity);
     }
+}
+inline constexpr bool entityInherits(EntityType derived, EntityType base) {
+    return (derived & base) == base; 
 }
 
 inline Entity* copyEntity(Entity* src) {

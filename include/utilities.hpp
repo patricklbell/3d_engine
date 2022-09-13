@@ -18,22 +18,28 @@
 #include "graphics.hpp"
 
 template<typename T, glm::precision P>
-std::ostream& operator<<(std::ostream& os, const glm::tvec1<T, P>& v);
+std::ostream &operator<<(std::ostream &os, const glm::tvec1<T, P> &v) {
+    return os << v.x;
+}
 
 template<typename T, glm::precision P>
-std::ostream &operator<<(std::ostream &os, const glm::tvec2<T, P> &v);
+std::ostream &operator<<(std::ostream &os, const glm::tvec2<T, P> &v) {
+    return os << v.x << ", " << v.y;
+}
 
 template<typename T, glm::precision P>
-std::ostream &operator<<(std::ostream &os, const glm::tvec3<T, P> &v);
+std::ostream &operator<<(std::ostream &os, const glm::tvec3<T, P> &v) {
+    return os << v.x << ", " << v.y << ", " << v.z;
+}
 
 template<typename T, glm::precision P>
-std::ostream &operator<<(std::ostream &os, const glm::tvec4<T, P> &v);
+std::ostream &operator<<(std::ostream &os, const glm::tvec4<T, P> &v) {
+    return os << v.x << ", " << v.y << ", " << v.z << ", " << v.w;
+}
 
 float linearstep(float e1, float e2, float x);
-std::vector<std::string> split(std::string s, std::string delimiter);
 
-void saveLevel(EntityManager& entity_manager, const std::string& level_path, const Camera &camera);
-bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const std::string &level_path, Camera& camera);
+std::vector<std::string> split(std::string s, std::string delimiter);
 
 void checkGLError(std::string identifier="");
 
