@@ -487,6 +487,7 @@ void loadDownsampleShader(std::string path){
 
 	// Grab uniforms to modify during rendering
 	downsample_uniforms.resolution = glGetUniformLocation(downsample_program, "resolution");
+	downsample_uniforms.is_mip0    = glGetUniformLocation(downsample_program, "is_mip0");
 
 	glUseProgram(downsample_program);
 	// Set fixed locations for textures in GL_TEXTUREi

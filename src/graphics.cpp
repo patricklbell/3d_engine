@@ -748,9 +748,14 @@ void blurBloomFbo(){
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, graphics::hdr_buffer);
 
-    for(const auto &mip : graphics::bloom_mip_infos) {
+    for(int i = 0; i < graphics::bloom_mip_infos.size(); ++i) {
+        const auto &mip = graphics::bloom_mip_infos[i];
+
         glViewport(0, 0, mip.size.x, mip.size.y);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mip.texture, 0);
+
+        int is_mip0 = i == graphics::bloom_mip_infos.size() - 1;
+        glUniform1i(shader::downsample_uniforms.is_mip0, is_mip0);
 
         drawQuad();
 

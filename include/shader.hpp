@@ -115,7 +115,7 @@ namespace shader {
 
 	extern GLuint downsample_program;
 	extern struct DownsampleUniforms {
-		GLuint resolution;
+		GLuint resolution, is_mip0;
 	} downsample_uniforms;
 
 	extern GLuint upsample_program;
