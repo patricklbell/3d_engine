@@ -15,6 +15,8 @@ uniform mat4 mvp;
 uniform mat4 shadow_mvp;
 uniform float time;
 
+#define WAVE_SPEED 0.1f
+
 vec3 gwaves(in vec3 v) {
     const int wn = 3;
     const vec2  d[wn] = {normalize(vec2(0.2, 0.4)), normalize(vec2(0.3, 0.2)), normalize(vec2(0.5, 0.1))};
@@ -25,7 +27,7 @@ vec3 gwaves(in vec3 v) {
 
     vec3 res = v;
     for(int i = 0; i < wn; i++){
-        float c1 = dot(w[i]*d[i], v.xz) + p[i]*time;
+        float c1 = dot(w[i]*d[i], v.xz) + p[i]*time*WAVE_SPEED;
         float c2 = q[i]*a[i];
         res.x += c2*d[i].x * v.x*cos(c1);
         res.z += c2*d[i].y * v.z*cos(c1);
@@ -192,6 +194,7 @@ uniform vec4 deep_color;
 uniform vec4 foam_color;
 
 uniform float time;
+#define WAVE_SPEED 0.1f
 
 #load lib/pbr.gl
 
@@ -215,7 +218,7 @@ vec3 dgwaves(in vec3 v) {
     vec3 n = vec3(0.0, 10.0, 0.0);
     for(int i = 0; i < wn; i++){
         float wa = w[i]*a[i];
-        float cs = w[i]*dot(d[i], v.xz) + p[i]*time;
+        float cs = w[i]*dot(d[i], v.xz) + p[i]*time*WAVE_SPEED;
         float s = sin(cs);
         float c = cos(cs);
 
@@ -290,8 +293,7 @@ void main(){
     col = mix(col, foam_color, foam_dif);
 
     vec3 albedo = col.xyz;
-    vec3 normal = normalize(dgwaves(vs_in.vertex));
-    normal += 0.1*n1;
+    vec3 normal = dgwaves(vs_in.vertex);
     //normal.z += 0.6*foam_dif; // @todo derivative
     normal = normalize(normal);
 

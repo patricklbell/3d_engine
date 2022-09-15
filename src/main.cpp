@@ -8,6 +8,7 @@
 #include <map>
 #include <filesystem>
 #include <thread>
+#include <random>
 
 // Include GLEW
 #include <GL/glew.h>
@@ -222,10 +223,18 @@ int main() {
     veg->texture = asset_manager.createTexture("data/textures/extern/Leaves/Leaves_Pine_Texture.png");
     asset_manager.loadTexture(veg->texture, veg->texture->handle, GL_RGBA);*/
 
-    //auto anim_entity = (AnimatedMeshEntity*)entity_manager.createEntity(ANIMATED_MESH_ENTITY);
-    //anim_entity->animesh = asset_manager.createAnimatedMesh("data/models/extern/dancing_vampire/dancing_vampire.fbx");
-    //asset_manager.loadAnimatedMeshAssimp(anim_entity->animesh, anim_entity->animesh->handle);
-    //anim_entity->play("Armature|dance", 0.0, 1.0, true);
+    auto anim_entity = (AnimatedMeshEntity*)entity_manager.createEntity(ANIMATED_MESH_ENTITY);
+
+    /*anim_entity->animesh = asset_manager.createAnimatedMesh("data/models/extern/dancing_vampire/dancing_vampire.fbx");
+    asset_manager.loadAnimatedMeshAssimp(anim_entity->animesh, anim_entity->animesh->handle);
+    asset_manager.writeMeshFile(&anim_entity->animesh->mesh, "data/mesh/dancing_vampire.mesh");
+    asset_manager.writeAnimationFile(anim_entity->animesh, "data/anim/dancing_vampire.anim");*/
+
+    anim_entity->animesh = asset_manager.createAnimatedMesh("data/anim/dancing_vampire.anim");
+    asset_manager.loadMeshFile(&anim_entity->animesh->mesh, "data/mesh/dancing_vampire.mesh");
+    asset_manager.loadAnimationFile(anim_entity->animesh, "data/anim/dancing_vampire.anim");
+
+    anim_entity->play("Armature|dance", 0.0, 1.0, true);
 
     std::array<std::string, 6> skybox_paths = { "data/textures/simple_skybox/0006.png", "data/textures/simple_skybox/0002.png",
                                                 "data/textures/simple_skybox/0005.png", "data/textures/simple_skybox/0004.png",
@@ -276,7 +285,7 @@ int main() {
                 } 
             }
         }
-        entity_manager.tickAnimatedMeshes(dt);
+        entity_manager.tickAnimatedMeshes(true_dt);
 
         bindDrawShadowMap(entity_manager, camera);
 

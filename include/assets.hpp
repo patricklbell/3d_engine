@@ -252,7 +252,7 @@ struct AssetManager {
     AnimatedMesh* createAnimatedMesh(const std::string& handle);
     bool loadAnimatedMeshAssimp(AnimatedMesh* animesh, const std::string& path);
     // Note that these don't load/save any mesh or bone weights
-    bool loadAnimationFile(AnimatedMesh* animesh, const std::string& path);
+    static bool loadAnimationFile(AnimatedMesh* animesh, const std::string& path);
     static bool writeAnimationFile(const AnimatedMesh* animesh, const std::string& path);
 
     //bool loadMtl(std::unordered_map<std::string, Material *> &material_map, const std::string &path);
@@ -262,7 +262,7 @@ struct AssetManager {
     Texture* createTexture(const std::string &handle);
     bool loadTextureFromAssimp(Texture *&tex, aiMaterial* mat, const aiScene* scene, aiTextureType texture_type, GLint internal_format=GL_RGB16F);
     static bool loadTexture(Texture *tex, const std::string &path, GLint internal_format=GL_RGB16F);
-    static bool loadCubemapTexture(Texture *tex, const std::array<std::string,FACE_NUM_FACES> &paths, GLint internal_format=GL_RGB16F);
+    static bool loadCubemapTexture(Texture *tex, const std::array<std::string, FACE_NUM_FACES> &paths, GLint internal_format=GL_RGB16F);
 
     Audio* createAudio(const std::string& handle);
 

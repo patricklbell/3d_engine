@@ -643,6 +643,7 @@ aiProcess_Triangulate |
 aiProcess_GenNormals |
 aiProcess_CalcTangentSpace |
 aiProcess_GenUVCoords |
+aiProcess_FlipUVs |
 //aiProcess_RemoveComponent (remove colors) |
 aiProcess_ImproveCacheLocality |
 aiProcess_RemoveRedundantMaterials |
@@ -929,7 +930,7 @@ bool AssetManager::loadAnimatedMeshAssimp(AnimatedMesh* animesh, const std::stri
 
 constexpr uint16_t ANIMATION_FILE_VERSION = 0U;
 constexpr uint16_t ANIMATION_FILE_MAGIC   = 32891U;
-static bool writeAnimationFile(const AnimatedMesh* animesh, const std::string& path) {
+bool AssetManager::writeAnimationFile(const AnimatedMesh* animesh, const std::string& path) {
     std::cout << "--------------------Save Mesh " << path << "--------------------\n";
 
     FILE* f;
@@ -949,8 +950,12 @@ static bool writeAnimationFile(const AnimatedMesh* animesh, const std::string& p
 
     fwrite(&animesh->global_transform, sizeof(animesh->global_transform), 1, f);
 
-    fwrite(&animesh->bone_node_list[0], sizeof(animesh->bone_node_list[0]), animesh->bone_node_list.size(), f);
+    uint64_t num_nodes = animesh->bone_node_list.size();
+    fwrite(&num_nodes, sizeof(num_nodes), 1, f);
+    fwrite(&animesh->bone_node_list[0], sizeof(animesh->bone_node_list[0]), num_nodes, f);
 
+    uint64_t num_animations = animesh->name_animation_map.size();
+    fwrite(&num_animations, sizeof(num_animations), 1, f);
     for (const auto& na : animesh->name_animation_map) {
         auto& name = na.first;
         uint16_t name_len = name.size();
@@ -962,8 +967,21 @@ static bool writeAnimationFile(const AnimatedMesh* animesh, const std::string& p
         fwrite(&animation.ticks_per_second, sizeof(animation.ticks_per_second), 1, f);
 
         fwrite(&animation.num_bone_keyframes, sizeof(animation.num_bone_keyframes), 1, f);
-        fwrite(&animation.bone_keyframes[0], sizeof(animation.bone_keyframes[0]), animesh->num_bones, f);
+        for (uint64_t j = 0; j < animation.num_bone_keyframes; ++j) {
+            auto& keyframe = animation.bone_keyframes[j];
 
+            fwrite(&keyframe.id, sizeof(keyframe.id), 1, f);
+            fwrite(&keyframe.local_transformation, sizeof(keyframe.local_transformation), 1, f);
+            fwrite(&keyframe.num_position_keys, sizeof(keyframe.num_position_keys), 1, f);
+            fwrite(&keyframe.num_rotation_keys, sizeof(keyframe.num_rotation_keys), 1, f);
+            fwrite(&keyframe.num_scale_keys   , sizeof(keyframe.num_scale_keys   ), 1, f);
+            fwrite(keyframe.position_keys, sizeof(keyframe.position_keys[0]), keyframe.num_position_keys, f);
+            fwrite(keyframe.rotation_keys, sizeof(keyframe.rotation_keys[0]), keyframe.num_rotation_keys, f);
+            fwrite(keyframe.scale_keys   , sizeof(keyframe.scale_keys   [0]), keyframe.num_scale_keys   , f);
+        }
+
+        uint64_t num_bone_id_indices = animation.bone_id_keyframe_index_map.size();
+        fwrite(&num_bone_id_indices, sizeof(num_bone_id_indices), 1, f);
         for (const auto& bk : animation.bone_id_keyframe_index_map) {
             fwrite(&bk.first,  sizeof(bk.first ), 1, f);
             fwrite(&bk.second, sizeof(bk.second), 1, f);
@@ -974,8 +992,96 @@ static bool writeAnimationFile(const AnimatedMesh* animesh, const std::string& p
     return true;
 }
 
-bool loadAnimationFile(AnimatedMesh* animesh, const std::string& path) {
-    return true;
+bool AssetManager::loadAnimationFile(AnimatedMesh* animesh, const std::string& path) {
+    std::cout << "----------------Loading Animation File " << path << "----------------\n";
+
+    FILE* f;
+    f = fopen(path.c_str(), "rb");
+    if (!f) {
+        std::cerr << "Error in reading mesh file " << path << "\n.";
+        return false;
+    }
+
+    std::remove_cv_t<decltype(ANIMATION_FILE_MAGIC)> magic;
+    fread(&magic, sizeof(magic), 1, f);
+    if (magic != ANIMATION_FILE_MAGIC) {
+        std::cerr << "Invalid animation file magic, was " << magic << " expected " << ANIMATION_FILE_MAGIC << ".\n";
+        return false;
+    }
+
+    std::remove_cv_t<decltype(ANIMATION_FILE_VERSION)> version;
+    fread(&version, sizeof(version), 1, f);
+    if (version != ANIMATION_FILE_VERSION) {
+        std::cerr << "Invalid animation file version, was " << version << " expected " << ANIMATION_FILE_VERSION << ".\n";
+        return false;
+    }
+
+    fread(&animesh->num_bones, sizeof(animesh->num_bones), 1, f);
+
+    animesh->bone_offsets.resize(animesh->num_bones);
+    animesh->bone_names.resize(animesh->num_bones);
+    fread(&animesh->bone_offsets[0], sizeof(animesh->bone_offsets[0]), animesh->num_bones, f);
+    fread(&animesh->bone_names[0], sizeof(animesh->bone_names[0]), animesh->num_bones, f); // @debug
+
+    fread(&animesh->global_transform, sizeof(animesh->global_transform), 1, f);
+
+    uint64_t num_nodes;
+    fread(&num_nodes, sizeof(num_nodes), 1, f);
+
+    animesh->bone_node_list.resize(num_nodes);
+    fread(&animesh->bone_node_list[0], sizeof(animesh->bone_node_list[0]), animesh->bone_node_list.size(), f);
+
+    uint64_t num_animations;
+    fread(&num_animations, sizeof(num_animations), 1, f);
+    for (uint64_t i = 0; i < num_animations; ++i) {
+        uint16_t name_len;
+        fread(&name_len, sizeof(name_len), 1, f);
+
+        std::string animation_name;
+        animation_name.resize(name_len);
+        fread(&animation_name[0], 1, name_len, f);
+
+        auto& animation = animesh->name_animation_map[animation_name];
+        animation.name = animation_name;
+        fread(&animation.duration, sizeof(animation.duration), 1, f);
+        fread(&animation.ticks_per_second, sizeof(animation.ticks_per_second), 1, f);
+
+        fread(&animation.num_bone_keyframes, sizeof(animation.num_bone_keyframes), 1, f);
+        
+        animation.bone_keyframes = reinterpret_cast<decltype(animation.bone_keyframes)>(malloc(sizeof(*animation.bone_keyframes) * animation.num_bone_keyframes));
+        for (uint64_t j = 0; j < animation.num_bone_keyframes; ++j) {
+            auto& keyframe = animation.bone_keyframes[j];
+
+            fread(&keyframe.id, sizeof(keyframe.id), 1, f);
+            fread(&keyframe.local_transformation, sizeof(keyframe.local_transformation), 1, f);
+            fread(&keyframe.num_position_keys, sizeof(keyframe.num_position_keys), 1, f);
+            fread(&keyframe.num_rotation_keys, sizeof(keyframe.num_rotation_keys), 1, f);
+            fread(&keyframe.num_scale_keys, sizeof(keyframe.num_scale_keys), 1, f);
+
+            keyframe.position_keys = reinterpret_cast<decltype(keyframe.position_keys)>(malloc(sizeof(*keyframe.position_keys) * keyframe.num_position_keys));
+            keyframe.rotation_keys = reinterpret_cast<decltype(keyframe.rotation_keys)>(malloc(sizeof(*keyframe.rotation_keys) * keyframe.num_rotation_keys));
+            keyframe.scale_keys    = reinterpret_cast<decltype(keyframe.scale_keys   )>(malloc(sizeof(*keyframe.scale_keys   ) * keyframe.num_scale_keys   ));
+            fread(keyframe.position_keys, sizeof(keyframe.position_keys[0]), keyframe.num_position_keys, f);
+            fread(keyframe.rotation_keys, sizeof(keyframe.rotation_keys[0]), keyframe.num_rotation_keys, f);
+            fread(keyframe.scale_keys, sizeof(keyframe.scale_keys[0]), keyframe.num_scale_keys, f);
+
+            keyframe.prev_position_key = 0;
+            keyframe.prev_rotation_key = 0;
+            keyframe.prev_scale_key    = 0;
+        }
+
+        uint64_t num_bone_id_indices;
+        fread(&num_bone_id_indices, sizeof(num_bone_id_indices), 1, f);
+        for (uint64_t j = 0; j < num_bone_id_indices; ++j) {
+            uint64_t id, index;
+            fread(&id, sizeof(id), 1, f);
+            fread(&index, sizeof(index), 1, f);
+
+            animation.bone_id_keyframe_index_map[id] = index;
+        }
+    }
+
+    fclose(f);
 }
 
 static glm::vec3 interpolateBonesKeyframesPosition(AnimatedMesh::BoneKeyframes& keyframes, float time, bool looping) {

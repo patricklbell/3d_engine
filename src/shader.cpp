@@ -283,9 +283,10 @@ void loadPostShader(std::string path){
 		if(!attemptLoadShader(post_programs[i], path, macros[i])) 
 			return;
 
-		post_uniforms[i].resolution = glGetUniformLocation(post_programs[i], "resolution");
-		post_uniforms[i].projection = glGetUniformLocation(post_programs[i], "projection");
-		post_uniforms[i].view		= glGetUniformLocation(post_programs[i], "view");
+		post_uniforms[i].inverse_projection_untranslated_view = glGetUniformLocation(post_programs[i], "inverse_projection_untranslated_view");
+		post_uniforms[i].resolution			= glGetUniformLocation(post_programs[i], "resolution");
+		post_uniforms[i].projection			= glGetUniformLocation(post_programs[i], "projection");
+		post_uniforms[i].tan_half_fov		= glGetUniformLocation(post_programs[i], "tan_half_fov");
 
 		glUseProgram(post_programs[i]);
 		// Set fixed locations for textures in GL_TEXTUREi

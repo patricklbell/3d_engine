@@ -3,21 +3,24 @@
 layout (location = 0) in vec3 in_position;
 layout (location = 1) in vec2 in_texcoord;
 
-
 out VS_FS {
     vec3 position;
+    vec2 view_ray;
+    vec2 texcoord;
 } vs_out;
 
 uniform vec2 resolution;
-uniform mat4 view;
-uniform mat4 projection;
+uniform float tan_half_fov;
 
-void main()
-{
+void main() {
     vs_out.position = in_position;
-    gl_Position = projection * view * vec4(in_position, 1.0);
-    // @optimize? because part of multiplication is not needed
-    gl_Position.z = gl_Position.w;
+
+    const float aspect_ratio = resolution.x / resolution.y;
+    vs_out.view_ray = vec2(in_position.x*aspect_ratio*tan_half_fov, in_position.y*tan_half_fov);
+
+    gl_Position = vec4(in_position, 1.0);
+
+    vs_out.texcoord = in_texcoord;
 }
 #endif
 
@@ -27,16 +30,44 @@ void main()
 
 in VS_FS {
     vec3 position;
+    vec2 view_ray;
+    vec2 texcoord;
 } vs_in;
 
 out vec4 out_color;
 
+
 uniform vec2 resolution;
+uniform mat4 inverse_projection_untranslated_view;
+
 uniform sampler2D screen_map;
 uniform sampler2D depth_map;
 #ifdef BLOOM
 const float BLOOM_STRENGTH = 0.04f;
 uniform sampler2D bloom_map;
+#endif
+#define SSAO 0
+// Very ghetto ssao that needs work
+#if SSAO
+uniform mat4 projection;
+const int AO_MAX_KERNEL_SIZE = 64;
+const float AO_SAMPLE_RADIUS = 0.1;
+// Code to generate ao_kernel
+//std::random_device rd; // obtain a random number from hardware
+//std::mt19937 gen(rd()); // seed the generator
+//std::uniform_real_distribution<> distr(-1, 1); // define the range
+//std::uniform_real_distribution<> distr2(0, 1); // define the range
+//for (int i = 0; i < 64; ++i) {
+//    glm::vec3 random_vector = glm::normalize(glm::vec3(distr(gen), distr(gen), distr2(gen)));
+//    random_vector *= distr2(gen);
+//    float scale = float(i) / float(64);
+//    float t = glm::mix(0.1f, 1.0f, scale * scale);
+//    random_vector = random_vector * t;
+//    std::cout << "vec3(" << random_vector << "), ";
+//}
+const vec3 ao_kernel[64] = {
+    vec3(0.0373406, 0.0122081, 0.00243057), vec3(-0.00503597, -0.00715785, 0.00424425), vec3(0.0203578, 0.0587954, 0.0297278), vec3(-0.00681434, 0.0268028, 0.0433335), vec3(-0.0439737, 0.0176514, 0.0122535), vec3(-0.00341573, -0.0554793, 0.0477233), vec3(-7.18759e-05, -0.0175515, 0.00304739), vec3(0.0432174, -0.00734478, 0.0777663), vec3(0.0385759, -0.00166619, 0.0313466), vec3(0.0656093, -0.0414814, 0.0391349), vec3(-0.0747055, -0.0353039, 0.0639407), vec3(-0.00844945, 0.0075601, 0.0109479), vec3(0.0396255, -0.0693224, 0.0873658), vec3(0.0296603, -0.0281473, 0.00998741), vec3(-0.0363591, -0.054137, 0.0137274), vec3(-0.00134769, -0.0998662, 0.0694838), vec3(0.00179341, 0.000218298, 0.00155268), vec3(-0.0750242, 0.0979118, 0.00354298), vec3(0.0588792, 0.0832054, 0.0946417), vec3(-0.0247771, -0.0123608, 0.140685), vec3(-0.0504664, -0.102383, 0.0137935), vec3(0.0479323, -0.010614, 0.000414395), vec3(0.0429127, 0.0676389, 0.0584885), vec3(-0.0205706, -0.130932, 0.0873127), vec3(-0.0763954, 0.0693974, 0.0025651), vec3(0.0392227, -0.160876, 0.0241396), vec3(-0.0193343, -0.151142, 0.152328), vec3(0.109917, 0.106882, 0.125177), vec3(0.0230932, -0.0305792, 0.0326354), vec3(-0.00152914, -0.0018517, 0.00291618), vec3(0.0752254, -0.107237, 0.0301785), vec3(0.126854, 0.127189, 0.0449808), vec3(-0.151894, 0.205365, 0.120098), vec3(0.00178655, 0.00327084, 0.0044552), vec3(0.0301479, 0.0192293, 0.00704896), vec3(0.00914694, 0.20196, 0.194868), vec3(-0.0556878, 0.133273, 0.0303549), vec3(0.214447, -0.140212, 0.195373), vec3(-0.123617, -0.15502, 0.0313221), vec3(-0.149386, -0.0277089, 0.0364906), vec3(0.0971169, -0.110375, 0.103481), vec3(0.355368, -0.0468491, 0.00900307), vec3(-0.300856, 0.0594146, 0.148527), vec3(-0.0764616, -0.393959, 0.290049), vec3(0.173241, -0.0999699, 0.143868), vec3(-0.240792, 0.0675253, 0.156477), vec3(0.146109, -0.158179, 0.146962), vec3(0.0122482, -0.0294594, 0.0113633), vec3(-0.229832, 0.259291, 0.390351), vec3(0.0325702, -0.00783508, 0.0398777), vec3(-0.0521683, -0.0571021, 0.00649676), vec3(-0.3498, 0.452148, 0.261255), vec3(0.169717, 0.290796, 0.135511), vec3(0.642768, 0.0646419, 0.148149), vec3(0.120856, 0.11658, 0.0982047), vec3(0.264666, 0.545325, 0.0320975), vec3(-0.435102, 0.421348, 0.0158116), vec3(0.42311, -0.353223, 0.3732), vec3(-0.00332944, -0.00746772, 0.000218203), vec3(-0.174439, 0.459001, 0.303564), vec3(0.223277, 0.232611, 0.706141), vec3(-0.0899752, 0.130744, 0.163061), vec3(0.668455, -0.0589811, 0.112877), vec3(0.0187402, 0.0476154, 0.0703876)
+};
 #endif
 
 uniform samplerCube skybox;
@@ -95,12 +126,6 @@ vec4 fxaa(sampler2D tex, vec2 coord) {
 }
 #endif
 
-vec4 texsample(sampler2D tex, vec2 coord) {
-    vec2 inverse_vp = vec2(1.0 / resolution.x, 1.0 / resolution.y);
-    
-    return texture(tex, coord * inverse_vp);
-}
-
 #define NEAR            0.1
 #define FAR             100.0
 float depthToDist(float d){
@@ -126,22 +151,55 @@ vec3 reinhard_tonemap(vec3 x)
      return x / (x + vec3(1.0));
 }
 
+#if SSAO
+float noise2d(vec2 co){
+  return fract(sin(dot(co.xy ,vec2(1.0,73))) * 43758.5453);
+}
+#endif
+
 void main()
 {
-    float dist = depthToDist(texsample(depth_map, gl_FragCoord.xy).r);
 #if FXAA
     vec3 hdr_color = fxaa(screen_map, gl_FragCoord.xy).xyz;
 #else
-    vec3 hdr_color = texsample(screen_map, gl_FragCoord.xy).xyz;
+    vec3 hdr_color = texture(screen_map, vs_in.texcoord).xyz;
 #endif
 
 #ifdef BLOOM
     // Don't fxaa bloom since it is blurred
-    vec3 bloom_color = texsample(bloom_map, gl_FragCoord.xy).rgb;
+    vec3 bloom_color = texture(bloom_map, vs_in.texcoord).rgb;
     hdr_color = mix(hdr_color, bloom_color, BLOOM_STRENGTH);
 #endif
 
-    vec3 skybox_color = texture(skybox, vs_in.position).xyz;
+    float dist = depthToDist(texture(depth_map, vs_in.texcoord).r);
+    vec3 position = dist*vec3(vs_in.view_ray, 1.0);
+
+#if SSAO
+    float AO = 0.0;
+    for (int i = 0; i < AO_MAX_KERNEL_SIZE ; i++) {
+        vec3 noise = vec3(noise2d(vs_in.texcoord*ao_kernel[i].x), noise2d(523.8902350*vs_in.texcoord + ao_kernel[i].y*vec2(23.0)), noise2d(23.123*vs_in.texcoord+vec2(0.1)));
+        vec3 sample_pos = position + normalize(vec3(3.0) + noise)*ao_kernel[i];
+        vec4 offset = vec4(sample_pos, 1.0);
+        offset = projection * offset;
+        offset.xy /= offset.w;
+        offset.xy = vec2(0.5) - offset.xy * 0.5;
+
+        float sample_dist = depthToDist(texture(depth_map, offset.xy).r);
+
+        if (abs(dist - sample_dist) < float(AO_SAMPLE_RADIUS)) {
+            AO += step(sample_dist, sample_pos.z);
+        }
+    }
+
+    AO = 1.0 - AO/float(AO_MAX_KERNEL_SIZE);
+    AO = AO*AO;
+
+    hdr_color *= AO;
+#endif
+
+    vec4 world_position = inverse_projection_untranslated_view*vec4(vs_in.position,1.0);
+    world_position.xyz /= world_position.w;
+    vec3 skybox_color = texture(skybox, world_position.xyz).xyz;
     
     const float fog_near = FAR - 80.0;
     const float fog_far = FAR;

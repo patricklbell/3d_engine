@@ -53,7 +53,7 @@ void tickAnimatedMesh(AnimatedMeshEntity& entity, float time, bool looping) {
 // Returns true if animation is playing
 bool AnimatedMeshEntity::tick(float dt) {
     if (animation != nullptr && playing) {
-        current_time += dt * time_scale;
+        current_time += dt * time_scale * animation->ticks_per_second;
         if (current_time >= animation->duration) {
             if (loop) {
                 //std::cout << "Looping animation\n";

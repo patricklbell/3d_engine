@@ -95,7 +95,7 @@ namespace shader {
 
     extern GLuint post_programs[2];
     extern struct PostUniforms {
-        GLuint resolution, view, projection;
+        GLuint resolution, projection, tan_half_fov, inverse_projection_untranslated_view;
     } post_uniforms[2];
 
     extern GLuint skybox_program;
