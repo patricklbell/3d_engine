@@ -37,10 +37,10 @@ vec3 pow_vec3(vec3 v, float p)
     return vec3(pow(v.x, p), pow(v.y, p), pow(v.z, p));
 }
 
-const float invGamma = 1.0 / 2.2;
-vec3 to_srgb(vec3 v) { return pow_vec3(v, invGamma); }
+const float inv_gamma = 1.0 / 1.6;
+vec3 to_srgb(vec3 v) { return pow_vec3(v, inv_gamma); }
 
-float RGBToLuminance(vec3 col)
+float rgb_to_luminance(vec3 col)
 {
     return dot(col, vec3(0.2126f, 0.7152f, 0.0722f));
 }
@@ -48,7 +48,7 @@ float RGBToLuminance(vec3 col)
 float karis_average(vec3 col)
 {
     // Formula is 1 / (1 + luma)
-    float luma = RGBToLuminance(to_srgb(col)) * 0.25f;
+    float luma = rgb_to_luminance(to_srgb(col)) * 0.25f;
     return 1.0f / (1.0f + luma);
 }
 #endif

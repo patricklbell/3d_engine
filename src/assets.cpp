@@ -1082,6 +1082,8 @@ bool AssetManager::loadAnimationFile(AnimatedMesh* animesh, const std::string& p
     }
 
     fclose(f);
+
+    return true;
 }
 
 static glm::vec3 interpolateBonesKeyframesPosition(AnimatedMesh::BoneKeyframes& keyframes, float time, bool looping) {
