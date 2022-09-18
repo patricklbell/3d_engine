@@ -1,4 +1,4 @@
-uniform sampler2DArray shadow_map;
+layout(binding = 5) uniform sampler2DArray shadow_map;
 layout(std140, binding=0) uniform ShadowVP 
 {
     mat4 shadow_vps[CASCADE_NUM + 1];

@@ -88,6 +88,7 @@ struct AnimatedMeshEntity : Entity {
     }
 
     bool tick(float dt);
+    void init();
     bool play(const std::string& name, float start_time, float _time_scale, bool _loop);
 };
 

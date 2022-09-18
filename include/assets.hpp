@@ -97,7 +97,7 @@ struct Mesh {
 struct AnimatedMesh {
     std::string handle;
 
-    Mesh mesh;
+    Mesh *mesh;
     ~AnimatedMesh(); // Frees C arrays
 
     uint64_t num_bones = 0;

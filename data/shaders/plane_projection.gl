@@ -1,12 +1,12 @@
 #ifdef COMPILING_VS
 layout (location = 0) in vec3 vertex;
 
-uniform mat4 m;
+uniform mat4 model;
 
 void main()
 {
     // transforms vertex into grid space
-    gl_Position = m * vec4(vertex, 1.0);
+    gl_Position = model * vec4(vertex, 1.0);
 }
 #endif
 

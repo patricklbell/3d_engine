@@ -67,18 +67,18 @@ layout (location = 0) out vec4 out_color;
 layout (location = 1) out vec4 out_bloom_color; 
 #endif
 
-uniform sampler2D normal_map;
-uniform sampler2D albedo_map;
+layout(binding = 0) uniform sampler2D albedo_map;
+layout(binding = 1) uniform sampler2D normal_map;
 uniform vec3 albedo_mult;
 
 
 #ifdef PBR
-uniform sampler2D ao_map;
-uniform float ao_mult;
-uniform sampler2D metallic_map;
+layout(binding = 2) uniform sampler2D metallic_map;
 uniform float metal_mult;
-uniform sampler2D roughness_map;
+layout(binding = 3) uniform sampler2D roughness_map;
 uniform float roughness_mult;
+layout(binding = 4) uniform sampler2D ao_map;
+uniform float ao_mult;
 #load lib/pbr.gl
 #else
 uniform float specular_int;

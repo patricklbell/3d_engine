@@ -24,7 +24,7 @@ in vec2 texcoord;
 
 out vec3 out_color;
 
-uniform sampler2D image;
+layout (location = 0) uniform sampler2D image;
 const float filter_radius = 0.005f;
 
 void main()

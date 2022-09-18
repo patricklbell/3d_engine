@@ -17,7 +17,7 @@ void main(){
 in vec2 texcoord;
 out vec4 out_color;
   
-uniform sampler2D image;
+layout(binding = 0) uniform sampler2D image;
 uniform vec2 dimensions;
 
 vec4 make_distance_transform(in vec2 fragcoord) {

@@ -7,14 +7,14 @@
 #include "entities.hpp"
 #include "assets.hpp"
 
-void tickAnimatedMesh(AnimatedMeshEntity& entity, float time, bool looping) {
+void tickAnimatedMesh(AnimatedMeshEntity& entity, float time, bool looping, bool do_animation=true) {
     auto& animesh = entity.animesh;
     auto& animation = entity.animation;
     for (auto& node : animesh->bone_node_list) {
         auto node_transform = node.local_transform; // @speed
 
         // @debug, should be covered by lookup
-        if (node.id != (uint64_t)-1) {
+        if (do_animation && node.id != (uint64_t)-1) {
             auto lu = animation->bone_id_keyframe_index_map.find(node.id);
             if (lu == animation->bone_id_keyframe_index_map.end()) {
                 std::cerr << "tickAnimatedMesh node's bone_index (" << node.id << ") was not mapped to a keyframe, skipping update\n";
@@ -70,6 +70,10 @@ bool AnimatedMeshEntity::tick(float dt) {
         return current_time < animation->duration;
     }
     return false;
+}
+
+void AnimatedMeshEntity::init() {
+    tickAnimatedMesh(*this, current_time, loop, false);
 }
 
 // Returns true if successfully found animation

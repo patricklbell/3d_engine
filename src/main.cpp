@@ -147,7 +147,7 @@ int main() {
     initAnimationUbo();
     initWaterColliderFbo();
     initHdrFbo();
-    if(shader::unified_bloom){
+    if(graphics::do_bloom){
         initBloomFbo();
     }
     initEditorGui(global_assets);
@@ -166,41 +166,7 @@ int main() {
     // 
     // Load shaders
     //
-    // Map for last update time for hotswaping files
-    std::filesystem::file_time_type empty_file_time;
-
-    struct ShaderData {
-        std::string path;
-        ShaderType type;
-        std::filesystem::file_time_type update_time;
-    };
-
-    std::vector<ShaderData> shader_update_times {
-        {"data/shaders/null_anim.gl", ShaderType::ANIMATED_NULL, empty_file_time},
-        {"data/shaders/null.gl", ShaderType::_NULL, empty_file_time},
-        {"data/shaders/unified.gl", ShaderType::UNIFIED, empty_file_time},
-        {"data/shaders/unified_anim.gl", ShaderType::ANIMATED_UNIFIED, empty_file_time},
-        {"data/shaders/water.gl", ShaderType::WATER, empty_file_time},
-        {"data/shaders/gaussian_blur.gl", ShaderType::GAUSSIAN_BLUR, empty_file_time},
-        {"data/shaders/plane_projection.gl", ShaderType::PLANE_PROJECTION, empty_file_time},
-        {"data/shaders/jump_flood.gl", ShaderType::JFA, empty_file_time},
-        {"data/shaders/jfa_to_distance.gl", ShaderType::JFA_DISTANCE, empty_file_time},
-        {"data/shaders/post.gl", ShaderType::POST, empty_file_time},
-        {"data/shaders/debug.gl", ShaderType::DEBUG, empty_file_time},
-        {"data/shaders/depth_only.gl", ShaderType::DEPTH_ONLY, empty_file_time},
-        {"data/shaders/seaweed.gl", ShaderType::VEGETATION, empty_file_time},
-        {"data/shaders/downsample.gl", ShaderType::DOWNSAMPLE, empty_file_time},
-        {"data/shaders/blur_upsample.gl", ShaderType::UPSAMPLE, empty_file_time},
-        //{"data/shaders/skybox.gl", ShaderType::SKYBOX_SHADER, empty_file_time},
-    };
-
-    // Fill in with correct file time and actually load
-    for (auto &shader: shader_update_times) {
-        if(std::filesystem::exists(shader.path)) 
-            shader.update_time = std::filesystem::last_write_time(shader.path);
-
-        loadShader(shader.path, shader.type);
-    }
+    initGlobalShaders();
 
     AssetManager asset_manager;
     EntityManager entity_manager;
@@ -226,12 +192,14 @@ int main() {
     auto anim_entity = (AnimatedMeshEntity*)entity_manager.createEntity(ANIMATED_MESH_ENTITY);
 
     /*anim_entity->animesh = asset_manager.createAnimatedMesh("data/models/extern/dancing_vampire/dancing_vampire.fbx");
+    anim_entity->animesh->mesh = asset_manager.createMesh("data/models/extern/dancing_vampire/dancing_vampire.fbx");
     asset_manager.loadAnimatedMeshAssimp(anim_entity->animesh, anim_entity->animesh->handle);
-    asset_manager.writeMeshFile(&anim_entity->animesh->mesh, "data/mesh/dancing_vampire.mesh");
+    asset_manager.writeMeshFile(anim_entity->animesh->mesh, "data/mesh/dancing_vampire.mesh");
     asset_manager.writeAnimationFile(anim_entity->animesh, "data/anim/dancing_vampire.anim");*/
 
     anim_entity->animesh = asset_manager.createAnimatedMesh("data/anim/dancing_vampire.anim");
-    asset_manager.loadMeshFile(&anim_entity->animesh->mesh, "data/mesh/dancing_vampire.mesh");
+    anim_entity->animesh->mesh = asset_manager.createMesh("data/mesh/dancing_vampire.mesh");
+    asset_manager.loadMeshFile(anim_entity->animesh->mesh, "data/mesh/dancing_vampire.mesh");
     asset_manager.loadAnimationFile(anim_entity->animesh, "data/anim/dancing_vampire.anim");
 
     anim_entity->play("Armature|dance", 0.0, 1.0, true);
@@ -268,7 +236,7 @@ int main() {
             
             initHdrFbo(true);
 
-            if(shader::unified_bloom){
+            if(graphics::do_bloom){
                 initBloomFbo(true);
             }
         }
@@ -276,19 +244,13 @@ int main() {
         // Hotswap shader files
         if(current_time - last_filesystem_hotswap_check >= 1.0){
             last_filesystem_hotswap_check = current_time;
-
-            for (auto &shader: shader_update_times) {
-                if(std::filesystem::exists(shader.path) && shader.update_time != std::filesystem::last_write_time(shader.path)){
-                    shader.update_time = std::filesystem::last_write_time(shader.path);
-
-                    loadShader(shader.path, shader.type);
-                } 
-            }
+            updateGlobalShaders();
         }
+
         entity_manager.tickAnimatedMeshes(true_dt);
 
         bindDrawShadowMap(entity_manager, camera);
-
+        checkGLError("1");
         bindHdr();
         clearFramebuffer();
         drawUnifiedHdr(entity_manager, skybox, camera);
@@ -299,13 +261,15 @@ int main() {
         else {
             handleGameControls(level_camera, entity_manager, asset_manager, true_dt);
         }
-
-        if (shader::unified_bloom) {
+        checkGLError("2");
+        if (graphics::do_bloom) {
             blurBloomFbo();
+            checkGLError("3");
         }
         bindBackbuffer();
+        checkGLError("4");
         drawPost(skybox, camera);
-
+        checkGLError("5");
         if (!playing) {
             drawEditorGui(editor_camera, level_camera, entity_manager, asset_manager);
         }
@@ -340,8 +304,6 @@ int main() {
 #if DO_MULTITHREAD
     thread_pool.stop();
 #endif
-
-    deleteShaderPrograms();    
 
     // Close OpenGL window and terminate GLFW
     glfwTerminate();

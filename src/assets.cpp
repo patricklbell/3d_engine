@@ -751,7 +751,7 @@ static void extractBoneWeightsFromAiMesh(AnimatedMesh *animesh, aiMesh* ai_mesh,
             float weight       = ai_weight.mWeight;
 
             assert(vertex_id >= 0); // @todo
-            setAnimatedMeshBoneData(&animesh->mesh, vertex_offset + vertex_id, bone_id, weight);
+            setAnimatedMeshBoneData(animesh->mesh, vertex_offset + vertex_id, bone_id, weight);
         }
     }
 }
@@ -833,39 +833,39 @@ bool AssetManager::loadAnimatedMeshAssimp(AnimatedMesh* animesh, const std::stri
     std::vector<aiMesh*> ai_meshes;
     std::vector<aiMatrix4x4> ai_transforms;
     collapseAssimpMeshScene(scene->mRootNode, scene, ai_meshes, ai_transforms, aiMatrix4x4());
-    if (!loadMeshAssimpScene(&mesh, path, scene, ai_meshes, ai_transforms)) {
+    if (!loadMeshAssimpScene(mesh, path, scene, ai_meshes, ai_transforms)) {
         return false;
     }
 
     // 
     // Extract per vertex bone ids and weights
     //
-    mesh.bone_ids = reinterpret_cast<decltype(mesh.bone_ids)>(malloc(sizeof(*mesh.bone_ids) * mesh.num_vertices));
-    mesh.weights  = reinterpret_cast<decltype(mesh.weights) >(malloc(sizeof(*mesh.weights ) * mesh.num_vertices));
-    if(mesh.bone_ids == NULL || mesh.weights == NULL) {
+    mesh->bone_ids = reinterpret_cast<decltype(mesh->bone_ids)>(malloc(sizeof(*mesh->bone_ids) * mesh->num_vertices));
+    mesh->weights  = reinterpret_cast<decltype(mesh->weights) >(malloc(sizeof(*mesh->weights ) * mesh->num_vertices));
+    if(mesh->bone_ids == NULL || mesh->weights == NULL) {
         std::cerr << "Mallocs failed in animated mesh loader, freeing bone weights and ids\n";
-        free(mesh.bone_ids);
-        free(mesh.weights);
-        createMeshVao(&mesh);
+        free(mesh->bone_ids);
+        free(mesh->weights);
+        createMeshVao(mesh);
         return false;
     }
-    mesh.attributes = (MeshAttributes)(mesh.attributes | MESH_ATTRIBUTES_BONES);
+    mesh->attributes = (MeshAttributes)(mesh->attributes | MESH_ATTRIBUTES_BONES);
     // Fill bone ids with -1 as a flag that this id is unmapped @note type dependant
-    for (uint64_t i = 0; i < mesh.num_vertices; ++i) {
-        mesh.bone_ids[i] = glm::ivec4(-1);
+    for (uint64_t i = 0; i < mesh->num_vertices; ++i) {
+        mesh->bone_ids[i] = glm::ivec4(-1);
     }
 
     // node_name_id_map shares bone ids between animations and meshes
     std::unordered_map<std::string, uint64_t> node_name_id_map;
 
     uint64_t vertex_offset = 0;
-    for (int i = 0; i < animesh->mesh.num_meshes; ++i) {
+    for (int i = 0; i < animesh->mesh->num_meshes; ++i) {
         auto& ai_mesh = ai_meshes[i];
 
         extractBoneWeightsFromAiMesh(animesh, ai_mesh, scene, node_name_id_map, vertex_offset);
         vertex_offset += ai_mesh->mNumVertices;
     }
-    createMeshVao(&mesh);
+    createMeshVao(mesh);
 
     //
     // Proccess each bone and each animation's keyframes
@@ -971,7 +971,6 @@ bool AssetManager::writeAnimationFile(const AnimatedMesh* animesh, const std::st
             auto& keyframe = animation.bone_keyframes[j];
 
             fwrite(&keyframe.id, sizeof(keyframe.id), 1, f);
-            fwrite(&keyframe.local_transformation, sizeof(keyframe.local_transformation), 1, f);
             fwrite(&keyframe.num_position_keys, sizeof(keyframe.num_position_keys), 1, f);
             fwrite(&keyframe.num_rotation_keys, sizeof(keyframe.num_rotation_keys), 1, f);
             fwrite(&keyframe.num_scale_keys   , sizeof(keyframe.num_scale_keys   ), 1, f);
@@ -1053,7 +1052,6 @@ bool AssetManager::loadAnimationFile(AnimatedMesh* animesh, const std::string& p
             auto& keyframe = animation.bone_keyframes[j];
 
             fread(&keyframe.id, sizeof(keyframe.id), 1, f);
-            fread(&keyframe.local_transformation, sizeof(keyframe.local_transformation), 1, f);
             fread(&keyframe.num_position_keys, sizeof(keyframe.num_position_keys), 1, f);
             fread(&keyframe.num_rotation_keys, sizeof(keyframe.num_rotation_keys), 1, f);
             fread(&keyframe.num_scale_keys, sizeof(keyframe.num_scale_keys), 1, f);
@@ -1065,6 +1063,7 @@ bool AssetManager::loadAnimationFile(AnimatedMesh* animesh, const std::string& p
             fread(keyframe.rotation_keys, sizeof(keyframe.rotation_keys[0]), keyframe.num_rotation_keys, f);
             fread(keyframe.scale_keys, sizeof(keyframe.scale_keys[0]), keyframe.num_scale_keys, f);
 
+            keyframe.local_transformation = glm::mat4(1.0f);
             keyframe.prev_position_key = 0;
             keyframe.prev_rotation_key = 0;
             keyframe.prev_scale_key    = 0;

@@ -175,9 +175,6 @@ layout (location = 0) out vec4 out_color;
 layout (location = 1) out vec4 out_bloom_color; 
 #endif
 
-uniform sampler2D simplex_gradient;
-uniform sampler2D simplex_value;
-uniform sampler2D collider;
 
 #load lib/shadows.gl
 
@@ -185,9 +182,12 @@ uniform vec3 sun_direction;
 uniform vec3 sun_color;
 uniform vec3 camera_position;
 
-uniform sampler2D screen_map;
-uniform sampler2D depth_map;
 uniform vec2 resolution;
+layout (binding = 0) uniform sampler2D screen_map;
+layout (binding = 1) uniform sampler2D depth_map;
+layout (binding = 2) uniform sampler2D simplex_gradient;
+layout (binding = 3) uniform sampler2D simplex_value;
+layout (binding = 4) uniform sampler2D collider;
 
 uniform vec4 shallow_color;
 uniform vec4 deep_color;

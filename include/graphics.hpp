@@ -68,9 +68,10 @@ void initWaterColliderFbo();
 void bindDrawWaterColliderMap(const EntityManager &entity_manager, WaterEntity *water);
 void distanceTransformWaterFbo(WaterEntity* water);
 
+//void drawSkybox(const Texture* skybox, const Camera &camera);
+
 void clearFramebuffer();
 void bindHdr();
-void drawSkybox(const Texture* skybox, const Camera &camera);
 void drawUnifiedHdr(const EntityManager &entity_manager, const Texture* skybox, const Camera &camera);
 
 void bindBackbuffer();
@@ -88,14 +89,14 @@ struct BloomMipInfo {
 
 constexpr int BLOOM_DOWNSAMPLES = 4;
 namespace graphics{
+    extern bool do_bloom;
     extern GLuint bloom_fbo;
     extern std::vector<BloomMipInfo> bloom_mip_infos;
 
     extern GLuint hdr_fbo;
     extern GLuint hdr_buffer;
 
-    extern const char *shadow_macro;
-    extern const char * shadow_invocation_macro;
+    extern const char * shadow_shader_macro;
     extern GLuint shadow_buffer, shadow_fbo;
 
     extern GLuint water_collider_fbos[2], water_collider_buffers[2];

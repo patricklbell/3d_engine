@@ -26,8 +26,8 @@ in vec2 texcoord;
 
 out vec3 out_color;
 
-uniform sampler2D image;
 uniform vec2 resolution;
+layout (location = 0) uniform sampler2D image;
 #define KARIS 1
 #if KARIS
 uniform int is_mip0;

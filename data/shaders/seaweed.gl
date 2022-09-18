@@ -31,7 +31,7 @@ in VS_OUT {
 
 out vec4 out_color;
 
-uniform sampler2D image;
+layout (location = 0) uniform sampler2D image;
 
 void main()
 {             
