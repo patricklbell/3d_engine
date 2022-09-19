@@ -10,6 +10,7 @@ struct Shader {
     std::string handle = "";
     std::unordered_map<std::string, GLuint> uniforms;
     GLuint program = GL_FALSE;
+    GLuint uniform(const std::string &name);
     ~Shader();
 };
 

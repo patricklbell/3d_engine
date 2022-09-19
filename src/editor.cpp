@@ -1125,13 +1125,13 @@ void drawWaterDebug(WaterEntity* w, const Camera &camera, bool flash = false){
 
     glUseProgram(shader::debug.program);
     auto mvp = camera.projection * camera.view * createModelMatrix(w->position, glm::quat(), w->scale);
-    glUniformMatrix4fv(shader::debug.uniforms["mvp"], 1, GL_FALSE, &mvp[0][0]);
-    glUniformMatrix4fv(shader::debug.uniforms["model"], 1, GL_FALSE, &w->position[0]);
-    glUniform4f(shader::debug.uniforms["color"], 1.0, 1.0, 1.0, 1.0);
-    glUniform4f(shader::debug.uniforms["color_flash_to"], 1.0, 0.0, 1.0, 1.0);
-    glUniform1f(shader::debug.uniforms["time"], glfwGetTime());
-    glUniform1f(shader::debug.uniforms["shaded"], 0.0);
-    glUniform1f(shader::debug.uniforms["flashing"], flash ? 1.0: 0.0);
+    glUniformMatrix4fv(shader::debug.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
+    glUniformMatrix4fv(shader::debug.uniform("model"), 1, GL_FALSE, &w->position[0]);
+    glUniform4f(shader::debug.uniform("color"), 1.0, 1.0, 1.0, 1.0);
+    glUniform4f(shader::debug.uniform("color_flash_to"), 1.0, 0.0, 1.0, 1.0);
+    glUniform1f(shader::debug.uniform("time"), glfwGetTime());
+    glUniform1f(shader::debug.uniform("shaded"), 0.0);
+    glUniform1f(shader::debug.uniform("flashing"), flash ? 1.0: 0.0);
 
     glBindVertexArray(graphics::water_grid.vao);
     glDrawElements(graphics::water_grid.draw_mode, graphics::water_grid.draw_count[0], graphics::water_grid.draw_type, (GLvoid*)(sizeof(GLubyte)*graphics::water_grid.draw_start[0]));
@@ -1151,13 +1151,13 @@ void drawMeshCube(const glm::vec3 &pos, const glm::quat &rot, const glm::mat3x3 
 
     glUseProgram(shader::debug.program);
     auto mvp = camera.projection * camera.view * createModelMatrix(pos, rot, scl);
-    glUniformMatrix4fv(shader::debug.uniforms["mvp"], 1, GL_FALSE, &mvp[0][0]);
-    glUniformMatrix4fv(shader::debug.uniforms["model"], 1, GL_FALSE, &pos[0]);
-    glUniform4f(shader::debug.uniforms["color"], 1.0, 1.0, 1.0, 1.0);
-    glUniform4f(shader::debug.uniforms["color_flash_to"], 1.0, 0.0, 1.0, 1.0);
-    glUniform1f(shader::debug.uniforms["time"], glfwGetTime());
-    glUniform1f(shader::debug.uniforms["shaded"], 0.0);
-    glUniform1f(shader::debug.uniforms["flashing"], 0.0);
+    glUniformMatrix4fv(shader::debug.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
+    glUniformMatrix4fv(shader::debug.uniform("model"), 1, GL_FALSE, &pos[0]);
+    glUniform4f(shader::debug.uniform("color"), 1.0, 1.0, 1.0, 1.0);
+    glUniform4f(shader::debug.uniform("color_flash_to"), 1.0, 0.0, 1.0, 1.0);
+    glUniform1f(shader::debug.uniform("time"), glfwGetTime());
+    glUniform1f(shader::debug.uniform("shaded"), 0.0);
+    glUniform1f(shader::debug.uniform("flashing"), 0.0);
 
     drawCube();
 
@@ -1172,13 +1172,13 @@ void drawFrustrum(Camera &drawn_camera, const Camera& camera) {
     auto projection = glm::perspective(drawn_camera.fov, (float)window_width / (float)window_height, drawn_camera.near_plane, 3.0f*drawn_camera.near_plane);
     auto model = glm::inverse(projection*drawn_camera.view);
     auto mvp = camera.projection * camera.view * model;
-    glUniformMatrix4fv(shader::debug.uniforms["mvp"], 1, GL_FALSE, &mvp[0][0]);
-    glUniformMatrix4fv(shader::debug.uniforms["model"], 1, GL_FALSE, &model[0][0]);
-    glUniform4f(shader::debug.uniforms["color"], 1.0, 0.0, 1.0, 0.8);
-    glUniform4f(shader::debug.uniforms["color_flash_to"], 1.0, 0.0, 1.0, 1.0);
-    glUniform1f(shader::debug.uniforms["time"], glfwGetTime());
-    glUniform1f(shader::debug.uniforms["shaded"], 0.0);
-    glUniform1f(shader::debug.uniforms["flashing"], 0.0);
+    glUniformMatrix4fv(shader::debug.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
+    glUniformMatrix4fv(shader::debug.uniform("model"), 1, GL_FALSE, &model[0][0]);
+    glUniform4f(shader::debug.uniform("color"), 1.0, 0.0, 1.0, 0.8);
+    glUniform4f(shader::debug.uniform("color_flash_to"), 1.0, 0.0, 1.0, 1.0);
+    glUniform1f(shader::debug.uniform("time"), glfwGetTime());
+    glUniform1f(shader::debug.uniform("shaded"), 0.0);
+    glUniform1f(shader::debug.uniform("flashing"), 0.0);
 
     drawLineCube();
 }
@@ -1192,11 +1192,11 @@ void drawMeshWireframe(const Mesh &mesh, const glm::vec3 &pos, const glm::quat &
     //glLineWidth(200.0);
 
     glUseProgram(shader::debug.program);
-    glUniform4f(shader::debug.uniforms["color"], 1.0, 1.0, 1.0, 1.0);
-    glUniform4f(shader::debug.uniforms["color_flash_to"], 1.0, 0.0, 1.0, 1.0);
-    glUniform1f(shader::debug.uniforms["time"], glfwGetTime());
-    glUniform1f(shader::debug.uniforms["shaded"], 0.0);
-    glUniform1f(shader::debug.uniforms["flashing"], flash ? 1.0: 0.0);
+    glUniform4f(shader::debug.uniform("color"), 1.0, 1.0, 1.0, 1.0);
+    glUniform4f(shader::debug.uniform("color_flash_to"), 1.0, 0.0, 1.0, 1.0);
+    glUniform1f(shader::debug.uniform("time"), glfwGetTime());
+    glUniform1f(shader::debug.uniform("shaded"), 0.0);
+    glUniform1f(shader::debug.uniform("flashing"), flash ? 1.0: 0.0);
 
     auto g_model = createModelMatrix(pos, rot, scl);
     auto vp = camera.projection * camera.view;
@@ -1205,8 +1205,8 @@ void drawMeshWireframe(const Mesh &mesh, const glm::vec3 &pos, const glm::quat &
     for (int j = 0; j < mesh.num_meshes; ++j) {
         auto model = mesh.transforms[j] * g_model;
         auto mvp = vp * model;
-        glUniformMatrix4fv(shader::debug.uniforms["mvp"], 1, GL_FALSE, &mvp[0][0]);
-        glUniformMatrix4fv(shader::debug.uniforms["model"], 1, GL_FALSE, &model[0][0]);
+        glUniformMatrix4fv(shader::debug.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
+        glUniformMatrix4fv(shader::debug.uniform("model"), 1, GL_FALSE, &model[0][0]);
 
         glDrawElements(mesh.draw_mode, mesh.draw_count[j], mesh.draw_type, (GLvoid*)(sizeof(*mesh.indices)*mesh.draw_start[j]));
     }
@@ -1242,12 +1242,12 @@ void drawEditor3DRing(const glm::vec3 &position, const glm::vec3 &direction, con
     glm::mat4x4 transform =  trans * rot * scl;
 
     auto mvp = camera.projection * camera.view * transform;
-    glUniformMatrix4fv(shader::debug.uniforms["mvp"], 1, GL_FALSE, &mvp[0][0]);
-    glUniformMatrix4fv(shader::debug.uniforms["model"], 1, GL_FALSE, &transform[0][0]);
-    glUniform3fv(shader::debug.uniforms["sun_direction"], 1, &sun_direction[0]);
-    glUniform4fv(shader::debug.uniforms["color"], 1, &color[0]);
-    glUniform1f(shader::debug.uniforms["shaded"], shaded ? 1.0 : 0.0);
-    glUniform1f(shader::debug.uniforms["flashing"], 0);
+    glUniformMatrix4fv(shader::debug.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
+    glUniformMatrix4fv(shader::debug.uniform("model"), 1, GL_FALSE, &transform[0][0]);
+    glUniform3fv(shader::debug.uniform("sun_direction"), 1, &sun_direction[0]);
+    glUniform4fv(shader::debug.uniform("color"), 1, &color[0]);
+    glUniform1f(shader::debug.uniform("shaded"), shaded ? 1.0 : 0.0);
+    glUniform1f(shader::debug.uniform("flashing"), 0);
     glBindVertexArray(ring_mesh.vao);
     glDrawElements(ring_mesh.draw_mode, ring_mesh.draw_count[0], ring_mesh.draw_type, (GLvoid*)(sizeof(GLubyte)*ring_mesh.draw_start[0]));
 
@@ -1280,12 +1280,12 @@ void drawEditor3DArrow(const glm::vec3 &position, const glm::vec3 &direction, co
     glm::mat4x4 transform =  trans * rot * scl;
 
     auto mvp = camera.projection * camera.view * transform;
-    glUniformMatrix4fv(shader::debug.uniforms["mvp"], 1, GL_FALSE, &mvp[0][0]);
-    glUniformMatrix4fv(shader::debug.uniforms["model"], 1, GL_FALSE, &transform[0][0]);
-    glUniform3fv(shader::debug.uniforms["sun_direction"], 1, &sun_direction[0]);
-    glUniform4fv(shader::debug.uniforms["color"], 1, &color[0]);
-    glUniform1f(shader::debug.uniforms["shaded"], shaded ? 1.0 : 0.0);
-    glUniform1f(shader::debug.uniforms["flashing"], 0);
+    glUniformMatrix4fv(shader::debug.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
+    glUniformMatrix4fv(shader::debug.uniform("model"), 1, GL_FALSE, &transform[0][0]);
+    glUniform3fv(shader::debug.uniform("sun_direction"), 1, &sun_direction[0]);
+    glUniform4fv(shader::debug.uniform("color"), 1, &color[0]);
+    glUniform1f(shader::debug.uniform("shaded"), shaded ? 1.0 : 0.0);
+    glUniform1f(shader::debug.uniform("flashing"), 0);
     if(!block){
         glBindVertexArray(arrow_mesh.vao);
         glDrawElements(arrow_mesh.draw_mode, arrow_mesh.draw_count[0], arrow_mesh.draw_type, (GLvoid*)(sizeof(GLubyte)*arrow_mesh.draw_start[0]));
@@ -1301,10 +1301,10 @@ void drawColliders(const EntityManager &entity_manager, const Camera &camera) {
     glLineWidth(0.1);
 
     glUseProgram(shader::debug.program);
-    glUniform4f(shader::debug.uniforms["color"], 0.0, 1.0, 1.0, 0.2);
-    glUniform1f(shader::debug.uniforms["time"], glfwGetTime());
-    glUniform1f(shader::debug.uniforms["shaded"], 0.0);
-    glUniform1f(shader::debug.uniforms["flashing"], 0.0);
+    glUniform4f(shader::debug.uniform("color"), 0.0, 1.0, 1.0, 0.2);
+    glUniform1f(shader::debug.uniform("time"), glfwGetTime());
+    glUniform1f(shader::debug.uniform("shaded"), 0.0);
+    glUniform1f(shader::debug.uniform("flashing"), 0.0);
 
     for (int i = 0; i < ENTITY_COUNT; ++i) {
         auto c = (ColliderEntity*)entity_manager.entities[i];
@@ -1312,8 +1312,8 @@ void drawColliders(const EntityManager &entity_manager, const Camera &camera) {
     
         auto model = glm::translate(glm::mat4x4(1.0), c->collider_position);
         auto mvp = camera.projection * camera.view * model;
-        glUniformMatrix4fv(shader::debug.uniforms["mvp"], 1, GL_FALSE, &mvp[0][0]);
-        glUniformMatrix4fv(shader::debug.uniforms["model"], 1, GL_FALSE, &model[0][0]);
+        glUniformMatrix4fv(shader::debug.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
+        glUniformMatrix4fv(shader::debug.uniform("model"), 1, GL_FALSE, &model[0][0]);
         
         drawLineCube();
     }

@@ -2,36 +2,34 @@
 layout (location = 0) in vec3 in_position;
 layout (location = 1) in vec2 in_texcoord;
 
-out VS_FS {
-    vec3 position;
-    vec2 view_ray;
-    vec2 texcoord;
-} vs_out;
+out vec3 position;
+out vec2 view_ray;
+out vec2 texcoord;
 
-uniform float tan_half_fov;
+#load lib/constants.gl
+// @hardcoded
+#define TAN_HALF_FOV tan(PI / 8.0f)
+
 uniform vec2 resolution;
 
 void main() {
-    vs_out.position = in_position;
-
+    position = in_position;
     const float aspect_ratio = resolution.x / resolution.y;
-    vs_out.view_ray = vec2(in_position.x*aspect_ratio*tan_half_fov, in_position.y*tan_half_fov);
+    view_ray = vec2(in_position.x*aspect_ratio*TAN_HALF_FOV, in_position.y*TAN_HALF_FOV);
+    texcoord = in_texcoord;
 
     gl_Position = vec4(in_position, 1.0);
-
-    vs_out.texcoord = in_texcoord;
 }
 #endif
 
 #ifdef COMPILING_FS
 
 #define FXAA 1
+#define SSAO 0
 
-in VS_FS {
-    vec3 position;
-    vec2 view_ray;
-    vec2 texcoord;
-} vs_in;
+in vec3 position;
+in vec2 view_ray;
+in vec2 texcoord;
 
 out vec4 out_color;
 
@@ -45,10 +43,9 @@ layout(binding = 1) uniform sampler2D bloom_map;
 #endif
 layout(binding = 2) uniform sampler2D depth_map;
 
-uniform mat4 projection;
-#define SSAO 0
 // Very ghetto ssao that needs work
 #if SSAO
+uniform mat4 projection;
 const int AO_MAX_KERNEL_SIZE = 64;
 const float AO_SAMPLE_RADIUS = 0.1;
 // Code to generate ao_kernel
@@ -161,23 +158,23 @@ void main()
 #if FXAA
     vec3 hdr_color = fxaa(screen_map, gl_FragCoord.xy).xyz;
 #else
-    vec3 hdr_color = texture(screen_map, vs_in.texcoord).xyz;
+    vec3 hdr_color = texture(screen_map, texcoord).xyz;
 #endif
 
-#ifdef BLOOM
+#if BLOOM
     // Don't fxaa bloom since it is blurred
-    vec3 bloom_color = texture(bloom_map, vs_in.texcoord).rgb;
+    vec3 bloom_color = texture(bloom_map, texcoord).rgb;
     hdr_color = mix(hdr_color, bloom_color, BLOOM_STRENGTH);
 #endif
 
-    float dist = depthToDist(texture(depth_map, vs_in.texcoord).r);
-    vec3 position = dist*vec3(vs_in.view_ray, 1.0);
+    float dist = depthToDist(texture(depth_map, texcoord).r);
+    vec3 fragment_position = dist*vec3(view_ray, 1.0);
 
 #if SSAO
     float AO = 0.0;
     for (int i = 0; i < AO_MAX_KERNEL_SIZE ; i++) {
-        vec3 noise = vec3(noise2d(vs_in.texcoord*ao_kernel[i].x), noise2d(523.8902350*vs_in.texcoord + ao_kernel[i].y*vec2(23.0)), noise2d(23.123*vs_in.texcoord+vec2(0.1)));
-        vec3 sample_pos = position + normalize(vec3(3.0) + noise)*ao_kernel[i];
+        vec3 noise = vec3(noise2d(texcoord*ao_kernel[i].x), noise2d(523.8902350*texcoord + ao_kernel[i].y*vec2(23.0)), noise2d(23.123*texcoord+vec2(0.1)));
+        vec3 sample_pos = fragment_position + normalize(vec3(3.0) + noise)*ao_kernel[i];
         vec4 offset = vec4(sample_pos, 1.0);
         offset = projection * offset;
         offset.xy /= offset.w;
@@ -196,7 +193,7 @@ void main()
     hdr_color *= AO;
 #endif
 
-    vec4 world_position = inverse_projection_untranslated_view*vec4(vs_in.position,1.0);
+    vec4 world_position = inverse_projection_untranslated_view*vec4(position,1.0);
     world_position.xyz /= world_position.w;
     vec3 skybox_color = texture(skybox, world_position.xyz).xyz;
     
@@ -219,4 +216,5 @@ void main()
 
     out_color = vec4(mapped, 1.0);
 } 
+
 #endif

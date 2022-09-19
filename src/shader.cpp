@@ -21,6 +21,17 @@ Shader::~Shader() {
 	glDeleteProgram(program);
 }
 
+GLuint Shader::uniform(const std::string &name) {
+	auto lu = uniforms.find(name);
+	if (lu == uniforms.end()) {
+		std::cerr << "Unknown uniform " << name << " for shader " << handle << "\n";
+		return GL_FALSE;
+	}
+	else {
+		return lu->second;
+	}
+}
+
 namespace shader {
 	Shader animated_null, null, unified, animated_unified, water, gaussian_blur,
 		plane_projection, jfa, jfa_distance, post[2], debug, depth_only, vegetation, downsample, upsample;
@@ -223,9 +234,9 @@ bool loadShader(Shader& shader, std::string_view vertex_fragment_file_path, std:
 	glGetProgramiv(shader.program, GL_ACTIVE_UNIFORMS, &count);
 	printf("Active Uniforms: %d\n", count);
 
-	GLsizei buf_size; // maximum name length
-	glGetProgramiv(shader.program, GL_ACTIVE_UNIFORM_MAX_LENGTH, &buf_size);
-	GLchar *name = (GLchar *)malloc(sizeof(GLchar) * buf_size); // variable name in GLSL
+	const GLsizei buf_size = 256; // maximum name length
+	//glGetProgramiv(shader.program, GL_ACTIVE_UNIFORM_MAX_LENGTH, &buf_size);
+	GLchar name[buf_size]; // variable name in GLSL
 	GLsizei length; // name length
 
 	GLint size; // size of the variable
