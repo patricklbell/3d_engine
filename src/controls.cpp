@@ -78,9 +78,7 @@ Entity* pickEntityWithMouse(Camera &camera, EntityManager &entity_manager) {
         }
         else if (e->type & EntityType::MESH_ENTITY) {
             auto m_e = (MeshEntity*)e;
-            if (m_e->mesh == nullptr) continue;
-
-            const auto& mesh = m_e->mesh;
+            const auto &mesh = m_e->mesh;
             const auto g_trans = createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
 
             for (int j = 0; j <= mesh->num_indices - 3; j += 3) {
@@ -103,7 +101,7 @@ Entity* pickEntityWithMouse(Camera &camera, EntityManager &entity_manager) {
                         auto collision_distance = glm::length((out_origin + out_direction * (float)t) - camera.position);
                         if (collision_distance < min_collision_distance) {
                             min_collision_distance = collision_distance;
-                            closest_e = m_e;
+                            closest_e = e;
                             camera.target = m_e->position;
                         }
                     }
@@ -509,7 +507,7 @@ static void clearNeighbour(EntityManager& entity_manager, CollisionNeighbours& n
 }
 
 void handleGameControls(Camera& camera, EntityManager& entity_manager, AssetManager& asset_manager, float dt) {
-    static bool p_key_prev          = false;
+    static bool p_key_prev          = glfwGetKey(window, GLFW_KEY_P);
     static bool backtick_key_prev   = false;
     static bool mouse_left_prev     = false;
 
@@ -562,7 +560,8 @@ void handleGameControls(Camera& camera, EntityManager& entity_manager, AssetMana
     // For now just use wireframe, in future some kind of edge detection, or saturation effect
     auto s = (ColliderEntity*)entity_manager.getEntity(selected_id);
     if (s != nullptr && (s->type & COLLIDER_ENTITY) && s->mesh != nullptr) {
-        drawMeshWireframe(*s->mesh, s->position, s->rotation, s->scale, camera, true);
+        auto g_model = createModelMatrix(s->position, s->rotation, s->scale);
+        drawMeshWireframe(*s->mesh, g_model, camera, true);
     }
 
     backtick_key_prev   = glfwGetKey(window, GLFW_KEY_GRAVE_ACCENT);

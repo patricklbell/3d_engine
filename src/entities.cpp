@@ -7,7 +7,7 @@
 #include "entities.hpp"
 #include "assets.hpp"
 
-void tickAnimatedMesh(AnimatedMeshEntity& entity, float time, bool looping, bool do_animation=true) {
+void tickAnimatedMesh(AnimatedMeshEntity& entity, float time, bool looping, const bool do_animation=true) {
     auto& animesh = entity.animesh;
     auto& animation = entity.animation;
     for (auto& node : animesh->bone_node_list) {
@@ -73,7 +73,7 @@ bool AnimatedMeshEntity::tick(float dt) {
 }
 
 void AnimatedMeshEntity::init() {
-    tickAnimatedMesh(*this, current_time, loop, false);
+    tickAnimatedMesh(*this, 0.0f, false, false);
 }
 
 // Returns true if successfully found animation

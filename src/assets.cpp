@@ -718,7 +718,7 @@ static void setAnimatedMeshBoneData(Mesh *mesh, uint64_t vertex_index, int bone_
     }
 }
 
-static void extractBoneWeightsFromAiMesh(AnimatedMesh *animesh, aiMesh* ai_mesh, const aiScene* scene, std::unordered_map<std::string, uint64_t>& node_name_id_map, uint64_t vertex_offset) {
+static void extractBoneWeightsFromAiMesh(AnimatedMesh *animesh, Mesh *mesh, aiMesh* ai_mesh, const aiScene* scene, std::unordered_map<std::string, uint64_t>& node_name_id_map, uint64_t vertex_offset) {
     for (int bone_i = 0; bone_i < ai_mesh->mNumBones; ++bone_i) {
         if (animesh->num_bones >= MAX_BONES) {
             std::cerr << "Too many bones loaded in extractBoneWeightsFromAiMesh, more than " << MAX_BONES << " exist, returning\n";
@@ -751,7 +751,7 @@ static void extractBoneWeightsFromAiMesh(AnimatedMesh *animesh, aiMesh* ai_mesh,
             float weight       = ai_weight.mWeight;
 
             assert(vertex_id >= 0); // @todo
-            setAnimatedMeshBoneData(animesh->mesh, vertex_offset + vertex_id, bone_id, weight);
+            setAnimatedMeshBoneData(mesh, vertex_offset + vertex_id, bone_id, weight);
         }
     }
 }
@@ -818,11 +818,10 @@ static void createBoneKeyframesFromAi(AnimatedMesh::BoneKeyframes &keyframes, ui
     }
 }
 
-bool AssetManager::loadAnimatedMeshAssimp(AnimatedMesh* animesh, const std::string& path) {
+bool AssetManager::loadAnimatedMeshAssimp(AnimatedMesh* animesh, Mesh *mesh, const std::string& path) {
     std::cout << "-------------------- Loading Animated Model " << path.c_str() << " With Assimp --------------------\n";
 
     Assimp::Importer importer;
-    auto& mesh = animesh->mesh;
 
     const aiScene* scene = importer.ReadFile(path, ai_import_flags | aiProcess_LimitBoneWeights);
     if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode) {
@@ -859,10 +858,10 @@ bool AssetManager::loadAnimatedMeshAssimp(AnimatedMesh* animesh, const std::stri
     std::unordered_map<std::string, uint64_t> node_name_id_map;
 
     uint64_t vertex_offset = 0;
-    for (int i = 0; i < animesh->mesh->num_meshes; ++i) {
+    for (int i = 0; i < mesh->num_meshes; ++i) {
         auto& ai_mesh = ai_meshes[i];
 
-        extractBoneWeightsFromAiMesh(animesh, ai_mesh, scene, node_name_id_map, vertex_offset);
+        extractBoneWeightsFromAiMesh(animesh, mesh, ai_mesh, scene, node_name_id_map, vertex_offset);
         vertex_offset += ai_mesh->mNumVertices;
     }
     createMeshVao(mesh);
@@ -870,14 +869,28 @@ bool AssetManager::loadAnimatedMeshAssimp(AnimatedMesh* animesh, const std::stri
     //
     // Proccess each bone and each animation's keyframes
     //
-    animesh->global_transform = aiMat4x4ToGlm(scene->mRootNode->mTransformation.Inverse());
     // @hardcoded Fixes fbx orientation
-    animesh->global_transform *= glm::mat4(
-        -1, 0, 0, 0,
-        0, 0, -1, 0,
-        0, -1, 0, 0,
+    
+    // Bake global transform into mesh transforms
+    auto mesh_transform = aiMat4x4ToGlm(scene->mRootNode->mTransformation);
+    mesh_transform *= glm::mat4(
+       -1, 0, 0, 0,
+        0, 0, 1, 0,
+        0, 1, 0, 0,
         0, 0, 0, 1
     );
+    for (int i = 0; i < mesh->num_meshes; ++i) {
+        mesh->transforms[i] = mesh->transforms[i] * mesh_transform;
+    }
+
+    animesh->global_transform = aiMat4x4ToGlm(scene->mRootNode->mTransformation.Inverse());
+    animesh->global_transform *= glm::mat4(
+       -1, 0, 0, 0,
+        0, 0,-1, 0,
+        0,-1, 0, 0,
+        0, 0, 0, 1
+    );
+
     for (int i = 0; i < scene->mNumAnimations; i++) {
         auto& ai_animation = scene->mAnimations[i];
         auto animation_name = std::string(ai_animation->mName.C_Str());
@@ -1363,6 +1376,12 @@ Audio* AssetManager::createAudio(const std::string& handle) {
 Mesh* AssetManager::getMesh(const std::string &path) {
     auto lu = handle_mesh_map.find(path);
     if(lu == handle_mesh_map.end()) return nullptr;
+    else                             return &lu->second;
+}
+
+AnimatedMesh* AssetManager::getAnimatedMesh(const std::string& path) {
+    auto lu = handle_animated_mesh_map.find(path);
+    if (lu == handle_animated_mesh_map.end()) return nullptr;
     else                             return &lu->second;
 }
 

@@ -97,7 +97,6 @@ struct Mesh {
 struct AnimatedMesh {
     std::string handle;
 
-    Mesh *mesh;
     ~AnimatedMesh(); // Frees C arrays
 
     uint64_t num_bones = 0;
@@ -105,7 +104,8 @@ struct AnimatedMesh {
 #define MAX_BONE_NAME_LENGTH 32
     std::vector<std::array<char, MAX_BONE_NAME_LENGTH>> bone_names; // @debug
 
-    glm::mat4 global_transform; // Convert from model space to world space
+    // @note this is baked into mesh transforms
+    glm::mat4x4 global_transform; // Convert from model space to world space
 
     struct BoneKeyframes {
         uint64_t id;
@@ -249,8 +249,10 @@ struct AssetManager {
     bool loadMeshAssimpScene(Mesh* mesh, const std::string& path, const aiScene* scene, 
         const std::vector<aiMesh*>& ai_meshes, const std::vector<aiMatrix4x4>& ai_meshes_global_transforms);
 
+    // Loads both since most animation formats combine animation and mesh info
+    bool loadAnimatedMeshAssimp(AnimatedMesh* animesh, Mesh *mesh, const std::string& path);
+
     AnimatedMesh* createAnimatedMesh(const std::string& handle);
-    bool loadAnimatedMeshAssimp(AnimatedMesh* animesh, const std::string& path);
     // Note that these don't load/save any mesh or bone weights
     static bool loadAnimationFile(AnimatedMesh* animesh, const std::string& path);
     static bool writeAnimationFile(const AnimatedMesh* animesh, const std::string& path);

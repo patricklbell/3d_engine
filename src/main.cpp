@@ -192,14 +192,14 @@ int main() {
     auto anim_entity = (AnimatedMeshEntity*)entity_manager.createEntity(ANIMATED_MESH_ENTITY);
 
     /*anim_entity->animesh = asset_manager.createAnimatedMesh("data/models/extern/dancing_vampire/dancing_vampire.fbx");
-    anim_entity->animesh->mesh = asset_manager.createMesh("data/models/extern/dancing_vampire/dancing_vampire.fbx");
-    asset_manager.loadAnimatedMeshAssimp(anim_entity->animesh, anim_entity->animesh->handle);
-    asset_manager.writeMeshFile(anim_entity->animesh->mesh, "data/mesh/dancing_vampire.mesh");
+    anim_entity->mesh = asset_manager.createMesh("data/models/extern/dancing_vampire/dancing_vampire.fbx");
+    asset_manager.loadAnimatedMeshAssimp(anim_entity->animesh, anim_entity->mesh, anim_entity->animesh->handle);
+    asset_manager.writeMeshFile(anim_entity->mesh, "data/mesh/dancing_vampire.mesh");
     asset_manager.writeAnimationFile(anim_entity->animesh, "data/anim/dancing_vampire.anim");*/
 
+    anim_entity->mesh    = asset_manager.createMesh("data/mesh/dancing_vampire.mesh");
     anim_entity->animesh = asset_manager.createAnimatedMesh("data/anim/dancing_vampire.anim");
-    anim_entity->animesh->mesh = asset_manager.createMesh("data/mesh/dancing_vampire.mesh");
-    asset_manager.loadMeshFile(anim_entity->animesh->mesh, "data/mesh/dancing_vampire.mesh");
+    asset_manager.loadMeshFile(anim_entity->mesh, "data/mesh/dancing_vampire.mesh");
     asset_manager.loadAnimationFile(anim_entity->animesh, "data/anim/dancing_vampire.anim");
 
     anim_entity->play("Armature|dance", 0.0, 1.0, true);
@@ -250,26 +250,23 @@ int main() {
         entity_manager.tickAnimatedMeshes(true_dt);
 
         bindDrawShadowMap(entity_manager, camera);
-        checkGLError("1");
         bindHdr();
         clearFramebuffer();
         drawUnifiedHdr(entity_manager, skybox, camera);
 
-        if (!playing) {
-            handleEditorControls(editor_camera, level_camera, entity_manager, asset_manager, true_dt);
-        }
-        else {
+        if (playing) {
             handleGameControls(level_camera, entity_manager, asset_manager, true_dt);
         }
-        checkGLError("2");
+        else {
+            handleEditorControls(editor_camera, level_camera, entity_manager, asset_manager, true_dt);
+        }
+        
         if (graphics::do_bloom) {
             blurBloomFbo();
-            checkGLError("3");
         }
         bindBackbuffer();
-        checkGLError("4");
         drawPost(skybox, camera);
-        checkGLError("5");
+        
         if (!playing) {
             drawEditorGui(editor_camera, level_camera, entity_manager, asset_manager);
         }
@@ -284,7 +281,7 @@ int main() {
         entity_manager.propogateChanges();
 
 #ifndef NDEBUG
-        checkGLError("main loop");
+        checkGLError("Main loop");
         // Should catch any other errors but the message may be less descriptive
         static GLenum code;
         static const GLubyte* string;

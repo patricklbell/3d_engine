@@ -31,7 +31,7 @@ enum EntityType : uint64_t {
     WATER_ENTITY            = 1 << 1,
     COLLIDER_ENTITY         =(1 << 2) | MESH_ENTITY,
     VEGETATION_ENTITY       = 1 << 3,
-    ANIMATED_MESH_ENTITY    = 1 << 4,
+    ANIMATED_MESH_ENTITY    =(1 << 4) | MESH_ENTITY,
 };
 struct Entity {
     EntityType type = ENTITY;
@@ -60,30 +60,21 @@ struct MeshEntity : Entity {
     }
 };
 
-
-struct AnimatedMeshEntity : Entity {
-    glm::vec3 position = glm::vec3(0.0);
-    glm::quat rotation = glm::quat(0.0, 0.0, 0.0, 1.0);
-    glm::mat3 scale = glm::mat3(1.0);
-
+struct AnimatedMeshEntity : MeshEntity {
+    // Asset which contains all the bones and animations
     AnimatedMesh* animesh = nullptr;
+
     // Produced by traversing node tree and updated per tick
     std::array<glm::mat4, MAX_BONES> final_bone_matrices = { glm::mat4(1.0f) };
 
-    glm::vec3 albedo_mult = glm::vec3(1.0);
-    float roughness_mult = 1.0;
-    float metal_mult = 1.0;
-    float ao_mult = 1.0;
-
-    bool casts_shadow = true;
-
+    bool draw_animated = false; // @debug Used by editor to toggle drawing animation, ignored when playing
     float current_time = 0.0f;
     float time_scale = 1.0f;
     bool loop = false;
     bool playing = false;
     AnimatedMesh::Animation* animation = nullptr;
 
-    AnimatedMeshEntity(Id _id = NULLID) : Entity(_id) {
+    AnimatedMeshEntity(Id _id = NULLID) : MeshEntity(_id) {
         type = EntityType::ANIMATED_MESH_ENTITY;
     }
 
@@ -261,7 +252,7 @@ struct EntityManager {
         for (int i = 0; i < ENTITY_COUNT; ++i) {
             auto e = reinterpret_cast<AnimatedMeshEntity*>(entities[i]);
             
-            if (e != nullptr && e->type & EntityType::ANIMATED_MESH_ENTITY) {
+            if (e != nullptr && entityInherits(e->type, EntityType::ANIMATED_MESH_ENTITY) && (playing || e->draw_animated)) {
                 e->tick(dt);
                 continue;
             }

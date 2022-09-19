@@ -70,7 +70,7 @@ void ReferenceSelection::addEntity(Entity* e) {
     if (type == ENTITY) type = e->type;
     else                type = (EntityType)(type & e->type);
 
-    if (e->type & MESH_ENTITY) {
+    if (entityInherits(e->type, MESH_ENTITY)) {
         avg_position = (float)avg_position_count * avg_position + ((MeshEntity*)e)->position;
         avg_position_count++;
         avg_position /= (float)avg_position_count;
@@ -96,13 +96,8 @@ void ReferenceSelection::toggleEntity(const EntityManager &entity_manager, Entit
     if (id_to_erase != -1) {
         ids.erase(ids.begin() + id_to_erase);
 
-        if (e->type & MESH_ENTITY) {
+        if (entityInherits(e->type, MESH_ENTITY)) {
             avg_position = (float)avg_position_count * avg_position - ((MeshEntity*)e)->position;
-            avg_position_count--;
-            avg_position /= (float)avg_position_count;
-        }
-        else if (e->type & ANIMATED_MESH_ENTITY) {
-            avg_position = (float)avg_position_count * avg_position - ((AnimatedMeshEntity*)e)->position;
             avg_position_count--;
             avg_position /= (float)avg_position_count;
         }
@@ -113,13 +108,8 @@ void ReferenceSelection::toggleEntity(const EntityManager &entity_manager, Entit
         if (type == ENTITY) type = e->type;
         else                type = (EntityType)(type & e->type);
 
-        if (e->type & MESH_ENTITY) {
+        if (entityInherits(e->type, MESH_ENTITY)) {
             avg_position = (float)avg_position_count * avg_position + ((MeshEntity*)e)->position;
-            avg_position_count++;
-            avg_position /= (float)avg_position_count;
-        }
-        else if (e->type & ANIMATED_MESH_ENTITY) {
-            avg_position = (float)avg_position_count * avg_position + ((AnimatedMeshEntity*)e)->position;
             avg_position_count++;
             avg_position /= (float)avg_position_count;
         }
@@ -152,7 +142,7 @@ void referenceToCopySelection(EntityManager& entity_manager, const ReferenceSele
         if (e == nullptr) continue;
 
         auto cpy_e = copyEntity(e);
-        if (cpy_e->type & MESH_ENTITY) {
+        if (entityInherits(cpy_e->type, MESH_ENTITY)) {
             auto m_e = (MeshEntity*)cpy_e;
             
             if (m_e->mesh != nullptr) {
@@ -160,7 +150,7 @@ void referenceToCopySelection(EntityManager& entity_manager, const ReferenceSele
                 m_e->mesh->handle = ((MeshEntity*)e)->mesh->handle;
             }
         }
-        else if (cpy_e->type & ANIMATED_MESH_ENTITY) {
+        if (entityInherits(cpy_e->type, ANIMATED_MESH_ENTITY)) {
             auto a_e = (AnimatedMeshEntity*)cpy_e;
 
             if (a_e->animesh != nullptr) {
@@ -176,18 +166,18 @@ void referenceToCopySelection(EntityManager& entity_manager, const ReferenceSele
 // @note doesn't preserve relationships between entities
 void createCopySelectionEntities(EntityManager& entity_manager, AssetManager &asset_manager, CopySelection& cpy, ReferenceSelection &ref) {
     for (auto& e : cpy.entities) {
-        if (entity_manager.water != NULLID && e->type & WATER_ENTITY) {
+        if (entity_manager.water != NULLID && entityInherits(e->type, WATER_ENTITY)) {
             std::cerr << "Warning, attempted to copy water to entity_manager which already has one. Skipping\n";
             continue;
         }
         auto id = entity_manager.getFreeId();
         entity_manager.setEntity(id.i, e);
-        if (e->type & WATER_ENTITY) entity_manager.water = e->id;
+        if (entityInherits(e->type, WATER_ENTITY)) entity_manager.water = e->id;
         ref.addEntity(e);
 
         // @note this needs to makes sure all assets are correctly copied,
         // @todo systematise copying entities and assets, maybe only store path? (might be slow)
-        if (e->type & MESH_ENTITY) {
+        if (entityInherits(e->type, MESH_ENTITY)) {
             auto m_e = (MeshEntity*)e;
             if (m_e->mesh == nullptr) continue;
             
@@ -201,6 +191,20 @@ void createCopySelectionEntities(EntityManager& entity_manager, AssetManager &as
             }
             m_e->mesh = mesh;
             m_e->position += editor::translation_snap;
+        }
+        if (entityInherits(e->type, ANIMATED_MESH_ENTITY)) {
+            auto m_e = (AnimatedMeshEntity*)e;
+            if (m_e->animesh == nullptr) continue;
+
+            auto path = m_e->animesh->handle;
+            free(m_e->animesh);
+
+            auto animesh = asset_manager.getAnimatedMesh(path);
+            if (animesh == nullptr) {
+                animesh = asset_manager.createAnimatedMesh(path);
+                asset_manager.loadAnimationFile(animesh, path);
+            }
+            m_e->animesh = animesh;
         }
     }
     // memory is now owned by entity manager so makes sure we clear cpy
@@ -1183,7 +1187,7 @@ void drawFrustrum(Camera &drawn_camera, const Camera& camera) {
     drawLineCube();
 }
 
-void drawMeshWireframe(const Mesh &mesh, const glm::vec3 &pos, const glm::quat &rot, const glm::mat3x3 &scl, const Camera &camera, bool flash = false){
+void drawMeshWireframe(const Mesh &mesh, const glm::mat4 &g_model, const Camera &camera, bool flash = false){
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     glDisable(GL_CULL_FACE);
     glDisable(GL_DEPTH_TEST);
@@ -1198,7 +1202,6 @@ void drawMeshWireframe(const Mesh &mesh, const glm::vec3 &pos, const glm::quat &
     glUniform1f(shader::debug.uniform("shaded"), 0.0);
     glUniform1f(shader::debug.uniform("flashing"), flash ? 1.0: 0.0);
 
-    auto g_model = createModelMatrix(pos, rot, scl);
     auto vp = camera.projection * camera.view;
 
     glBindVertexArray(mesh.vao);
@@ -1308,7 +1311,7 @@ void drawColliders(const EntityManager &entity_manager, const Camera &camera) {
 
     for (int i = 0; i < ENTITY_COUNT; ++i) {
         auto c = (ColliderEntity*)entity_manager.entities[i];
-        if (c == nullptr || !(c->type & EntityType::COLLIDER_ENTITY)) continue;
+        if (c == nullptr || !(entityInherits(c->type, COLLIDER_ENTITY))) continue;
     
         auto model = glm::translate(glm::mat4x4(1.0), c->collider_position);
         auto mvp = camera.projection * camera.view * model;
@@ -1334,13 +1337,17 @@ void drawEditorGui(Camera &editor_camera, Camera& level_camera, EntityManager &e
     }
     if (editor::draw_debug_wireframe) {
         for (const auto& id : selection.ids) {
-            auto e = (MeshEntity*)entity_manager.getEntity(id);
+            auto e = entity_manager.getEntity(id);
             
-            if (e->type == WATER_ENTITY) {
+            if (entityInherits(e->type, WATER_ENTITY)) {
                 drawWaterDebug((WaterEntity*)e, camera, true);
             }
-            else if (e != nullptr && (e->type & MESH_ENTITY) && e->mesh != nullptr) {
-                drawMeshWireframe(*e->mesh, e->position, e->rotation, e->scale, camera, true);
+            if (e != nullptr && (entityInherits(e->type, MESH_ENTITY))) {
+                auto m_e = (MeshEntity*)e;
+                if (m_e->mesh != nullptr) {
+                    auto g_model = createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
+                    drawMeshWireframe(*m_e->mesh, g_model, camera, true);
+                }
             }
         }
     }
@@ -1385,7 +1392,7 @@ void drawEditorGui(Camera &editor_camera, Camera& level_camera, EntityManager &e
             static const std::vector<std::string> image_file_extensions = { ".jpg", ".png", ".bmp", ".tiff", ".tga" };
 
             auto button_size = ImVec2(ImGui::GetWindowWidth() / 2.0f - pad, 2.0f * pad);
-            if (selection.type & EntityType::MESH_ENTITY) {
+            if (entityInherits(selection.type, MESH_ENTITY)) {
                 auto m_e = (MeshEntity*)fe;
                 TransformType edited_transform;
                 if (selection.ids.size() == 1) {
@@ -1415,7 +1422,7 @@ void drawEditorGui(Camera &editor_camera, Camera& level_camera, EntityManager &e
                         e->casts_shadow = casts_shadow;
                     }
                 }
-                if (selection.type & EntityType::COLLIDER_ENTITY) {
+                if (entityInherits(selection.type, COLLIDER_ENTITY)) {
                     auto c_e = (ColliderEntity*)m_e;
                     bool selectable = c_e->selectable;
                     if (ImGui::Checkbox("Selectable", &selectable)) {
@@ -1510,7 +1517,7 @@ void drawEditorGui(Camera &editor_camera, Camera& level_camera, EntityManager &e
                     }
                 }
             }
-            else if (selection.type & EntityType::WATER_ENTITY && selection.ids.size() == 1) {
+            if (entityInherits(selection.type, WATER_ENTITY) && selection.ids.size() == 1) {
                 auto w_e = (WaterEntity*)fe;
                 
                 glm::quat _r = glm::quat();
@@ -1557,12 +1564,62 @@ void drawEditorGui(Camera &editor_camera, Camera& level_camera, EntityManager &e
                     bindDrawWaterColliderMap(entity_manager, w_e);
                     distanceTransformWaterFbo(w_e);
                 }
-            }   
+            }
+            /*if (entityInherits(selection.type, ANIMATED_MESH_ASSET) && selection.ids.size() == 1) {
+                auto a_e = (AnimatedMeshEntity*)fe;
+
+                a_e->animation->
+
+                glm::quat _r = glm::quat();
+                editor::transform_active = editTransform(camera, w_e->position, _r, w_e->scale, TransformType::POS_SCL) != TransformType::NONE;
+                ImGui::TextWrapped("Shallow Color:");
+                ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - pad);
+                ImGui::ColorEdit4("##shallow_color", (float*)(&w_e->shallow_color));
+                ImGui::TextWrapped("Deep Color:");
+                ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - pad);
+                ImGui::ColorEdit4("##deep_color", (float*)(&w_e->deep_color));
+                ImGui::TextWrapped("Foam Color:");
+                ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - pad);
+                ImGui::ColorEdit4("##foam_color", (float*)(&w_e->foam_color));
+
+                if (ImGui::CollapsingHeader("Noise Textures")) {
+                    ImGui::Text("Gradient");
+                    ImGui::SameLine();
+                    auto cursor = ImGui::GetCursorPos();
+                    cursor.x += img_w;
+                    ImGui::SetCursorPos(cursor);
+                    ImGui::Text("Value");
+                    void* tex_simplex_gradient = (void*)(intptr_t)graphics::simplex_gradient->id;
+                    if (ImGui::ImageButton(tex_simplex_gradient, ImVec2(img_w, img_w))) {
+                        im_file_dialog.SetPwd(exepath + "/data/textures");
+                        im_file_dialog_type = "simplexGradient";
+                        im_file_dialog.SetCurrentTypeFilterIndex(2);
+                        im_file_dialog.SetTypeFilters(image_file_extensions);
+                        im_file_dialog.Open();
+                    }
+                    ImGui::SameLine();
+                    void* tex_simplex_value = (void*)(intptr_t)graphics::simplex_value->id;
+                    if (ImGui::ImageButton(tex_simplex_value, ImVec2(img_w, img_w))) {
+                        im_file_dialog.SetPwd(exepath + "/data/textures");
+                        im_file_dialog_type = "simplexValue";
+                        im_file_dialog.SetCurrentTypeFilterIndex(2);
+                        im_file_dialog.SetTypeFilters(image_file_extensions);
+                        im_file_dialog.Open();
+                    }
+                }
+                void* tex_water_collider = (void*)(intptr_t)graphics::water_collider_buffers[graphics::water_collider_final_fbo];
+                ImGui::Image(tex_water_collider, ImVec2(sidebar_w, sidebar_w));
+
+                if (ImGui::Button("Update", button_size)) {
+                    bindDrawWaterColliderMap(entity_manager, w_e);
+                    distanceTransformWaterFbo(w_e);
+                }
+            }*/
 
             ImGui::SetCursorPosY(ImGui::GetCursorPosY() + ImGui::GetTextLineHeight());
-            if(!(selection.type & WATER_ENTITY)){
+            if(!(entityInherits(selection.type, WATER_ENTITY))){
                 if (ImGui::Button("Duplicate", button_size)) {
-                    if (camera.state == Camera::TYPE::TRACKBALL && selection.type & MESH_ENTITY) {
+                    if (camera.state == Camera::TYPE::TRACKBALL && entityInherits(selection.type, MESH_ENTITY)) {
                         auto m_e = (MeshEntity*)fe;
                         camera.target = m_e->position + translation_snap.x;
                         updateCameraView(camera);
@@ -1570,7 +1627,7 @@ void drawEditorGui(Camera &editor_camera, Camera& level_camera, EntityManager &e
 
                     for (auto& id : selection.ids) {
                         auto e = entity_manager.duplicateEntity(id);
-                        if (selection.type & MESH_ENTITY) {
+                        if (entityInherits(selection.type, MESH_ENTITY)) {
                             auto m_e = reinterpret_cast<MeshEntity*>(e);
                             m_e->position.x += translation_snap.x;   
                         }   
@@ -1589,7 +1646,7 @@ void drawEditorGui(Camera &editor_camera, Camera& level_camera, EntityManager &e
                 selection.clear();
             }
             button_size.x *= 2.0;
-            if (selection.type & MESH_ENTITY) {
+            if (entityInherits(selection.type, MESH_ENTITY)) {
                 if (ImGui::Button("Change Mesh", button_size)) {
                     im_file_dialog.SetPwd(exepath + "/data/mesh");
                     im_file_dialog_type = "changeMesh";

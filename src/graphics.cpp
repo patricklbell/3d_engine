@@ -260,11 +260,14 @@ void bindDrawShadowMap(const EntityManager &entity_manager, const Camera &camera
         if (entity_manager.entities[i] == nullptr) continue;
 
         auto m_e = reinterpret_cast<MeshEntity*>(entity_manager.entities[i]);
-        if (m_e->type & EntityType::ANIMATED_MESH_ENTITY) {
-            anim_mesh_entities.push_back((AnimatedMeshEntity*)m_e);
-            continue;
+        if (entityInherits(m_e->type, ANIMATED_MESH_ENTITY)) {
+            auto a_e = (AnimatedMeshEntity*)m_e;
+            if (playing || a_e->draw_animated) {
+                anim_mesh_entities.push_back(a_e);
+                continue;
+            }
         }
-        if(!(m_e->type & EntityType::MESH_ENTITY) || m_e->mesh == nullptr) continue;
+        if(!(entityInherits(m_e->type, MESH_ENTITY)) || m_e->mesh == nullptr) continue;
 
         auto g_model = createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
 
@@ -274,7 +277,7 @@ void bindDrawShadowMap(const EntityManager &entity_manager, const Camera &camera
             auto model = g_model * mesh->transforms[j];
             glUniformMatrix4fv(shader::null.uniform("model"), 1, GL_FALSE, &model[0][0]);
 
-            glDrawElements(mesh->draw_mode, mesh->draw_count[j], mesh->draw_type, (GLvoid*)(sizeof(*mesh->indices)*mesh->draw_start[j]));
+            glDrawElements(mesh->draw_mode, mesh->draw_count[j], mesh->draw_type, (GLvoid*)(sizeof(*mesh->indices) * mesh->draw_start[j]));
         }
     }
 
@@ -299,7 +302,7 @@ void bindDrawShadowMap(const EntityManager &entity_manager, const Camera &camera
             auto model = createModelMatrix(a_e->position, a_e->rotation, a_e->scale);
             glUniformMatrix4fv(shader::animated_null.uniform("model"), 1, GL_FALSE, &model[0][0]);
 
-            auto &mesh = a_e->animesh->mesh;
+            auto& mesh = a_e->mesh;
             glBindVertexArray(mesh->vao);
             for (int j = 0; j < mesh->num_meshes; ++j) {
                 //auto model = mesh->transforms[j] * g_model; // Shouldn't be needed since this is baked into bone matrices
@@ -322,7 +325,7 @@ void initAnimationUbo() {
     glBindBufferBase(GL_UNIFORM_BUFFER, 1, bone_matrices_ubo);
 }
 
-void initWaterColliderFbo(){
+void initWaterColliderFbo() {
     glGenFramebuffers(2, water_collider_fbos);
     glGenTextures(2, water_collider_buffers);
 
@@ -410,10 +413,10 @@ void bindDrawWaterColliderMap(const EntityManager& entity_manager, WaterEntity* 
     auto inv_water_grid = glm::inverse(createModelMatrix(water->position, glm::quat(), water_grid_scale));
     for (int i = 0; i < ENTITY_COUNT; ++i) {
         auto m_e = reinterpret_cast<MeshEntity*>(entity_manager.entities[i]);
-        if (m_e == nullptr || !(m_e->type & EntityType::MESH_ENTITY) || m_e->mesh == nullptr) continue;
+        if (m_e == nullptr || !(entityInherits(m_e->type, MESH_ENTITY)) || m_e->mesh == nullptr) continue;
 
         auto model = createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
-        auto model_inv_water_grid = inv_water_grid * model; 
+        auto model_inv_water_grid = inv_water_grid * model;
         glUniformMatrix4fv(shader::plane_projection.uniform("model"), 1, GL_FALSE, &model_inv_water_grid[0][0]);
 
         auto& mesh = m_e->mesh;
@@ -454,7 +457,7 @@ void distanceTransformWaterFbo(WaterEntity* water) {
 
         drawQuad();
     }
-    
+
 
     glBindTexture(GL_TEXTURE_2D, water_collider_buffers[(num_steps + 1) % 2]);
     glGenerateMipmap(GL_TEXTURE_2D);
@@ -477,7 +480,7 @@ void distanceTransformWaterFbo(WaterEntity* water) {
 }
 
 void clearBloomFbo() {
-    for(auto &mip : bloom_mip_infos) {
+    for (auto& mip : bloom_mip_infos) {
         glDeleteTextures(1, &mip.texture);
     }
     bloom_mip_infos.clear();
@@ -485,15 +488,15 @@ void clearBloomFbo() {
     bloom_fbo = GL_FALSE;
 }
 
-void initBloomFbo(bool resize){
+void initBloomFbo(bool resize) {
     clearBloomFbo();
 
     glGenFramebuffers(1, &bloom_fbo);
     glBindFramebuffer(GL_FRAMEBUFFER, bloom_fbo);
 
     auto mip_size = glm::vec2(window_width, window_height);
-    for (int i = 0; i < BLOOM_DOWNSAMPLES; ++i){
-        auto &mip = bloom_mip_infos.emplace_back();
+    for (int i = 0; i < BLOOM_DOWNSAMPLES; ++i) {
+        auto& mip = bloom_mip_infos.emplace_back();
 
         mip_size *= 0.5f;
         mip.size = mip_size;
@@ -507,7 +510,7 @@ void initBloomFbo(bool resize){
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-        if(mip.size.x <= 1 || mip.size.y <= 1)
+        if (mip.size.x <= 1 || mip.size.y <= 1)
             break;
     }
 
@@ -515,19 +518,20 @@ void initBloomFbo(bool resize){
     unsigned int attachments[1] = { GL_COLOR_ATTACHMENT0 };
     glDrawBuffers(1, attachments);
 
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE){
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
         std::cerr << "Bloom framebuffer not complete.\n";
     }
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-void initHdrFbo(bool resize){
-    if(!resize || hdr_fbo == GL_FALSE){
+void initHdrFbo(bool resize) {
+    if (!resize || hdr_fbo == GL_FALSE) {
         glGenFramebuffers(1, &hdr_fbo);
         glBindFramebuffer(GL_FRAMEBUFFER, hdr_fbo);
 
         glGenTextures(1, &hdr_buffer);
-    } else {
+    }
+    else {
         glBindFramebuffer(GL_FRAMEBUFFER, hdr_fbo);
     }
 
@@ -542,7 +546,7 @@ void initHdrFbo(bool resize){
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, hdr_buffer, 0);
 
     // @fix if there is no water this copy is unnecessary
-    if(!resize || hdr_depth == GL_FALSE){
+    if (!resize || hdr_depth == GL_FALSE) {
         // create and attach depth buffer
         glGenTextures(1, &hdr_depth);
         glGenTextures(1, &hdr_depth_copy);
@@ -562,9 +566,9 @@ void initHdrFbo(bool resize){
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, hdr_depth, 0);  
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, hdr_depth, 0);
 
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE){
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
         std::cerr << "Hdr framebuffer not complete.\n";
     }
 
@@ -574,7 +578,7 @@ void initHdrFbo(bool resize){
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-void initGraphicsPrimitives(AssetManager &asset_manager) {
+void initGraphicsPrimitives(AssetManager& asset_manager) {
     // @hardcoded
     static const float quad_vertices[] = {
         // positions        // texture Coords
@@ -599,12 +603,12 @@ void initGraphicsPrimitives(AssetManager &asset_manager) {
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
     glBindVertexArray(0);
 
-	quad.draw_count = (GLint*)malloc(sizeof(GLint));
-	quad.draw_start = (GLint*)malloc(sizeof(GLint));
+    quad.draw_count = (GLint*)malloc(sizeof(GLint));
+    quad.draw_start = (GLint*)malloc(sizeof(GLint));
     quad.draw_mode = GL_TRIANGLE_STRIP;
     quad.draw_type = GL_UNSIGNED_SHORT;
 
-    quad.draw_start[0] = 0; 
+    quad.draw_start[0] = 0;
     quad.draw_count[0] = 4;
 
     // @hardcoded
@@ -665,49 +669,49 @@ void initGraphicsPrimitives(AssetManager &asset_manager) {
 
     glBindVertexArray(0);
 
-	cube.draw_count = (GLint*)malloc(sizeof(GLint));
-	cube.draw_start = (GLint*)malloc(sizeof(GLint));
+    cube.draw_count = (GLint*)malloc(sizeof(GLint));
+    cube.draw_start = (GLint*)malloc(sizeof(GLint));
     cube.draw_mode = GL_TRIANGLES;
     cube.draw_type = GL_UNSIGNED_SHORT;
 
-    cube.draw_start[0] = 0; 
+    cube.draw_start[0] = 0;
     cube.draw_count[0] = sizeof(cube_vertices) / (3.0 * sizeof(*cube_vertices));
 
     // @hardcoded
     static const float line_cube_vertices[] = {
-    //0     1.0f, -1.0f, -1.0f,
-    //1     1.0f,  1.0f, -1.0f,
-    //2    -1.0f,  1.0f, -1.0f,
-    //3    -1.0f, -1.0f, -1.0f,
-    //4     1.0f, -1.0f,  1.0f,
-    //5     1.0f,  1.0f,  1.0f,
-    //6    -1.0f, -1.0f,  1.0f,
-    //7    -1.0f,  1.0f,  1.0f
+        //0     1.0f, -1.0f, -1.0f,
+        //1     1.0f,  1.0f, -1.0f,
+        //2    -1.0f,  1.0f, -1.0f,
+        //3    -1.0f, -1.0f, -1.0f,
+        //4     1.0f, -1.0f,  1.0f,
+        //5     1.0f,  1.0f,  1.0f,
+        //6    -1.0f, -1.0f,  1.0f,
+        //7    -1.0f,  1.0f,  1.0f
 
-         1.0f, -1.0f, -1.0f,
-         1.0f,  1.0f, -1.0f,
-         1.0f, -1.0f, -1.0f,
-        -1.0f, -1.0f, -1.0f,
-         1.0f, -1.0f, -1.0f,
-         1.0f, -1.0f,  1.0f,
-        -1.0f,  1.0f, -1.0f,
-         1.0f,  1.0f, -1.0f,
-        -1.0f,  1.0f, -1.0f,
-        -1.0f, -1.0f, -1.0f,
-        -1.0f,  1.0f, -1.0f,
-        -1.0f,  1.0f,  1.0f,
-        -1.0f, -1.0f,  1.0f,
-        -1.0f, -1.0f, -1.0f,
-        -1.0f, -1.0f,  1.0f,
-         1.0f, -1.0f,  1.0f,
-        -1.0f, -1.0f,  1.0f,
-        -1.0f,  1.0f,  1.0f,
-         1.0f,  1.0f,  1.0f,
-         1.0f,  1.0f, -1.0f,
-         1.0f,  1.0f,  1.0f,
-         1.0f, -1.0f,  1.0f,
-         1.0f,  1.0f,  1.0f,
-        -1.0f,  1.0f,  1.0f,
+             1.0f, -1.0f, -1.0f,
+             1.0f,  1.0f, -1.0f,
+             1.0f, -1.0f, -1.0f,
+            -1.0f, -1.0f, -1.0f,
+             1.0f, -1.0f, -1.0f,
+             1.0f, -1.0f,  1.0f,
+            -1.0f,  1.0f, -1.0f,
+             1.0f,  1.0f, -1.0f,
+            -1.0f,  1.0f, -1.0f,
+            -1.0f, -1.0f, -1.0f,
+            -1.0f,  1.0f, -1.0f,
+            -1.0f,  1.0f,  1.0f,
+            -1.0f, -1.0f,  1.0f,
+            -1.0f, -1.0f, -1.0f,
+            -1.0f, -1.0f,  1.0f,
+             1.0f, -1.0f,  1.0f,
+            -1.0f, -1.0f,  1.0f,
+            -1.0f,  1.0f,  1.0f,
+             1.0f,  1.0f,  1.0f,
+             1.0f,  1.0f, -1.0f,
+             1.0f,  1.0f,  1.0f,
+             1.0f, -1.0f,  1.0f,
+             1.0f,  1.0f,  1.0f,
+            -1.0f,  1.0f,  1.0f,
     };
     glGenVertexArrays(1, &line_cube.vao);
     GLuint line_cube_vbo;
@@ -743,7 +747,7 @@ void initGraphicsPrimitives(AssetManager &asset_manager) {
     glClearColor(0.0, 0.0, 0.0, 1.0);
 }
 
-void drawCube(){
+void drawCube() {
     glBindVertexArray(cube.vao);
     glDrawArrays(cube.draw_mode, cube.draw_start[0], cube.draw_count[0]);
 }
@@ -751,12 +755,12 @@ void drawLineCube() {
     glBindVertexArray(line_cube.vao);
     glDrawArrays(line_cube.draw_mode, line_cube.draw_start[0], line_cube.draw_count[0]);
 }
-void drawQuad(){
+void drawQuad() {
     glBindVertexArray(quad.vao);
-    glDrawArrays(quad.draw_mode, quad.draw_start[0],  quad.draw_count[0]);
+    glDrawArrays(quad.draw_mode, quad.draw_start[0], quad.draw_count[0]);
 }
 
-void blurBloomFbo(){
+void blurBloomFbo() {
     glBindFramebuffer(GL_FRAMEBUFFER, bloom_fbo);
 
     // 
@@ -768,8 +772,8 @@ void blurBloomFbo(){
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, hdr_buffer);
 
-    for(int i = 0; i < bloom_mip_infos.size(); ++i) {
-        const auto &mip = bloom_mip_infos[i];
+    for (int i = 0; i < bloom_mip_infos.size(); ++i) {
+        const auto& mip = bloom_mip_infos[i];
 
         glViewport(0, 0, mip.size.x, mip.size.y);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mip.texture, 0);
@@ -793,9 +797,9 @@ void blurBloomFbo(){
     glBlendEquation(GL_FUNC_ADD);
 
     glUseProgram(shader::upsample.program);
-    for(int i = bloom_mip_infos.size() - 1; i > 0; i--) {
-        const auto &mip = bloom_mip_infos[i];
-        const auto &next_mip = bloom_mip_infos[i-1];
+    for (int i = bloom_mip_infos.size() - 1; i > 0; i--) {
+        const auto& mip = bloom_mip_infos[i];
+        const auto& next_mip = bloom_mip_infos[i - 1];
 
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, mip.texture);
@@ -811,11 +815,11 @@ void blurBloomFbo(){
     glViewport(0, 0, window_width, window_height);
 }
 
-void bindHdr(){
+void bindHdr() {
     glBindFramebuffer(GL_FRAMEBUFFER, hdr_fbo);
 }
 
-void clearFramebuffer(){
+void clearFramebuffer() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 }
 
@@ -840,7 +844,36 @@ void clearFramebuffer(){
 //	glDepthFunc(GL_LESS); 
 //}
 
-void drawUnifiedHdr(const EntityManager &entity_manager, const Texture* skybox, const Camera &camera){
+inline static void drawMesh(Shader& s, const Mesh* mesh, const glm::mat4& g_model, const glm::mat4& vp) {
+    glBindVertexArray(mesh->vao);
+    for (int j = 0; j < mesh->num_meshes; ++j) {
+        auto model = mesh->transforms[j] * g_model;
+        auto mvp = vp * model;
+        glUniformMatrix4fv(s.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
+        glUniformMatrix4fv(s.uniform("model"), 1, GL_FALSE, &model[0][0]);
+
+        auto& mat = mesh->materials[mesh->material_indices[j]];
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, mat.t_albedo->id);
+
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, mat.t_normal->id);
+
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, mat.t_metallic->id);
+
+        glActiveTexture(GL_TEXTURE3);
+        glBindTexture(GL_TEXTURE_2D, mat.t_roughness->id);
+
+        glActiveTexture(GL_TEXTURE4);
+        glBindTexture(GL_TEXTURE_2D, mat.t_ambient->id);
+
+        // Bind VAO and draw
+        glDrawElements(mesh->draw_mode, mesh->draw_count[j], mesh->draw_type, (GLvoid*)(sizeof(*mesh->indices) * mesh->draw_start[j]));
+    }
+}
+
+void drawUnifiedHdr(const EntityManager& entity_manager, const Texture* skybox, const Camera& camera) {
     glDepthMask(GL_TRUE);
     glEnable(GL_DEPTH_TEST);
 
@@ -850,6 +883,8 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Texture* skybox, 
     // @todo in future entities should probably stored as vectors so you can traverse easily
     std::vector<AnimatedMeshEntity*> anim_mesh_entities;
 
+    auto vp = camera.projection * camera.view;
+
     // 
     // Draw normal static PBR mesh entities
     //
@@ -858,22 +893,24 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Texture* skybox, 
     glUniform3fv(shader::unified.uniform("sun_direction"), 1, &sun_direction[0]);
     glUniform3fv(shader::unified.uniform("camera_position"), 1, &camera.position[0]);
     glUniformMatrix4fv(shader::unified.uniform("view"), 1, GL_FALSE, &camera.view[0][0]);
-    
+
     glActiveTexture(GL_TEXTURE5);
     glBindTexture(GL_TEXTURE_2D_ARRAY, shadow_buffer);
 
     glUniform1fv(shader::unified.uniform("shadow_cascade_distances[0]"), shadow_num, shadow_cascade_distances);
     glUniform1f(shader::unified.uniform("far_plane"), camera.far_plane);
-    auto vp = camera.projection * camera.view;
     for (int i = 0; i < ENTITY_COUNT; ++i) {
         if (entity_manager.entities[i] == nullptr) continue;
 
         auto m_e = reinterpret_cast<MeshEntity*>(entity_manager.entities[i]);
-        if (m_e->type & EntityType::ANIMATED_MESH_ENTITY) {
-            anim_mesh_entities.push_back((AnimatedMeshEntity*)m_e);
-            continue;
+        if (entityInherits(m_e->type, ANIMATED_MESH_ENTITY)) {
+            auto a_e = (AnimatedMeshEntity*)m_e;
+            if (playing || a_e->draw_animated) {
+                anim_mesh_entities.push_back(a_e);
+                continue;
+            }
         }
-        if(!(m_e->type & EntityType::MESH_ENTITY) || m_e->mesh == nullptr) continue;
+        if (!(entityInherits(m_e->type, MESH_ENTITY)) || m_e->mesh == nullptr) continue;
 
         // Material multipliers
         glUniform3fv(shader::unified.uniform("albedo_mult"), 1, &m_e->albedo_mult[0]);
@@ -883,33 +920,7 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Texture* skybox, 
 
         auto g_model = createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
 
-        auto &mesh = m_e->mesh;
-        glBindVertexArray(mesh->vao);
-        for (int j = 0; j < mesh->num_meshes; ++j) {
-            auto model = mesh->transforms[j] * g_model;
-            auto mvp   = vp * model;
-            glUniformMatrix4fv(shader::unified.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
-            glUniformMatrix4fv(shader::unified.uniform("model"), 1, GL_FALSE, &model[0][0]);
-
-            auto &mat = mesh->materials[mesh->material_indices[j]];
-            glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, mat.t_albedo->id);
-
-            glActiveTexture(GL_TEXTURE1);
-            glBindTexture(GL_TEXTURE_2D, mat.t_normal->id);
-
-            glActiveTexture(GL_TEXTURE2);
-            glBindTexture(GL_TEXTURE_2D, mat.t_metallic->id);
-
-            glActiveTexture(GL_TEXTURE3);
-            glBindTexture(GL_TEXTURE_2D, mat.t_roughness->id);
-
-            glActiveTexture(GL_TEXTURE4);
-            glBindTexture(GL_TEXTURE_2D, mat.t_ambient->id);
-
-            // Bind VAO and draw
-            glDrawElements(mesh->draw_mode, mesh->draw_count[j], mesh->draw_type, (GLvoid*)(sizeof(*mesh->indices) * mesh->draw_start[j]));
-        }
+        drawMesh(shader::unified, m_e->mesh, g_model, vp);
     }
 
     // 
@@ -948,7 +959,7 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Texture* skybox, 
             glUniformMatrix4fv(shader::animated_unified.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
             glUniformMatrix4fv(shader::animated_unified.uniform("model"), 1, GL_FALSE, &model[0][0]);
 
-            auto &mesh = a_e->animesh->mesh;
+            auto &mesh = a_e->mesh;
             glBindVertexArray(mesh->vao);
             for (int j = 0; j < mesh->num_meshes; ++j) {
                 //auto model = mesh->transforms[j] * g_model; // Shouldn't be needed since this is baked into bone matrices
@@ -992,7 +1003,7 @@ void drawUnifiedHdr(const EntityManager &entity_manager, const Texture* skybox, 
 
     for (int i = 0; i < ENTITY_COUNT; ++i) {
         auto v_e = reinterpret_cast<VegetationEntity*>(entity_manager.entities[i]);
-        if(v_e == nullptr || !(v_e->type & EntityType::VEGETATION_ENTITY) || v_e->texture == nullptr) continue;
+        if(v_e == nullptr || !entityInherits(v_e->type, EntityType::VEGETATION_ENTITY) || v_e->texture == nullptr) continue;
 
         auto mvp   = vp * createModelMatrix(v_e->position, v_e->rotation, v_e->scale);
         glUniformMatrix4fv(shader::vegetation.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
@@ -1085,7 +1096,7 @@ void drawPost(Texture *skybox, const Camera &camera){
     auto untranslated_view = glm::mat4(glm::mat3(camera.view));
     auto inverse_projection_untranslated_view = glm::inverse(camera.projection * untranslated_view);
     glUniformMatrix4fv(post.uniform("inverse_projection_untranslated_view"), 1, GL_FALSE, &inverse_projection_untranslated_view[0][0]);
-    glUniformMatrix4fv(post.uniform("projection"), 1, GL_FALSE, & camera.projection[0][0]);
+    //glUniformMatrix4fv(post.uniform("projection"), 1, GL_FALSE, & camera.projection[0][0]);
     //glUniform1f(post.uniform("tan_half_fov"), glm::tan(camera.fov / 2.0f));
 
     glActiveTexture(GL_TEXTURE3);

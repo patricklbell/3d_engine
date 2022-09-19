@@ -52,19 +52,8 @@ static void readMeshEntity(MeshEntity* e, const std::unordered_map<uint64_t, voi
 }
 
 static void writeAnimatedMeshEntity(AnimatedMeshEntity* e, std::unordered_map<uint64_t, uint64_t> asset_lookup, FILE *f) {
-    fwrite(&e->position, sizeof(e->position), 1, f);
-    fwrite(&e->rotation, sizeof(e->rotation), 1, f);
-    fwrite(&e->scale   , sizeof(e->scale   ), 1, f);
-
     uint64_t lookup = asset_lookup[reinterpret_cast<uint64_t>(e->animesh)];
     fwrite(&lookup, sizeof(lookup), 1, f);
-
-    fwrite(&e->albedo_mult   , sizeof(e->albedo_mult   ), 1, f);
-    fwrite(&e->roughness_mult, sizeof(e->roughness_mult), 1, f);
-    fwrite(&e->metal_mult    , sizeof(e->metal_mult    ), 1, f);
-    fwrite(&e->ao_mult       , sizeof(e->ao_mult       ), 1, f);
-
-    fwrite(&e->casts_shadow, sizeof(e->casts_shadow), 1, f);
 
     fwrite(&e->current_time, sizeof(e->current_time), 1, f);
     fwrite(&e->time_scale, sizeof(e->time_scale), 1, f);
@@ -86,10 +75,6 @@ static void writeAnimatedMeshEntity(AnimatedMeshEntity* e, std::unordered_map<ui
     }
 }
 static void readAnimatedMeshEntity(AnimatedMeshEntity* e, const std::unordered_map<uint64_t, void*> index_to_asset, FILE *f) {
-    fread(&e->position, sizeof(e->position), 1, f);
-    fread(&e->rotation, sizeof(e->rotation), 1, f);
-    fread(&e->scale   , sizeof(e->scale   ), 1, f);
-
     uint64_t lookup;
     fread(&lookup, sizeof(lookup), 1, f);
     auto lu = index_to_asset.find(lookup);
@@ -98,13 +83,6 @@ static void readAnimatedMeshEntity(AnimatedMeshEntity* e, const std::unordered_m
     } else {
         std::cerr << "Unknown animated mesh index " << lookup << " when reading animated mesh entity\n";
     }
-
-    fread(&e->albedo_mult   , sizeof(e->albedo_mult   ), 1, f);
-    fread(&e->roughness_mult, sizeof(e->roughness_mult), 1, f);
-    fread(&e->metal_mult    , sizeof(e->metal_mult    ), 1, f);
-    fread(&e->ao_mult       , sizeof(e->ao_mult       ), 1, f);
-
-    fread(&e->casts_shadow, sizeof(e->casts_shadow), 1, f);
 
     fread(&e->current_time, sizeof(e->current_time), 1, f);
     fread(&e->time_scale, sizeof(e->time_scale), 1, f);
@@ -214,17 +192,17 @@ void saveLevel(EntityManager & entity_manager, const std::string & level_path, c
         auto e = entity_manager.entities[i];
         if(e == nullptr) continue;
 
-        if(e->type & MESH_ENTITY) {
+        if(entityInherits(e->type, MESH_ENTITY)) {
             auto me = (MeshEntity*)e;
             if(me->mesh != nullptr) 
                 used_meshes.emplace(me->mesh);
         }
-        if(e->type & ANIMATED_MESH_ENTITY) {
+        if(entityInherits(e->type, ANIMATED_MESH_ENTITY)) {
             auto ae = (AnimatedMeshEntity*)e;
             if(ae->animesh != nullptr) 
                 used_animated_meshes.emplace(ae->animesh);
         }
-        if (e->type & VEGETATION_ENTITY) {
+        if (entityInherits(e->type, VEGETATION_ENTITY)) {
             auto ve = (VegetationEntity*)e;
             if(ve->texture != nullptr)
                 used_textures.emplace(ve->texture);
@@ -406,10 +384,9 @@ bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const
                 }
                 case ANIMATED_MESH_ASSET:
                 {
-                    // In future this should probably be true for all meshes by saving to mesh
                     auto animesh = asset_manager.createAnimatedMesh(handle);
-                    // @todo seperate mesh and animation and load with our loader
-                    asset_manager.loadAnimatedMeshAssimp(animesh, handle);
+
+                    asset_manager.loadAnimationFile(animesh, handle);
 
                     index_to_asset[asset_index] = (void*)animesh;
                     break;
