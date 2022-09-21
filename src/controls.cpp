@@ -157,7 +157,8 @@ void handleEditorControls(Camera &editor_camera, Camera &level_camera, EntityMan
     static bool ctrl_v_prev              = false;
     static bool backtick_key_prev        = false;
 
-    static double mouse_left_press_time = glfwGetTime();
+    static double mouse_left_press_time  = glfwGetTime();
+    static double mouse_right_press_time = glfwGetTime();
     static glm::vec3 shooter_camera_velocity = glm::vec3(0.0);
     static float shooter_camera_deceleration = 0.8;
 
@@ -244,7 +245,7 @@ void handleEditorControls(Camera &editor_camera, Camera &level_camera, EntityMan
             editor::draw_level_camera = !editor::draw_level_camera;
     }
 
-    if (right_mouse_click_release) {
+    if (right_mouse_click_release && (glfwGetTime() - mouse_right_press_time) < 0.2) {
         if (editor::editor_mode == EditorMode::COLLIDERS) {
             glm::vec3 n;
             auto collider = pickColliderWithMouse(camera, entity_manager, n);
@@ -347,6 +348,16 @@ void handleEditorControls(Camera &editor_camera, Camera &level_camera, EntityMan
             updateCameraView(camera);
             updateShadowVP(camera);
         }
+        else if (!(right_mouse_click_release && (glfwGetTime() - mouse_right_press_time) < 0.2) && glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
+            auto camera_right = glm::vec3(glm::transpose(camera.view)[0]);
+
+            auto delta = (float)delta_mouse_position.x * camera_right - (float)delta_mouse_position.y * camera.up;
+            auto d = glm::length(camera.position - camera.target);
+            camera.position -= 0.003f * d * delta;
+            camera.target -= 0.003f * d * delta;
+
+            updateCameraView(camera);
+        }
         if(!io.WantCaptureMouse && scroll_offset.y != 0){
             float distance = glm::length(camera.position - camera.target);
             distance = abs(distance + distance*scroll_offset.y*0.1);
@@ -425,7 +436,8 @@ void handleEditorControls(Camera &editor_camera, Camera &level_camera, EntityMan
     p_key_prev         = glfwGetKey(window, GLFW_KEY_P);
     b_key_prev         = glfwGetKey(window, GLFW_KEY_B);
 
-    if(mouse_left_prev == GLFW_RELEASE && glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT)) mouse_left_press_time = glfwGetTime();
+    if(mouse_left_prev  == GLFW_RELEASE && glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT )) mouse_left_press_time  = glfwGetTime();
+    if(mouse_right_prev == GLFW_RELEASE && glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT)) mouse_right_press_time = glfwGetTime();
     mouse_left_prev    = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT);
     mouse_right_prev   = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT);
 }

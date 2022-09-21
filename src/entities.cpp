@@ -60,7 +60,7 @@ bool AnimatedMeshEntity::tick(float dt) {
                 current_time = glm::fmod(current_time, animation->duration);
             }
             else {
-                current_time = 0.0f;
+                current_time = animation->duration;
                 playing = false;
             }
         }
@@ -73,7 +73,7 @@ bool AnimatedMeshEntity::tick(float dt) {
 }
 
 void AnimatedMeshEntity::init() {
-    tickAnimatedMesh(*this, 0.0f, false, false);
+    tickAnimatedMesh(*this, current_time, loop, true);
 }
 
 // Returns true if successfully found animation

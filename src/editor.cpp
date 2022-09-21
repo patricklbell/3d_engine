@@ -1565,56 +1565,38 @@ void drawEditorGui(Camera &editor_camera, Camera& level_camera, EntityManager &e
                     distanceTransformWaterFbo(w_e);
                 }
             }
-            /*if (entityInherits(selection.type, ANIMATED_MESH_ASSET) && selection.ids.size() == 1) {
+            if (entityInherits(selection.type, ANIMATED_MESH_ENTITY) && selection.ids.size() == 1) {
                 auto a_e = (AnimatedMeshEntity*)fe;
 
-                a_e->animation->
-
-                glm::quat _r = glm::quat();
-                editor::transform_active = editTransform(camera, w_e->position, _r, w_e->scale, TransformType::POS_SCL) != TransformType::NONE;
-                ImGui::TextWrapped("Shallow Color:");
-                ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - pad);
-                ImGui::ColorEdit4("##shallow_color", (float*)(&w_e->shallow_color));
-                ImGui::TextWrapped("Deep Color:");
-                ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - pad);
-                ImGui::ColorEdit4("##deep_color", (float*)(&w_e->deep_color));
-                ImGui::TextWrapped("Foam Color:");
-                ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - pad);
-                ImGui::ColorEdit4("##foam_color", (float*)(&w_e->foam_color));
-
-                if (ImGui::CollapsingHeader("Noise Textures")) {
-                    ImGui::Text("Gradient");
-                    ImGui::SameLine();
-                    auto cursor = ImGui::GetCursorPos();
-                    cursor.x += img_w;
-                    ImGui::SetCursorPos(cursor);
-                    ImGui::Text("Value");
-                    void* tex_simplex_gradient = (void*)(intptr_t)graphics::simplex_gradient->id;
-                    if (ImGui::ImageButton(tex_simplex_gradient, ImVec2(img_w, img_w))) {
-                        im_file_dialog.SetPwd(exepath + "/data/textures");
-                        im_file_dialog_type = "simplexGradient";
-                        im_file_dialog.SetCurrentTypeFilterIndex(2);
-                        im_file_dialog.SetTypeFilters(image_file_extensions);
-                        im_file_dialog.Open();
-                    }
-                    ImGui::SameLine();
-                    void* tex_simplex_value = (void*)(intptr_t)graphics::simplex_value->id;
-                    if (ImGui::ImageButton(tex_simplex_value, ImVec2(img_w, img_w))) {
-                        im_file_dialog.SetPwd(exepath + "/data/textures");
-                        im_file_dialog_type = "simplexValue";
-                        im_file_dialog.SetCurrentTypeFilterIndex(2);
-                        im_file_dialog.SetTypeFilters(image_file_extensions);
-                        im_file_dialog.Open();
+                if (a_e->animesh != NULL) {
+                    std::string animation_name = a_e->animation == NULL ? "None" : a_e->animation->name;
+                    if (ImGui::BeginCombo("##asset-combo", animation_name.c_str())) {
+                        for(auto &p : a_e->animesh->name_animation_map){
+                            bool is_selected = (&p.second == a_e->animation); 
+                            if (ImGui::Selectable(p.first.c_str(), is_selected))
+                                a_e->animation = &p.second;
+                            if (is_selected)
+                                ImGui::SetItemDefaultFocus(); 
+                        }
+                        ImGui::EndCombo();
                     }
                 }
-                void* tex_water_collider = (void*)(intptr_t)graphics::water_collider_buffers[graphics::water_collider_final_fbo];
-                ImGui::Image(tex_water_collider, ImVec2(sidebar_w, sidebar_w));
 
-                if (ImGui::Button("Update", button_size)) {
-                    bindDrawWaterColliderMap(entity_manager, w_e);
-                    distanceTransformWaterFbo(w_e);
+                bool draw_animated = false; // @debug Used by editor to toggle drawing animation, ignored when playing
+                float current_time = 0.0f;
+                float time_scale = 1.0f;
+                bool loop = false;
+                bool playing = false;
+                if (a_e->animation != NULL) {
+                    ImGui::Checkbox("Draw Animated: ", &a_e->draw_animated);
+                    if (ImGui::SliderFloat("Current Time: ", &a_e->current_time, 0.0f, a_e->animation->duration, "%.3f")) {
+                        a_e->init();
+                    }
+                    ImGui::SliderFloat("Time Scale: ", &a_e->time_scale, -10.0f, 10.0f, "%.3f");
+                    ImGui::Checkbox("Loop: ", &a_e->loop);
+                    ImGui::Checkbox("Playing: ", &a_e->playing);
                 }
-            }*/
+            }
 
             ImGui::SetCursorPosY(ImGui::GetCursorPosY() + ImGui::GetTextLineHeight());
             if(!(entityInherits(selection.type, WATER_ENTITY))){
