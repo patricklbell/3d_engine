@@ -30,10 +30,10 @@ enum class TransformType : uint64_t {
 
 void initEditorGui(AssetManager &asset_manager);
 
-void ImTerminal(EntityManager &entity_manager, AssetManager &asset_manager, bool is_active, Camera &level_camera, Camera &editor_camera);
+void ImTerminal(EntityManager &entity_manager, AssetManager &asset_manager, bool is_active);
 
-void drawEditorGui(Camera& editor_camera, Camera& level_camera, EntityManager& entity_manager, AssetManager& asset_manager);
-void drawGameGui(Camera& editor_camera, Camera& level_camera, EntityManager& entity_manager, AssetManager& asset_manager);
+void drawEditorGui(EntityManager& entity_manager, AssetManager& asset_manager);
+void drawGameGui(EntityManager& entity_manager, AssetManager& asset_manager);
 
 bool editorTranslationGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, Camera &camera, const glm::vec3 &snap, bool do_snap);
 bool editorRotationGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, const Camera &camera, float rot_snap, bool do_snap);

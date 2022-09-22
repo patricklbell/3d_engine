@@ -37,6 +37,7 @@ GLFWwindow* window;
 #include "assets.hpp"
 #include "entities.hpp"
 #include "level.hpp"
+#include "game_behaviour.hpp"
 
 // Defined in globals.hpp
 std::string glsl_version;
@@ -158,7 +159,6 @@ int main() {
     sun_direction = glm::vec3(-0.7071067811865475, -0.7071067811865475, 0);
     sun_color = 5.0f*glm::vec3(0.941, 0.933, 0.849);
 
-    Camera editor_camera, level_camera;
     createDefaultCamera(editor_camera);
     createDefaultCamera(level_camera);
     level_camera.state = Camera::TYPE::STATIC;
@@ -226,8 +226,11 @@ int main() {
         last_time = current_time;
         static const float dt = 1.0/60.0;
 
+        // @todo
         Camera* camera_ptr = &editor_camera;
-        if (editor::use_level_camera || playing) {
+        if (playing) {
+            camera_ptr = &game_camera;
+        } else if (editor::use_level_camera) {
             camera_ptr = &level_camera;
         }
         Camera& camera = *camera_ptr;
@@ -249,6 +252,7 @@ int main() {
         }
 
         entity_manager->tickAnimatedMeshes(true_dt);
+        updateGameEntities(true_dt);
 
         bindDrawShadowMap(*entity_manager, camera);
         bindHdr();
@@ -256,10 +260,10 @@ int main() {
         drawUnifiedHdr(*entity_manager, skybox, camera);
 
         if (playing) {
-            handleGameControls(level_camera, entity_manager, asset_manager, true_dt);
+            handleGameControls(entity_manager, asset_manager, true_dt);
         }
         else {
-            handleEditorControls(editor_camera, level_camera, entity_manager, asset_manager, true_dt);
+            handleEditorControls(entity_manager, asset_manager, true_dt);
         }
         
         if (graphics::do_bloom) {
@@ -269,10 +273,10 @@ int main() {
         drawPost(skybox, camera);
         
         if (!playing) {
-            drawEditorGui(editor_camera, level_camera, *entity_manager, asset_manager);
+            drawEditorGui(*entity_manager, asset_manager);
         }
         else {
-            drawGameGui(editor_camera, level_camera, *entity_manager, asset_manager);
+            drawGameGui(*entity_manager, asset_manager);
         }
         // Swap backbuffer with front buffer
         glfwSwapBuffers(window);

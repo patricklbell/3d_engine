@@ -20,6 +20,7 @@
 #include "globals.hpp"
 #include "assets.hpp"
 #include "utilities.hpp"
+#include "game_behaviour.hpp"
 
 namespace controls {
     glm::vec2 scroll_offset;
@@ -144,32 +145,7 @@ ColliderEntity* pickColliderWithMouse(Camera& camera, EntityManager& entity_mana
     return nearest_c;
 }
 
-static void pauseGame(EntityManager* &entity_manager) {
-    playing = false;
-
-    entity_manager = &level_entity_manager;
-}
-
-static void resetGameEntities() {
-    game_entity_manager.clear();
-    game_entity_manager = level_entity_manager;
-    level_entity_manager.copyEntities(game_entity_manager.entities);
-}
-
-static void playGame(EntityManager* &entity_manager) {
-    playing = true;
-
-    if(!has_played) {
-        resetGameEntities();
-    }
-    entity_manager = &game_entity_manager;
-
-    has_played = true;
-}
-
-
-
-void handleEditorControls(Camera &editor_camera, Camera &level_camera, EntityManager* &entity_manager, AssetManager &asset_manager, float dt) {
+void handleEditorControls(EntityManager* &entity_manager, AssetManager &asset_manager, float dt) {
     // Stores the previous state of input, updated at end of function
     static bool c_key_prev               = false;
     static bool p_key_prev               = false;
@@ -216,6 +192,7 @@ void handleEditorControls(Camera &editor_camera, Camera &level_camera, EntityMan
         }
     }
 
+    // @todo
     Camera* camera_ptr = &editor_camera;
     if (editor::use_level_camera)
         camera_ptr = &level_camera;
@@ -543,7 +520,7 @@ static void clearNeighbour(EntityManager& entity_manager, CollisionNeighbours& n
     neighbours.psuedo_entities.clear();
 }
 
-void handleGameControls(Camera& camera, EntityManager* &entity_manager, AssetManager& asset_manager, float dt) {
+void handleGameControls(EntityManager* &entity_manager, AssetManager& asset_manager, float dt) {
     static bool p_key_prev          = glfwGetKey(window, GLFW_KEY_P);
     static bool backtick_key_prev   = false;
     static bool mouse_left_prev     = false;
@@ -571,7 +548,7 @@ void handleGameControls(Camera& camera, EntityManager* &entity_manager, AssetMan
     
     if (controls::left_mouse_click_press) {
         glm::vec3 n;
-        auto collider = pickColliderWithMouse(camera, *entity_manager, n, true);
+        auto collider = pickColliderWithMouse(game_camera, *entity_manager, n, true);
 
         if (collider != nullptr) {
             if (isPickPsuedo(collider, selected_neighbours)) {
@@ -601,7 +578,7 @@ void handleGameControls(Camera& camera, EntityManager* &entity_manager, AssetMan
     auto s = (ColliderEntity*)entity_manager->getEntity(selected_id);
     if (s != nullptr && (s->type & COLLIDER_ENTITY) && s->mesh != nullptr) {
         auto g_model = createModelMatrix(s->position, s->rotation, s->scale);
-        drawMeshWireframe(*s->mesh, g_model, camera, true);
+        drawMeshWireframe(*s->mesh, g_model, game_camera, true);
     }
 
     backtick_key_prev   = glfwGetKey(window, GLFW_KEY_GRAVE_ACCENT);

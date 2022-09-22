@@ -479,4 +479,3 @@ bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const
     return true;
 }
 
-

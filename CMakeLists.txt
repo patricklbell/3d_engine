@@ -66,6 +66,7 @@ set(SOURCES
 	src/assets.cpp
 	src/entities.cpp
 	src/level.cpp
+	src/game_behaviour.cpp
 
     external/imgui/imgui_draw.cpp
     external/imgui/imgui_impl_glfw.cpp

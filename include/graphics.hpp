@@ -47,6 +47,9 @@ struct Camera {
     glm::mat4 view;
     glm::mat4 projection;
 };
+extern Camera editor_camera;
+extern Camera level_camera;
+extern Camera game_camera;
 
 void createDefaultCamera(Camera &camera);
 void updateCameraView(Camera &camera);

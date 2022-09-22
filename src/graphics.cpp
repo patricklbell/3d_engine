@@ -21,7 +21,11 @@
 int    window_width;
 int    window_height;
 bool   window_resized;
-namespace graphics{
+Camera editor_camera;
+Camera level_camera;
+Camera game_camera;
+
+namespace graphics {
     bool do_bloom = true;
     GLuint bloom_fbo = {GL_FALSE};
     std::vector<BloomMipInfo> bloom_mip_infos;

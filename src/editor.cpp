@@ -37,6 +37,7 @@
 #include "controls.hpp"
 #include "entities.hpp"
 #include "level.hpp"
+#include "game_behaviour.hpp"
 
 namespace editor {
     EditorMode editor_mode = EditorMode::ENTITY;
@@ -293,7 +294,7 @@ void initEditorGui(AssetManager &asset_manager){
     asset_manager.loadMeshFile(&ring_mesh, "data/mesh/ring.mesh");
 }
 
-static bool echoCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager, Camera &camera) {
+static bool echoCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
     for (int i = 1; i < input_tokens.size(); ++i) {
         if (i != 1) output.append(" ");
         output.append(input_tokens[i]);
@@ -301,7 +302,7 @@ static bool echoCommand(std::vector<std::string>& input_tokens, std::string& out
     return true;
 }
 
-static bool listLevelsCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager, Camera &camera) {
+static bool listLevelsCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
     for (const auto& entry : std::filesystem::directory_iterator("data/levels/")) {
         auto filename = entry.path().filename();
         if (filename.extension() == ".level") {
@@ -312,7 +313,7 @@ static bool listLevelsCommand(std::vector<std::string>& input_tokens, std::strin
     return true;
 }
 
-static bool listMeshCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager, Camera &camera) {
+static bool listMeshCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
     for (const auto& entry : std::filesystem::directory_iterator("data/mesh/")) {
         auto filename = entry.path().filename();
         if (filename.extension() == ".mesh") {
@@ -323,33 +324,42 @@ static bool listMeshCommand(std::vector<std::string>& input_tokens, std::string&
     return true;
 }
 
-static bool loadLevelCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager, Camera &camera) {
+static bool loadLevelCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
     if (input_tokens.size() >= 2) {
         auto filename = "data/levels/" + input_tokens[1] + ".level";
-        if (loadLevel(entity_manager, asset_manager, filename, camera)) {
+        if (loadLevel(level_entity_manager, asset_manager, filename, level_camera)) {
+            if(playing) {
+                resetGameEntities();
+            }
             level_path = filename;
             output += "Loaded level at path " + filename;
             selection.clear();
+            editor_camera = level_camera;
             return true;
         }
 
         output += "Failed to loaded level at path " + filename;
         return false;
     }
+
+    // @note
+    editor_camera = level_camera;
+    editor_camera.state = Camera::TYPE::STATIC;
     
     output += "Please provide a level name, see list_levels";
     return false;
 }
 
-static bool clearLevelCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager, Camera& camera) {
-    entity_manager.clear();    
+static bool clearLevelCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
+    level_entity_manager.clear();
+    game_entity_manager.clear();
     editor::selection.clear();
     output += "Cleared level";
 
     return true;
 }
 
-static bool saveLevelCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager, Camera &camera) {
+static bool saveLevelCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
     std::string filename;
     if (input_tokens.size() == 1) {
         if (level_path == "") {
@@ -361,31 +371,33 @@ static bool saveLevelCommand(std::vector<std::string>& input_tokens, std::string
     else if (input_tokens.size() >= 2) {
         filename = "data/levels/" + input_tokens[1] + ".level";
     }
-    saveLevel(entity_manager, filename, camera);
+    saveLevel(level_entity_manager, filename, level_camera);
     level_path = filename;
 
     output += "Saved current level at path " + filename;
     return true;
 }
 
-static bool newLevelCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager, Camera& camera) {
+static bool newLevelCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
     std::string filename;
     if (input_tokens.size() == 1) {
         output += "Please provide a name for the new level";
         return false;
     }
     else if (input_tokens.size() >= 2) {
-        entity_manager.clear();
+        level_entity_manager.clear();
+        game_entity_manager.clear();
+        editor::selection.clear();
         filename = "data/levels/" + input_tokens[1] + ".level";
     }
     level_path = filename;
 
-    saveLevel(entity_manager, filename, camera);
+    saveLevel(level_entity_manager, filename, level_camera);
     output += "Created new level at path " + filename;
     return true;
 }
 
-static bool loadModelCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager, Camera &camera) {
+static bool loadModelCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
     if (input_tokens.size() >= 3) {
         auto model_filename = input_tokens[1];
         auto mesh_filename = "data/mesh/" + input_tokens[2] + ".mesh";
@@ -407,7 +419,7 @@ static bool loadModelCommand(std::vector<std::string>& input_tokens, std::string
     return false;
 }
 
-static bool addMeshCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager, Camera &camera) {
+static bool addMeshCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
     if (input_tokens.size() >= 2) {
         auto filename = "data/mesh/" + input_tokens[1] + ".mesh";
         auto mesh = asset_manager.getMesh(filename);
@@ -439,7 +451,7 @@ static bool addMeshCommand(std::vector<std::string>& input_tokens, std::string& 
     return false;
 }
 
-static bool addColliderCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager, Camera& camera) {
+static bool addColliderCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
     auto collider = new ColliderEntity(entity_manager.getFreeId());
     auto collider_mesh = asset_manager.getMesh("data/mesh/cube.mesh");
     if (collider_mesh == nullptr) {
@@ -457,7 +469,7 @@ static bool addColliderCommand(std::vector<std::string>& input_tokens, std::stri
     return true;
 }
 
-static bool saveMeshCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager, Camera &camera) {
+static bool saveMeshCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
     if (input_tokens.size() >= 2) {
         auto filename = "data/mesh/" + input_tokens[1] + ".mesh";
         auto mesh = asset_manager.getMesh(filename);
@@ -480,7 +492,7 @@ static bool saveMeshCommand(std::vector<std::string>& input_tokens, std::string&
     return false;
 }
 
-static bool listModelsCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager, Camera &camera) {
+static bool listModelsCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
     for (const auto& entry : std::filesystem::directory_iterator("data/models/")) {
         auto filename = entry.path().filename();
         if (filename.extension() == ".obj") {
@@ -491,7 +503,7 @@ static bool listModelsCommand(std::vector<std::string>& input_tokens, std::strin
     return true;
 }
 
-static bool convertModelsToMeshCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager, Camera &camera) {
+static bool convertModelsToMeshCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
     for (const auto& entry : std::filesystem::directory_iterator("data/models/")) {
         auto filename = entry.path().filename();
         if (filename.extension() == ".obj") {
@@ -513,7 +525,7 @@ static bool convertModelsToMeshCommand(std::vector<std::string>& input_tokens, s
     return true;
 }
 
-static bool addWaterCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager, Camera &camera) {
+static bool addWaterCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
     if(entity_manager.water == NULLID) {
         auto w = (WaterEntity*)entity_manager.createEntity(WATER_ENTITY);
         entity_manager.water = w->id;
@@ -525,7 +537,7 @@ static bool addWaterCommand(std::vector<std::string>& input_tokens, std::string&
     return false;
 }
 
-static bool toggleBloomCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager, Camera& camera) {
+static bool toggleBloomCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
     graphics::do_bloom = !graphics::do_bloom;
     if (graphics::do_bloom) {
         initBloomFbo(true);
@@ -539,12 +551,12 @@ static bool toggleBloomCommand(std::vector<std::string>& input_tokens, std::stri
     return true;
 }
 
-static bool helpCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager, Camera &camera);
+static bool helpCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager);
 
 const std::map
 <
     std::string,
-    std::function<bool(std::vector<std::string> &, std::string &output, EntityManager&, AssetManager&, Camera&)>
+    std::function<bool(std::vector<std::string> &, std::string &output, EntityManager&, AssetManager&)>
 > command_to_func = {
     {"echo", echoCommand},
     {"help", helpCommand},
@@ -563,7 +575,7 @@ const std::map
     {"toggle_bloom", toggleBloomCommand},
 };
 
-static bool helpCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager, Camera &camera) {
+static bool helpCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
     output += "Commands are: clear ";
     for (const auto& pair : command_to_func) {
         output += pair.first + " ";
@@ -571,7 +583,7 @@ static bool helpCommand(std::vector<std::string>& input_tokens, std::string& out
     return true;
 }
 
-void ImTerminal(EntityManager &entity_manager, AssetManager &asset_manager, bool is_active, Camera &level_camera, Camera &editor_camera) {
+void ImTerminal(EntityManager &entity_manager, AssetManager &asset_manager, bool is_active) {
     constexpr int pad = 10;
     constexpr float open_time_total = 0.6; // s
     constexpr float close_time_total = 0.3; // s
@@ -673,12 +685,7 @@ void ImTerminal(EntityManager &entity_manager, AssetManager &asset_manager, bool
                     } else {
                         auto lu = command_to_func.find(command);
                         if (lu != command_to_func.end()) {
-                            lu->second(tokens, output, entity_manager, asset_manager, level_camera);
-                            // @note
-                            if (command == "load_level") {
-                                editor_camera = level_camera;
-                                editor_camera.state = Camera::TYPE::STATIC;
-                            }
+                            lu->second(tokens, output, entity_manager, asset_manager);
                         }
                         else {
                             output = "Unknown Command '" + tokens[0] + "', try 'help' to see a list of commands";
@@ -1322,7 +1329,7 @@ void drawColliders(const EntityManager &entity_manager, const Camera &camera) {
     }
 }
 
-void drawEditorGui(Camera &editor_camera, Camera& level_camera, EntityManager &entity_manager, AssetManager &asset_manager){
+void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
     if (!use_level_camera && draw_level_camera) {
         drawFrustrum(level_camera, editor_camera);
     }
@@ -1771,7 +1778,7 @@ void drawEditorGui(Camera &editor_camera, Camera& level_camera, EntityManager &e
         ImGui::End();
     }
 
-    ImTerminal(entity_manager, asset_manager, do_terminal, level_camera, editor_camera);
+    ImTerminal(entity_manager, asset_manager, do_terminal);
 
     // Handle imfile dialog browser
     {
@@ -1855,7 +1862,7 @@ void drawEditorGui(Camera &editor_camera, Camera& level_camera, EntityManager &e
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
 
-void drawGameGui(Camera& editor_camera, Camera& level_camera, EntityManager& entity_manager, AssetManager& asset_manager) {
+void drawGameGui(EntityManager& entity_manager, AssetManager& asset_manager) {
     // Start the Dear ImGui frame;
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
@@ -1875,7 +1882,7 @@ void drawGameGui(Camera& editor_camera, Camera& level_camera, EntityManager& ent
         ImGui::End();
     }
 
-    ImTerminal(entity_manager, asset_manager, do_terminal, level_camera, editor_camera);
+    ImTerminal(entity_manager, asset_manager, do_terminal);
 
     // Rendering ImGUI
     ImGui::Render();
