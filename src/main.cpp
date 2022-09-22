@@ -48,6 +48,7 @@ std::string GL_version, GL_vendor, GL_renderer;
 std::string level_path = "";
 ThreadPool *global_thread_pool;
 bool playing = false;
+bool has_played = false;
 SoLoud::Soloud soloud;
 
 int main() {
@@ -169,7 +170,7 @@ int main() {
     initGlobalShaders();
 
     AssetManager asset_manager;
-    EntityManager entity_manager;
+    EntityManager *entity_manager = &level_entity_manager;
 
     // Load background sample
     auto bg_music = asset_manager.createAudio("data/audio/time.wav");
@@ -189,7 +190,7 @@ int main() {
     veg->texture = asset_manager.createTexture("data/textures/extern/Leaves/Leaves_Pine_Texture.png");
     asset_manager.loadTexture(veg->texture, veg->texture->handle, GL_RGBA);*/
 
-    auto anim_entity = (AnimatedMeshEntity*)entity_manager.createEntity(ANIMATED_MESH_ENTITY);
+    auto anim_entity = (AnimatedMeshEntity*)entity_manager->createEntity(ANIMATED_MESH_ENTITY);
 
     /*anim_entity->animesh = asset_manager.createAnimatedMesh("data/models/extern/dancing_vampire/dancing_vampire.fbx");
     anim_entity->mesh = asset_manager.createMesh("data/models/extern/dancing_vampire/dancing_vampire.fbx");
@@ -247,12 +248,12 @@ int main() {
             updateGlobalShaders();
         }
 
-        entity_manager.tickAnimatedMeshes(true_dt);
+        entity_manager->tickAnimatedMeshes(true_dt);
 
-        bindDrawShadowMap(entity_manager, camera);
+        bindDrawShadowMap(*entity_manager, camera);
         bindHdr();
         clearFramebuffer();
-        drawUnifiedHdr(entity_manager, skybox, camera);
+        drawUnifiedHdr(*entity_manager, skybox, camera);
 
         if (playing) {
             handleGameControls(level_camera, entity_manager, asset_manager, true_dt);
@@ -268,17 +269,17 @@ int main() {
         drawPost(skybox, camera);
         
         if (!playing) {
-            drawEditorGui(editor_camera, level_camera, entity_manager, asset_manager);
+            drawEditorGui(editor_camera, level_camera, *entity_manager, asset_manager);
         }
         else {
-            drawGameGui(editor_camera, level_camera, entity_manager, asset_manager);
+            drawGameGui(editor_camera, level_camera, *entity_manager, asset_manager);
         }
         // Swap backbuffer with front buffer
         glfwSwapBuffers(window);
         window_resized = false;
         glfwPollEvents();
 
-        entity_manager.propogateChanges();
+        entity_manager->propogateChanges();
 
 #ifndef NDEBUG
         checkGLError("Main loop");

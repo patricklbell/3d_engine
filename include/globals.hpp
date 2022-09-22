@@ -1,14 +1,17 @@
 #ifndef GLOBALS_H
 #define GLOBALS_H
 
+#include <soloud.h>
+#include <soloud_thread.h>
+#include <soloud_wav.h>
+#include <soloud_wavstream.h>
+
 #include <string>
 
 #include <glm/glm.hpp>
 
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
-
-#include "assets.hpp"
 
 #define DO_MULTITHREAD 1
 #define ENTITY_COUNT 1000
@@ -18,10 +21,8 @@
 #ifdef _WINDOWS
 #define NOMINMAX 
 #endif
-#include <soloud.h>
-#include <soloud_thread.h>
-#include <soloud_wav.h>
-#include <soloud_wavstream.h>
+
+#include "assets.hpp"
 
 extern GLFWwindow* window;
 extern std::string glsl_version;
@@ -34,6 +35,7 @@ extern AssetManager global_assets;
 extern std::string GL_version, GL_vendor, GL_renderer;
 extern std::string level_path;
 extern bool playing;
+extern bool has_played;
 
 struct ThreadPool;
 extern ThreadPool *global_thread_pool;

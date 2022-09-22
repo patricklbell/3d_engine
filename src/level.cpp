@@ -375,7 +375,7 @@ bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const
                         asset_manager.loadMeshFile(mesh, handle);
                     }
                     else {
-                        std::cerr << "Warning, new mesh is being loaded with assimp\n";
+                        std::cerr << "Warning, there is a model file being loaded with assimp\n";
                         asset_manager.loadMeshAssimp(mesh, handle);
                     }
 
@@ -416,6 +416,7 @@ bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const
     // Read entities until end of file
     //
     entity_manager.clear();
+    has_played = false;
     char c;
     while((c = fgetc(f)) != EOF){
         ungetc(c, f);

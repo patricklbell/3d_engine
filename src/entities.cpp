@@ -7,6 +7,9 @@
 #include "entities.hpp"
 #include "assets.hpp"
 
+EntityManager level_entity_manager;
+EntityManager game_entity_manager;
+
 void tickAnimatedMesh(AnimatedMeshEntity& entity, float time, bool looping, const bool do_animation=true) {
     auto& animesh = entity.animesh;
     auto& animation = entity.animation;

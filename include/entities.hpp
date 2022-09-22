@@ -184,6 +184,12 @@ struct EntityManager {
     ~EntityManager(){
         clear();
     }
+    inline void copyEntities(Entity* dest[ENTITY_COUNT]) {
+        for(uint64_t i = 0; i < ENTITY_COUNT; i++){
+            if(entities[i] != nullptr)
+                dest[i] = copyEntity(entities[i]);
+        }
+    }
     inline void clear(){
         // Delete entities
         for(uint64_t i = 0; i < ENTITY_COUNT; i++){
@@ -259,5 +265,8 @@ struct EntityManager {
         }
     }
 };
+
+extern EntityManager level_entity_manager;
+extern EntityManager game_entity_manager;
 
 #endif

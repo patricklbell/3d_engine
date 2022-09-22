@@ -5,6 +5,7 @@
 #include <vector>
 #include <list>
 #include <unordered_map>
+#include <set>
 
 // Include GLEW
 #include <GL/glew.h>

@@ -144,7 +144,32 @@ ColliderEntity* pickColliderWithMouse(Camera& camera, EntityManager& entity_mana
     return nearest_c;
 }
 
-void handleEditorControls(Camera &editor_camera, Camera &level_camera, EntityManager &entity_manager, AssetManager &asset_manager, float dt) {
+static void pauseGame(EntityManager* &entity_manager) {
+    playing = false;
+
+    entity_manager = &level_entity_manager;
+}
+
+static void resetGameEntities() {
+    game_entity_manager.clear();
+    game_entity_manager = level_entity_manager;
+    level_entity_manager.copyEntities(game_entity_manager.entities);
+}
+
+static void playGame(EntityManager* &entity_manager) {
+    playing = true;
+
+    if(!has_played) {
+        resetGameEntities();
+    }
+    entity_manager = &game_entity_manager;
+
+    has_played = true;
+}
+
+
+
+void handleEditorControls(Camera &editor_camera, Camera &level_camera, EntityManager* &entity_manager, AssetManager &asset_manager, float dt) {
     // Stores the previous state of input, updated at end of function
     static bool c_key_prev               = false;
     static bool p_key_prev               = false;
@@ -199,21 +224,21 @@ void handleEditorControls(Camera &editor_camera, Camera &level_camera, EntityMan
     if(!io.WantCaptureKeyboard){
         if (editor::selection.ids.size() && glfwGetKey(window, GLFW_KEY_DELETE) && !delete_key_prev) {
             for (auto& id : editor::selection.ids) {
-                entity_manager.deleteEntity(id);
-                if (id == entity_manager.water) {
-                    entity_manager.water = NULLID;
+                entity_manager->deleteEntity(id);
+                if (id == entity_manager->water) {
+                    entity_manager->water = NULLID;
                 }
             }
             editor::selection.clear();
         }
         if (editor::selection.ids.size() && !(editor::selection.type & WATER_ENTITY)
             && glfwGetKey(window, GLFW_KEY_C) && !c_key_prev && glfwGetKey(window, GLFW_KEY_LEFT_CONTROL)) {
-            referenceToCopySelection(entity_manager, editor::selection, editor::copy_selection);
+            referenceToCopySelection(*entity_manager, editor::selection, editor::copy_selection);
         }
         if (editor::copy_selection.entities.size() != 0 && 
             !ctrl_v_prev && glfwGetKey(window, GLFW_KEY_V) && glfwGetKey(window, GLFW_KEY_LEFT_CONTROL)) {
             editor::selection.clear();
-            createCopySelectionEntities(entity_manager, asset_manager, editor::copy_selection, editor::selection);
+            createCopySelectionEntities(*entity_manager, asset_manager, editor::copy_selection, editor::selection);
             updateCameraTarget(camera, editor::selection.avg_position);
         }
         if (glfwGetKey(window, GLFW_KEY_D) && !d_key_prev && glfwGetKey(window, GLFW_KEY_LEFT_SHIFT)) {
@@ -239,7 +264,7 @@ void handleEditorControls(Camera &editor_camera, Camera &level_camera, EntityMan
         }
 
         if (glfwGetKey(window, GLFW_KEY_P) && !p_key_prev)
-            playing = !playing;
+            playGame(entity_manager);
 
         if (glfwGetKey(window, GLFW_KEY_F) && !f_key_prev)
             editor::draw_level_camera = !editor::draw_level_camera;
@@ -248,9 +273,9 @@ void handleEditorControls(Camera &editor_camera, Camera &level_camera, EntityMan
     if (right_mouse_click_release && (glfwGetTime() - mouse_right_press_time) < 0.2) {
         if (editor::editor_mode == EditorMode::COLLIDERS) {
             glm::vec3 n;
-            auto collider = pickColliderWithMouse(camera, entity_manager, n);
+            auto collider = pickColliderWithMouse(camera, *entity_manager, n);
             if (collider != nullptr) {
-                entity_manager.deleteEntity(collider->id);
+                entity_manager->deleteEntity(collider->id);
             }
         }
         else {
@@ -262,12 +287,12 @@ void handleEditorControls(Camera &editor_camera, Camera &level_camera, EntityMan
         {
         case EditorMode::ENTITY:
         {
-            auto e = pickEntityWithMouse(camera, entity_manager);
+            auto e = pickEntityWithMouse(camera, *entity_manager);
             if (e != nullptr) {
                 if (!glfwGetKey(window, GLFW_KEY_LEFT_SHIFT)) {
                     editor::selection.clear();
                 }
-                editor::selection.toggleEntity(entity_manager, e);
+                editor::selection.toggleEntity(*entity_manager, e);
 
                 if (camera.state != Camera::TYPE::STATIC && editor::selection.avg_position_count) {
                     updateCameraTarget(camera, editor::selection.avg_position);
@@ -282,11 +307,11 @@ void handleEditorControls(Camera &editor_camera, Camera &level_camera, EntityMan
         {
             
             glm::vec3 normal;
-            auto pick_c = pickColliderWithMouse(camera, entity_manager, normal);
+            auto pick_c = pickColliderWithMouse(camera, *entity_manager, normal);
             if (pick_c != nullptr) {
                 std::cout << "Collided, normal: " << normal << "\n";
-                auto c = (ColliderEntity*)copyEntity(pick_c);
-                c->id = entity_manager.getFreeId();
+                auto c = (ColliderEntity*)copyEntity((Entity*)pick_c);
+                c->id = entity_manager->getFreeId();
                 c->mesh = pick_c->mesh;
                 
                 c->position = pick_c->position + 2.0f * normal;
@@ -296,7 +321,7 @@ void handleEditorControls(Camera &editor_camera, Camera &level_camera, EntityMan
                 c->collider_scale = pick_c->collider_scale;
                 c->collider_rotation = pick_c->collider_rotation;
 
-                entity_manager.setEntity(c->id.i, c);
+                entity_manager->setEntity(c->id.i, (Entity*)c);
             }
             break;
         }
@@ -518,10 +543,11 @@ static void clearNeighbour(EntityManager& entity_manager, CollisionNeighbours& n
     neighbours.psuedo_entities.clear();
 }
 
-void handleGameControls(Camera& camera, EntityManager& entity_manager, AssetManager& asset_manager, float dt) {
+void handleGameControls(Camera& camera, EntityManager* &entity_manager, AssetManager& asset_manager, float dt) {
     static bool p_key_prev          = glfwGetKey(window, GLFW_KEY_P);
     static bool backtick_key_prev   = false;
     static bool mouse_left_prev     = false;
+    static bool r_key_prev          = false;
 
     ImGuiIO& io = ImGui::GetIO();
     controls::left_mouse_click_press = !io.WantCaptureMouse && glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) && !mouse_left_prev;
@@ -531,7 +557,9 @@ void handleGameControls(Camera& camera, EntityManager& entity_manager, AssetMana
     delta_mouse_position = mouse_position - delta_mouse_position;
 
     if (glfwGetKey(window, GLFW_KEY_P) && !p_key_prev)
-        playing = !playing;
+        pauseGame(entity_manager);
+    if (glfwGetKey(window, GLFW_KEY_R) && !r_key_prev)
+        resetGameEntities();
     if (glfwGetKey(window, GLFW_KEY_GRAVE_ACCENT) && !backtick_key_prev)
         editor::do_terminal = !editor::do_terminal;
 
@@ -543,34 +571,34 @@ void handleGameControls(Camera& camera, EntityManager& entity_manager, AssetMana
     
     if (controls::left_mouse_click_press) {
         glm::vec3 n;
-        auto collider = pickColliderWithMouse(camera, entity_manager, n, true);
+        auto collider = pickColliderWithMouse(camera, *entity_manager, n, true);
 
         if (collider != nullptr) {
             if (isPickPsuedo(collider, selected_neighbours)) {
-                clearNeighbour(entity_manager, selected_neighbours);
+                clearNeighbour(*entity_manager, selected_neighbours);
 
-                auto s = (ColliderEntity*)entity_manager.getEntity(selected_id);
+                auto s = (ColliderEntity*)entity_manager->getEntity(selected_id);
                 auto offset = collider->collider_position - s->collider_position;
                 s->collider_position += offset;
                 s->position += offset;
 
-                selected_neighbours = findColliderNeighbours(entity_manager, collider);
-                addPsuedoNeighbours(entity_manager, asset_manager, s, selected_neighbours);
+                selected_neighbours = findColliderNeighbours(*entity_manager, collider);
+                addPsuedoNeighbours(*entity_manager, asset_manager, s, selected_neighbours);
             }
             else if (collider->id != selected_id){
                 selected_id = collider->id;
-                selected_neighbours = findColliderNeighbours(entity_manager, collider);
-                addPsuedoNeighbours(entity_manager, asset_manager, collider, selected_neighbours);
+                selected_neighbours = findColliderNeighbours(*entity_manager, collider);
+                addPsuedoNeighbours(*entity_manager, asset_manager, collider, selected_neighbours);
             }
         }
         else {
-            clearNeighbour(entity_manager, selected_neighbours);
+            clearNeighbour(*entity_manager, selected_neighbours);
             selected_id = NULLID;
         }
     }
 
     // For now just use wireframe, in future some kind of edge detection, or saturation effect
-    auto s = (ColliderEntity*)entity_manager.getEntity(selected_id);
+    auto s = (ColliderEntity*)entity_manager->getEntity(selected_id);
     if (s != nullptr && (s->type & COLLIDER_ENTITY) && s->mesh != nullptr) {
         auto g_model = createModelMatrix(s->position, s->rotation, s->scale);
         drawMeshWireframe(*s->mesh, g_model, camera, true);
@@ -578,5 +606,6 @@ void handleGameControls(Camera& camera, EntityManager& entity_manager, AssetMana
 
     backtick_key_prev   = glfwGetKey(window, GLFW_KEY_GRAVE_ACCENT);
     p_key_prev          = glfwGetKey(window, GLFW_KEY_P);
+    r_key_prev          = glfwGetKey(window, GLFW_KEY_R);
     mouse_left_prev     = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT);
 }
