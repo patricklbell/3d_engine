@@ -886,6 +886,7 @@ void drawUnifiedHdr(const EntityManager& entity_manager, const Texture* skybox, 
 
     // @todo in future entities should probably stored as vectors so you can traverse easily
     std::vector<AnimatedMeshEntity*> anim_mesh_entities;
+    std::vector<VegetationEntity*> vegetation_entities;
 
     auto vp = camera.projection * camera.view;
 
@@ -913,6 +914,10 @@ void drawUnifiedHdr(const EntityManager& entity_manager, const Texture* skybox, 
                 anim_mesh_entities.push_back(a_e);
                 continue;
             }
+        }
+        if (entityInherits(m_e->type, VEGETATION_ENTITY)) {
+            vegetation_entities.push_back((VegetationEntity*)m_e);
+            continue;
         }
         if (!(entityInherits(m_e->type, MESH_ENTITY)) || m_e->mesh == nullptr) continue;
 
@@ -994,34 +999,35 @@ void drawUnifiedHdr(const EntityManager& entity_manager, const Texture* skybox, 
     // Draw vegetation/alpha clipped quads
     // @todo instanced rendering
     //
-    glDisable(GL_CULL_FACE);
+    if(vegetation_entities.size() > 0) {
+        glDisable(GL_CULL_FACE);
 
-    glUseProgram(shader::vegetation.program);
-    glUniform1f(shader::vegetation.uniform("time"), glfwGetTime());
-    
-    // @todo shadow casting on vegetation
-    // glActiveTexture(GL_TEXTURE5);
-    // glBindTexture(GL_TEXTURE_2D_ARRAY, shadow_buffer);
-    // glUniform1fv(shader::unified.uniform("shader")::unified_bloom].shadow_cascade_distances, shadow_num, shadow_cascade_distances);
-    // glUniform1f(shader::unified.uniform("shader")::unified_bloom].far_plane, camera.far_plane);
+        glUseProgram(shader::vegetation.program);
+        glUniform1f(shader::vegetation.uniform("time"), glfwGetTime());
+        
+        // @todo shadow casting on vegetation
+        // glActiveTexture(GL_TEXTURE5);
+        // glBindTexture(GL_TEXTURE_2D_ARRAY, shadow_buffer);
+        // glUniform1fv(shader::unified.uniform("shader")::unified_bloom].shadow_cascade_distances, shadow_num, shadow_cascade_distances);
+        // glUniform1f(shader::unified.uniform("shader")::unified_bloom].far_plane, camera.far_plane);
 
-    for (int i = 0; i < ENTITY_COUNT; ++i) {
-        auto v_e = reinterpret_cast<VegetationEntity*>(entity_manager.entities[i]);
-        if(v_e == nullptr || !entityInherits(v_e->type, EntityType::VEGETATION_ENTITY) || v_e->texture == nullptr) continue;
+        for (const auto &v_e : vegetation_entities) {
+            if(v_e->texture == nullptr) continue;
 
-        auto mvp   = vp * createModelMatrix(v_e->position, v_e->rotation, v_e->scale);
-        glUniformMatrix4fv(shader::vegetation.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
+            auto mvp   = vp * createModelMatrix(v_e->position, v_e->rotation, v_e->scale);
+            glUniformMatrix4fv(shader::vegetation.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
 
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, v_e->texture->id);
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, v_e->texture->id);
 
-        // @todo Use fewer tri mesh/find some way to make this better
-        glBindVertexArray(seaweed.vao);
-        glDrawElements(seaweed.draw_mode, seaweed.draw_count[0], seaweed.draw_type, 
-                       (GLvoid*)(sizeof(*seaweed.indices)*seaweed.draw_start[0]));
+            // @todo Use fewer tri mesh/find some way to make this better
+            glBindVertexArray(seaweed.vao);
+            glDrawElements(seaweed.draw_mode, seaweed.draw_count[0], seaweed.draw_type, 
+                           (GLvoid*)(sizeof(*seaweed.indices)*seaweed.draw_start[0]));
+        }
+
+        glEnable(GL_CULL_FACE);
     }
-
-    glEnable(GL_CULL_FACE);
 
     //drawSkybox(skybox, camera);
     if (entity_manager.water != NULLID) {

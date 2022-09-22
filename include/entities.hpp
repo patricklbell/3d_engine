@@ -30,7 +30,7 @@ enum EntityType : uint64_t {
     MESH_ENTITY             = 1 << 0,
     WATER_ENTITY            = 1 << 1,
     COLLIDER_ENTITY         =(1 << 2) | MESH_ENTITY,
-    VEGETATION_ENTITY       = 1 << 3,
+    VEGETATION_ENTITY       =(1 << 3) | MESH_ENTITY,
     ANIMATED_MESH_ENTITY    =(1 << 4) | MESH_ENTITY,
 };
 struct Entity {
@@ -111,17 +111,10 @@ struct ColliderEntity : MeshEntity {
 };
 
 
-struct VegetationEntity : Entity {
+struct VegetationEntity : MeshEntity {
     Texture *texture = nullptr;
 
-    glm::vec3 position      = glm::vec3(0.0);
-    glm::quat rotation      = glm::quat(0.0,0.0,0.0,1.0);
-    glm::mat3 scale         = glm::mat3(1.0);
-
-    // @todo implement shadow casting
-    uint8_t casts_shadow = true;
-
-    VegetationEntity(Id _id=NULLID) : Entity(_id){
+    VegetationEntity(Id _id=NULLID) : MeshEntity(_id){
         type = EntityType::VEGETATION_ENTITY;
     }
 };

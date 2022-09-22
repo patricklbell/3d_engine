@@ -108,6 +108,7 @@ namespace graphics{
     extern Mesh quad;
     extern Mesh cube;
     extern Mesh water_grid;
+    extern Mesh seaweed;
 
     extern Texture * simplex_gradient;
     extern Texture * simplex_value;

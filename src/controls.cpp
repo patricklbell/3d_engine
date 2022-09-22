@@ -77,7 +77,7 @@ Entity* pickEntityWithMouse(Camera &camera, EntityManager &entity_manager) {
                 }
             }
         }
-        else if (e->type & EntityType::MESH_ENTITY) {
+        else if (e->type & EntityType::MESH_ENTITY && ((MeshEntity*)e)->mesh != nullptr) {
             auto m_e = (MeshEntity*)e;
             const auto &mesh = m_e->mesh;
             const auto g_trans = createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
