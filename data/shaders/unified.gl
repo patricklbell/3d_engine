@@ -41,10 +41,6 @@ in mat3 TBN;
 
 layout (location = 0) out vec4 out_color;
 
-#ifdef BLOOM
-layout (location = 1) out vec4 out_bloom_color; 
-#endif
-
 layout(binding = 0) uniform sampler2D albedo_map;
 uniform vec3 albedo_mult;
 layout(binding = 1) uniform sampler2D normal_map;
@@ -116,15 +112,6 @@ void main() {
 #endif
 
     out_color = vec4(hdr_color, 1.0);
-
-#ifdef BLOOM
-    // If we are doing bloom write to second buffer
-    float brightness = dot(hdr_color, 0.5*vec3(0.2126, 0.7152, 0.0722));
-    if(brightness > 1.0)
-        out_bloom_color = vec4(hdr_color, 1.0);
-    else
-        out_bloom_color = vec4(0.0, 0.0, 0.0, 1.0);
-#endif
 }
 
 #endif
