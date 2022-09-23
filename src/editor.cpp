@@ -1399,6 +1399,7 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
             static const std::vector<std::string> image_file_extensions = { ".jpg", ".png", ".bmp", ".tiff", ".tga" };
 
             auto button_size = ImVec2(ImGui::GetWindowWidth() / 2.0f - pad, 2.0f * pad);
+            auto button_size_full = ImVec2(ImGui::GetWindowWidth() - pad, 2.0f * pad);
             if (entityInherits(selection.type, MESH_ENTITY)) {
                 auto m_e = (MeshEntity*)fe;
                 TransformType edited_transform;
@@ -1602,6 +1603,41 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
                     ImGui::SliderFloat("Time Scale: ", &a_e->time_scale, -10.0f, 10.0f, "%.3f");
                     ImGui::Checkbox("Loop: ", &a_e->loop);
                     ImGui::Checkbox("Playing: ", &a_e->playing);
+                }
+            }
+            if (entityInherits(selection.type, VEGETATION_ENTITY)) {
+                auto v_e = (VegetationEntity*)fe;
+                if (ImGui::CollapsingHeader("Texture")) {
+                    bool all_same = v_e->texture != nullptr;
+                    if(all_same) {
+                        for (const auto& id : selection.ids) {
+                            auto v_e_i = (VegetationEntity*)entity_manager.getEntity(id);
+                            if(v_e_i->texture != v_e->texture) {
+                                all_same = false;
+                                break;
+                            }
+                        }
+                    }
+
+                    if(all_same) {
+                        auto w = ImGui::GetWindowWidth() - pad;
+                        auto tex = (void*)(intptr_t)v_e->texture->id;
+                        if (ImGui::ImageButton(tex, ImVec2(w, w))) {
+                            im_file_dialog.SetPwd(exepath + "/data/textures");
+                            im_file_dialog_type = "vegetationTexture";
+                            im_file_dialog.SetCurrentTypeFilterIndex(2);
+                            im_file_dialog.SetTypeFilters(image_file_extensions);
+                            im_file_dialog.Open();
+                        }
+                    } else {
+                        if (ImGui::Button("Set Multiple", button_size_full)) {
+                            im_file_dialog.SetPwd(exepath + "/data/textures");
+                            im_file_dialog_type = "vegetationTexture";
+                            im_file_dialog.SetCurrentTypeFilterIndex(2);
+                            im_file_dialog.SetTypeFilters(image_file_extensions);
+                            im_file_dialog.Open();
+                        }
+                    }
                 }
             }
 
@@ -1821,6 +1857,19 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
                 global_assets.loadTexture(graphics::simplex_value, p, GL_RED);
             } else if (im_file_dialog_type == "simplexGradient") {
                 global_assets.loadTexture(graphics::simplex_gradient, p, GL_RGB);
+            } else if (im_file_dialog_type == "vegetationTexture") {
+                auto texture = asset_manager.getTexture(p);
+                if(texture == nullptr) {
+                    texture = asset_manager.createTexture(p);
+                    asset_manager.loadTexture(texture, p, GL_RGBA);
+                }
+
+                for (const auto& id : selection.ids) {
+                    auto v_e = (VegetationEntity*)entity_manager.getEntity(id);
+                    if(v_e == nullptr) continue;
+
+                    v_e->texture = texture;
+                }
             //} else if(startsWith(im_file_dialog_type, "asset.mat.t")) {
             //    if (sel_e != nullptr && sel_e->type == MESH_ENTITY) {
             //        auto m_e = static_cast<MeshEntity*>(sel_e);

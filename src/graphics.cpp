@@ -65,7 +65,7 @@ namespace graphics {
     //
     // ASSETS
     //
-    Mesh quad, cube, line_cube, water_grid, seaweed;
+    Mesh quad, cube, line_cube, water_grid;
     Texture * simplex_gradient;
     Texture * simplex_value;
 
@@ -740,8 +740,6 @@ void initGraphicsPrimitives(AssetManager& asset_manager) {
     line_cube.draw_count[0] = sizeof(line_cube_vertices) / (2.0 * sizeof(*line_cube_vertices));
 
     asset_manager.loadMeshFile(&water_grid, "data/mesh/water_grid.mesh");
-    asset_manager.loadMeshFile(&seaweed, "data/mesh/seaweed.mesh");
-
     simplex_gradient = asset_manager.createTexture("data/textures/2d_simplex_gradient_seamless.png");
     asset_manager.loadTexture(simplex_gradient, "data/textures/2d_simplex_gradient_seamless.png", GL_RGB);
     simplex_value = asset_manager.createTexture("data/textures/2d_simplex_value_seamless.png");
@@ -1020,10 +1018,13 @@ void drawUnifiedHdr(const EntityManager& entity_manager, const Texture* skybox, 
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, v_e->texture->id);
 
-            // @todo Use fewer tri mesh/find some way to make this better
-            glBindVertexArray(seaweed.vao);
-            glDrawElements(seaweed.draw_mode, seaweed.draw_count[0], seaweed.draw_type, 
-                           (GLvoid*)(sizeof(*seaweed.indices)*seaweed.draw_start[0]));
+            auto &mesh = v_e->mesh;
+            glBindVertexArray(mesh->vao);
+            for (int j = 0; j < mesh->num_meshes; ++j) {
+                // @note that this will break for models which have transforms
+                // Bind VAO and draw
+                glDrawElements(mesh->draw_mode, mesh->draw_count[j], mesh->draw_type, (GLvoid*)(sizeof(*mesh->indices) * mesh->draw_start[j]));
+            }
         }
 
         glEnable(GL_CULL_FACE);
