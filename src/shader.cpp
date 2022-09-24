@@ -180,7 +180,7 @@ bool write_shader_cache(Shader &shader, std::string_view path, uint64_t update_t
 	fwrite(&update_time, sizeof(update_time), 1, fp);
 	fwrite(&binary_format, sizeof(binary_format), 1, fp);
 	fwrite(&length, sizeof(length), 1, fp);
-	fwrite(&data, length, 1, fp);
+	fwrite(data, length, 1, fp);
 
 	std::cout << "Wrote shader cache to " << path << ".\n";
 
@@ -235,18 +235,19 @@ bool loadShader(Shader& shader, std::string_view vertex_fragment_file_path, std:
 			glGetProgramiv(program_id, GL_LINK_STATUS, &status);
 			if(status == GL_TRUE) {
 				create_shader_from_program(shader, program_id, vertex_fragment_file_path);
+				std::cout << "\n";
 				return true;
 			} else {
+				std::cerr << "Failed to load cached shader\n";
 				int info_log_length;
 				glGetProgramiv(program_id, GL_INFO_LOG_LENGTH, &info_log_length);
 				if(info_log_length > 0) {
 					char *program_error_message = (char *)malloc(sizeof(char) * (info_log_length+1));
 					glGetProgramInfoLog(program_id, info_log_length, NULL, program_error_message);
-					std::cerr << "Program attaching:\n" << program_error_message << "\n";
+					std::cerr << "Error was:\n" << program_error_message << "\n";
 					free(program_error_message);
 				}
 			}
-
 		}
 	}
 

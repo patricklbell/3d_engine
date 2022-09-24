@@ -1,6 +1,11 @@
 #ifndef GLOBALS_H
 #define GLOBALS_H
 
+// disable Windows.h min max macros
+#ifdef _WINDOWS
+#define NOMINMAX 
+#endif
+
 #include <soloud.h>
 #include <soloud_thread.h>
 #include <soloud_wav.h>
@@ -17,10 +22,6 @@
 #define ENTITY_COUNT 1000
 #define PI           3.14159265359
 
-// disable Windows.h min max macros
-#ifdef _WINDOWS
-#define NOMINMAX 
-#endif
 
 #include "assets.hpp"
 
