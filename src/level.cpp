@@ -346,6 +346,7 @@ bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const
 
     uint64_t asset_index = 0;
     std::unordered_map<uint64_t, void *> index_to_asset;
+    std::set<std::string> asset_handles;
 
     AssetType asset_type;
     while(1) {
@@ -364,19 +365,23 @@ bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const
             std::string handle;
             handle.resize(handle_len);
             fread(handle.data(), handle_len, 1, f);
+            asset_handles.emplace(handle);
 
             // @perf move out of loop
             switch (asset_type) {
                 case MESH_ASSET:
                 {
-                    // In future this should probably be true for all meshes by saving to mesh
-                    auto mesh = asset_manager.createMesh(handle);
-                    if (endsWith(handle, ".mesh")) {
-                        asset_manager.loadMeshFile(mesh, handle);
-                    }
-                    else {
-                        std::cerr << "Warning, there is a model file being loaded with assimp\n";
-                        asset_manager.loadMeshAssimp(mesh, handle);
+                    auto mesh = asset_manager.getMesh(handle);
+                    if (mesh == nullptr) {
+                        // In future this should probably be true for all meshes by saving to mesh
+                        mesh = asset_manager.createMesh(handle);
+                        if (endsWith(handle, ".mesh")) {
+                            asset_manager.loadMeshFile(mesh, handle);
+                        }
+                        else {
+                            std::cerr << "Warning, there is a model file being loaded with assimp\n";
+                            asset_manager.loadMeshAssimp(mesh, handle);
+                        }
                     }
 
                     index_to_asset[asset_index] = (void*)mesh;
@@ -384,19 +389,25 @@ bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const
                 }
                 case ANIMATED_MESH_ASSET:
                 {
-                    auto animesh = asset_manager.createAnimatedMesh(handle);
+                    auto animesh = asset_manager.getAnimatedMesh(handle);
+                    if (animesh == nullptr) {
+                        auto animesh = asset_manager.createAnimatedMesh(handle);
 
-                    asset_manager.loadAnimationFile(animesh, handle);
+                        asset_manager.loadAnimationFile(animesh, handle);
+                    }
 
                     index_to_asset[asset_index] = (void*)animesh;
                     break;
                 }
                 case TEXTURE_ASSET:
                 {
-                    // In future this should probably be true for all meshes by saving to mesh
-                    auto texture = asset_manager.createTexture(handle);
-                    // @todo seperate mesh and animation and load with our loader
-                    asset_manager.loadTexture(texture, handle);
+                    auto texture = asset_manager.getTexture(handle);
+                    if (texture == nullptr) {
+                        // In future this should probably be true for all meshes by saving to mesh
+                        auto texture = asset_manager.createTexture(handle);
+                        // @todo seperate mesh and animation and load with our loader
+                        asset_manager.loadTexture(texture, handle);
+                    }
 
                     index_to_asset[asset_index] = (void*)texture;
                     break;
@@ -411,6 +422,7 @@ bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const
             asset_index++;
         }
     }
+    //asset_manager.clearExcluding(asset_handles);
 
     // 
     // Read entities until end of file

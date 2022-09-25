@@ -111,6 +111,7 @@ Mesh::~Mesh(){
 
     free(materials);
     free(material_indices);
+
     free(indices);
     free(vertices);
     free(normals);
@@ -119,6 +120,7 @@ Mesh::~Mesh(){
     free(bone_ids);
     free(weights);
 
+    free(transforms);
     free(draw_start);
     free(draw_count);
 }
@@ -1405,6 +1407,39 @@ Texture* AssetManager::getColorTexture(const glm::vec3 &col, GLint internal_form
     }
 
     return nullptr;
+}
+
+// Pretty crappy function that doesn't actaully clear unused, to improve
+// may have to make assets only accessible by handle, check performance
+void AssetManager::clearExcluding(const std::set<std::string>& excluded) {
+    for (auto it = handle_mesh_map.cbegin(); it != handle_mesh_map.cend(); ) {
+        if (excluded.find(it->first) == excluded.end()) {
+            handle_mesh_map.erase(it++);    // or "it = m.erase(it)" since C++11
+        }
+        else {
+            ++it;
+        }
+    }
+    for (auto it = handle_animated_mesh_map.cbegin(); it != handle_animated_mesh_map.cend(); ) {
+        if (excluded.find(it->first) == excluded.end()) {
+            handle_animated_mesh_map.erase(it++);    // or "it = m.erase(it)" since C++11
+        }
+        else {
+            ++it;
+        }
+    }
+
+    // Can't clear texture or color since mesh relies on it and excluded doesn't
+    // properly store
+    
+    for (auto it = handle_audio_map.cbegin(); it != handle_audio_map.cend(); ) {
+        if (excluded.find(it->first) == excluded.end()) {
+            handle_audio_map.erase(it++);    // or "it = m.erase(it)" since C++11
+        }
+        else {
+            ++it;
+        }
+    }
 }
 
 void AssetManager::clear() {

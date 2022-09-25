@@ -55,12 +55,12 @@ struct Mesh {
 
     // Serialised Section
     unsigned int    num_indices = 0;
-    unsigned int   *indices = nullptr;
+    unsigned int*   indices = nullptr;
 
     // @note Mesh is not responsible for material's pointers
     uint64_t        num_materials = 0;
-    Material       *materials = nullptr;
-    uint64_t       *material_indices = nullptr;
+    Material*       materials = nullptr;
+    uint64_t*       material_indices = nullptr;
 
     uint64_t        num_vertices = 0;
     glm::fvec3*     vertices = nullptr;
@@ -76,8 +76,8 @@ struct Mesh {
     glm::mat4x4*    transforms = nullptr;
     GLenum          draw_mode = GL_TRIANGLES;
     GLenum          draw_type = GL_UNSIGNED_INT;
-    GLint          *draw_start = nullptr;
-    GLint          *draw_count = nullptr;
+    GLint*          draw_start = nullptr;
+    GLint*          draw_count = nullptr;
 
     GLuint          indices_vbo     = GL_FALSE;
     GLuint 	        vertices_vbo    = GL_FALSE;
@@ -275,6 +275,7 @@ struct AssetManager {
     Texture*        getTexture(const std::string &path);
     Texture*        getColorTexture(const glm::vec3 &col, GLint internal_format=GL_RGB);
 
+    void clearExcluding(const std::set<std::string> &excluded);
     void clear();
 };
 
