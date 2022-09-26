@@ -876,10 +876,11 @@ void clearFramebuffer() {
 //	glDepthFunc(GL_LESS); 
 //}
 
-inline static void drawMesh(Shader& s, const Mesh* mesh, const glm::mat4& g_model, const glm::mat4& vp) {
+inline static void drawMesh(Shader& s, const Mesh* mesh, const glm::mat4& g_model_rot_scl, const glm::mat4& g_model_pos, const glm::mat4& vp) {
     glBindVertexArray(mesh->vao);
     for (int j = 0; j < mesh->num_meshes; ++j) {
-        auto model = mesh->transforms[j] * g_model;
+        // Since the mesh transforms encode scale this will mess up global translation so we apply translation after
+        auto model = g_model_pos * mesh->transforms[j] * g_model_rot_scl; 
         auto mvp = vp * model;
         glUniformMatrix4fv(s.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
         glUniformMatrix4fv(s.uniform("model"), 1, GL_FALSE, &model[0][0]);
@@ -964,9 +965,9 @@ void drawUnifiedHdr(const EntityManager& entity_manager, const Texture* irradian
         glUniform1f(shader::unified.uniform("metal_mult"),     m_e->metal_mult);
         glUniform1f(shader::unified.uniform("ao_mult"),        m_e->ao_mult);
 
-        auto g_model = createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
-
-        drawMesh(shader::unified, m_e->mesh, g_model, vp);
+        auto g_model_rot_scl = glm::mat4_cast(m_e->rotation) * glm::mat4x4(m_e->scale);
+        auto g_model_pos     = glm::translate(glm::mat4x4(1.0), m_e->position);
+        drawMesh(shader::unified, m_e->mesh, g_model_rot_scl, g_model_pos, vp);
     }
 
     // 
@@ -1259,6 +1260,8 @@ void convoluteSpecularFromCubemap(Texture* in_tex, Texture* out_tex) {
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_CUBE_MAP, in_tex->id);
+    float texelSphericalArea = 4.0 * PI / (6.0 * in_tex->resolution[0] * in_tex->resolution[0]);
+    glUniform1f(shader::specular_convolution.uniform("texelSphericalArea"), texelSphericalArea);
 
     glm::ivec2 mip_resolution = out_tex->resolution;
     for (unsigned int mip = 0; mip < MAX_SPECULAR_MIP; ++mip) {

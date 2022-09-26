@@ -200,9 +200,9 @@ int main() {
      //asset_manager.loadAnimationFile(anim_entity->animesh, "data/anim/dancing_vampire.anim");
      //anim_entity->play("Armature|dance", 0.0, 1.0, true);
 
-    std::array<std::string, 6> skybox_paths = { "data/textures/simple_skybox/0006.png", "data/textures/simple_skybox/0002.png",
-                                                "data/textures/simple_skybox/0005.png", "data/textures/simple_skybox/0004.png",
-                                                "data/textures/simple_skybox/0003.png", "data/textures/simple_skybox/0001.png" };
+    std::array<std::string, 6> skybox_paths = { "data/textures/skybox/0006.jpg", "data/textures/skybox/0002.jpg",
+                                                "data/textures/skybox/0005.jpg", "data/textures/skybox/0004.jpg",
+                                                "data/textures/skybox/0003.jpg", "data/textures/skybox/0001.jpg" };
     auto skybox = global_assets.createTexture("skybox");
     if (!global_assets.loadCubemapTexture(skybox, skybox_paths, GL_RGB))
         std::cerr << "Error loading cubemap\n";

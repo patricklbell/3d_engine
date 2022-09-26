@@ -1194,7 +1194,7 @@ void drawFrustrum(Camera &drawn_camera, const Camera& camera) {
     drawLineCube();
 }
 
-void drawMeshWireframe(const Mesh &mesh, const glm::mat4 &g_model, const Camera &camera, bool flash = false){
+void drawMeshWireframe(const Mesh &mesh, const glm::mat4& g_model_rot_scl, const glm::mat4& g_model_pos, const Camera &camera, bool flash = false){
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     glDisable(GL_CULL_FACE);
     glDisable(GL_DEPTH_TEST);
@@ -1213,7 +1213,8 @@ void drawMeshWireframe(const Mesh &mesh, const glm::mat4 &g_model, const Camera 
 
     glBindVertexArray(mesh.vao);
     for (int j = 0; j < mesh.num_meshes; ++j) {
-        auto model = mesh.transforms[j] * g_model;
+        // Since the mesh transforms encode scale this will mess up global translation so we apply translation after
+        auto model = g_model_pos * mesh.transforms[j] * g_model_rot_scl;
         auto mvp = vp * model;
         glUniformMatrix4fv(shader::debug.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
         glUniformMatrix4fv(shader::debug.uniform("model"), 1, GL_FALSE, &model[0][0]);
@@ -1352,8 +1353,9 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
             if (e != nullptr && (entityInherits(e->type, MESH_ENTITY))) {
                 auto m_e = (MeshEntity*)e;
                 if (m_e->mesh != nullptr) {
-                    auto g_model = createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
-                    drawMeshWireframe(*m_e->mesh, g_model, camera, true);
+                    auto g_model_rot_scl = glm::mat4_cast(m_e->rotation) * glm::mat4x4(m_e->scale);
+                    auto g_model_pos = glm::translate(glm::mat4x4(1.0), m_e->position);
+                    drawMeshWireframe(*m_e->mesh, g_model_rot_scl, g_model_pos, camera, true);
                 }
             }
         }
@@ -1399,7 +1401,6 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
             static const std::vector<std::string> image_file_extensions = { ".jpg", ".png", ".bmp", ".tiff", ".tga" };
 
             auto button_size = ImVec2(ImGui::GetWindowWidth() / 2.0f - pad, 2.0f * pad);
-            auto button_size_full = ImVec2(ImGui::GetWindowWidth() - pad, 2.0f * pad);
             if (entityInherits(selection.type, MESH_ENTITY)) {
                 auto m_e = (MeshEntity*)fe;
                 TransformType edited_transform;
@@ -1603,41 +1604,6 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
                     ImGui::SliderFloat("Time Scale: ", &a_e->time_scale, -10.0f, 10.0f, "%.3f");
                     ImGui::Checkbox("Loop: ", &a_e->loop);
                     ImGui::Checkbox("Playing: ", &a_e->playing);
-                }
-            }
-            if (entityInherits(selection.type, VEGETATION_ENTITY)) {
-                auto v_e = (VegetationEntity*)fe;
-                if (ImGui::CollapsingHeader("Texture")) {
-                    bool all_same = v_e->texture != nullptr;
-                    if(all_same) {
-                        for (const auto& id : selection.ids) {
-                            auto v_e_i = (VegetationEntity*)entity_manager.getEntity(id);
-                            if(v_e_i->texture != v_e->texture) {
-                                all_same = false;
-                                break;
-                            }
-                        }
-                    }
-
-                    if(all_same) {
-                        auto w = ImGui::GetWindowWidth() - pad;
-                        auto tex = (void*)(intptr_t)v_e->texture->id;
-                        if (ImGui::ImageButton(tex, ImVec2(w, w))) {
-                            im_file_dialog.SetPwd(exepath + "/data/textures");
-                            im_file_dialog_type = "vegetationTexture";
-                            im_file_dialog.SetCurrentTypeFilterIndex(2);
-                            im_file_dialog.SetTypeFilters(image_file_extensions);
-                            im_file_dialog.Open();
-                        }
-                    } else {
-                        if (ImGui::Button("Set Multiple", button_size_full)) {
-                            im_file_dialog.SetPwd(exepath + "/data/textures");
-                            im_file_dialog_type = "vegetationTexture";
-                            im_file_dialog.SetCurrentTypeFilterIndex(2);
-                            im_file_dialog.SetTypeFilters(image_file_extensions);
-                            im_file_dialog.Open();
-                        }
-                    }
                 }
             }
 
@@ -1857,19 +1823,6 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
                 global_assets.loadTexture(graphics::simplex_value, p, GL_RED);
             } else if (im_file_dialog_type == "simplexGradient") {
                 global_assets.loadTexture(graphics::simplex_gradient, p, GL_RGB);
-            } else if (im_file_dialog_type == "vegetationTexture") {
-                auto texture = asset_manager.getTexture(p);
-                if(texture == nullptr) {
-                    texture = asset_manager.createTexture(p);
-                    asset_manager.loadTexture(texture, p, GL_RGBA);
-                }
-
-                for (const auto& id : selection.ids) {
-                    auto v_e = (VegetationEntity*)entity_manager.getEntity(id);
-                    if(v_e == nullptr) continue;
-
-                    v_e->texture = texture;
-                }
             //} else if(startsWith(im_file_dialog_type, "asset.mat.t")) {
             //    if (sel_e != nullptr && sel_e->type == MESH_ENTITY) {
             //        auto m_e = static_cast<MeshEntity*>(sel_e);

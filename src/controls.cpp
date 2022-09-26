@@ -577,8 +577,9 @@ void handleGameControls(EntityManager* &entity_manager, AssetManager& asset_mana
     // For now just use wireframe, in future some kind of edge detection, or saturation effect
     auto s = (ColliderEntity*)entity_manager->getEntity(selected_id);
     if (s != nullptr && (s->type & COLLIDER_ENTITY) && s->mesh != nullptr) {
-        auto g_model = createModelMatrix(s->position, s->rotation, s->scale);
-        drawMeshWireframe(*s->mesh, g_model, game_camera, true);
+        auto g_model_rot_scl = glm::mat4_cast(s->rotation) * glm::mat4x4(s->scale);
+        auto g_model_pos = glm::translate(glm::mat4x4(1.0), s->position);
+        drawMeshWireframe(*s->mesh, g_model_rot_scl, g_model_pos, game_camera, true);
     }
 
     backtick_key_prev   = glfwGetKey(window, GLFW_KEY_GRAVE_ACCENT);

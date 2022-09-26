@@ -19,6 +19,7 @@ out vec4 out_color;
 
 layout(binding = 0) uniform samplerCube cubemap;
 uniform float roughness;
+uniform float texelSphericalArea; // Perface resolution of cubemap
 
 #load lib/constants.gl
 #load lib/utilities.gl
@@ -42,14 +43,22 @@ void main()
     vec3 convoluted_color = vec3(0.0);     
     for(uint i = 0u; i < SAMPLE_COUNT; ++i)
     {
-        vec2 Xi = hammersley(i, SAMPLE_COUNT);
-        vec3 half_dir  = importanceSampleGGX(Xi, normal, tangent, bitangent, roughness);
-        vec3 light  = normalize(2.0 * dot(view, half_dir) * half_dir - view);
+        vec2 Xi       = hammersley(i, SAMPLE_COUNT);
+        vec3 half_dir = importanceSampleGGX(Xi, normal, tangent, bitangent, roughness);
+        vec3 light    = normalize(2.0 * dot(view, half_dir) * half_dir - view);
 
         float NdotL = max(dot(normal, light), 0.0);
         if(NdotL > 0.0)
         {
-            convoluted_color += texture(cubemap, light).rgb * NdotL;
+            float HdotV = max(dot(half_dir, view), 0.0);
+            float NdotH = max(dot(normal, half_dir), 0.0);
+
+            float D   = distributionGGX(NdotH, roughness);
+            float pdf = (D * NdotH / (4.0 * HdotV)) + 0.0001; 
+            float saSample = 1.0 / (float(SAMPLE_COUNT) * pdf + 0.0001);
+            float mipLevel = roughness == 0.0 ? 0.0 : 0.5 * log2(saSample / texelSphericalArea); 
+
+            convoluted_color += texture(cubemap, light, mipLevel).rgb * NdotL;
             weight           += NdotL;
         }
     }
