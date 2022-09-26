@@ -23,6 +23,7 @@ enum CubemapFaces : unsigned int {
 struct ImageData {
 	unsigned char* data;
 	int x, y, n;
+    GLint internal_format;
 };
 
 

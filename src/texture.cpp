@@ -83,6 +83,7 @@ GLuint createGLTextureFromData(ImageData *img, const GLint internal_format) {
 
 GLuint loadImage(const std::string &imagepath, glm::ivec2& resolution, const GLint internal_format) {
 	auto img = ImageData();
+	img.internal_format = internal_format;
 	if (!loadImageData(&img, imagepath, internal_format)) {
 		stbi_image_free(img.data);
 		return GL_FALSE;

@@ -170,6 +170,7 @@ void tickBonesKeyframe(AnimatedMesh::BoneKeyframes& keyframes, float time, bool 
 struct Texture {
     std::string handle;
     GLuint id = GL_FALSE;
+    GLint format = GL_RGBA;
     glm::ivec2 resolution;
 
     // @debug

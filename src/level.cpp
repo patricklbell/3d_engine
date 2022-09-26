@@ -402,6 +402,7 @@ bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const
                 {
                     auto texture = asset_manager.getTexture(handle);
                     if (texture == nullptr) {
+                        // @todo internal_format
                         texture = asset_manager.createTexture(handle);
                         asset_manager.loadTexture(texture, handle);
                     }

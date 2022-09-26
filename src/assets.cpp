@@ -322,14 +322,14 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
 #if DO_MULTITHREAD
         &texture_imagedata_default_list, 
 #endif
-        this](Texture* &tex, Texture *default_tex) {
+        this](Texture* &tex, Texture *default_tex, GLint internal_format) {
         char is_color;
         fread(&is_color, sizeof(is_color), 1, f);
         if (is_color) {
             glm::vec3 color;
             fread(&color, sizeof(color), 1, f);
             if (color.x > 1 || color.y > 1 || color.z > 1) {
-                tex = this->getColorTexture(color, GL_RGB16F);
+                tex = this->getColorTexture(color, internal_format);
             }
             else {
                 // @note this writes the color fields again
@@ -349,9 +349,11 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
             else {
                 tex = createTexture(path);
 #if DO_MULTITHREAD 
-                auto& tpl = texture_imagedata_default_list.emplace_back(tpl_t{ &tex, new ImageData(), default_tex });
+                auto img_data = new ImageData();
+                img_data->internal_format = internal_format;
+                auto& tpl = texture_imagedata_default_list.emplace_back(tpl_t{ &tex, img_data, default_tex });
 #else
-                if (!this->loadTexture(tex, path, GL_SRGB))
+                if (!this->loadTexture(tex, path, internal_format))
                     tex = default_tex;
 #endif
             }
@@ -360,11 +362,11 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
     for(int i = 0; i < mesh->num_materials; ++i){
         auto &mat = mesh->materials[i];
 
-        read_texture(mat.t_albedo, default_material->t_albedo);
-        read_texture(mat.t_normal, default_material->t_normal);
-        read_texture(mat.t_ambient, default_material->t_ambient);
-        read_texture(mat.t_metallic, default_material->t_metallic);
-        read_texture(mat.t_roughness, default_material->t_roughness);
+        read_texture(mat.t_albedo, default_material->t_albedo, GL_RGB);
+        read_texture(mat.t_normal, default_material->t_normal, GL_RGB16F);
+        read_texture(mat.t_ambient, default_material->t_ambient, GL_RED);
+        read_texture(mat.t_metallic, default_material->t_metallic, GL_RED);
+        read_texture(mat.t_roughness, default_material->t_roughness, GL_RED);
 
         std::cout << "Material " << i << ": \n" << mat << "\n";
     }
@@ -373,7 +375,7 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
     for (auto& tpl : texture_imagedata_default_list) {
         ImageData* img_ptr = std::get<1>(tpl);
         std::string path = (*std::get<0>(tpl))->handle;
-        global_thread_pool->queueJob(std::bind(loadImageData, img_ptr, path, GL_RGB));
+        global_thread_pool->queueJob(std::bind(loadImageData, img_ptr, path, img_ptr->internal_format));
     }
 
     // Block main thread until texture loading is finished
@@ -385,7 +387,7 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
         auto& img     = std::get<1>(tpl);
         auto& def_tex = std::get<2>(tpl);
 
-        (*tex)->id = createGLTextureFromData(img, GL_RGB);
+        (*tex)->id = createGLTextureFromData(img, img->internal_format);
         if ((*tex)->id == GL_FALSE) {
             (*tex) = def_tex;
         }
@@ -441,15 +443,15 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
         auto ai_mat = scene->mMaterials[i];
         auto& mat = mesh->materials[i];
 
-        if (!loadTextureFromAssimp(mat.t_ambient, ai_mat, scene, aiTextureType_AMBIENT_OCCLUSION, GL_RGB16F)) {
-            if (!loadTextureFromAssimp(mat.t_ambient, ai_mat, scene, aiTextureType_AMBIENT, GL_RGB16F)) {
+        if (!loadTextureFromAssimp(mat.t_ambient, ai_mat, scene, aiTextureType_AMBIENT_OCCLUSION, GL_RED)) {
+            if (!loadTextureFromAssimp(mat.t_ambient, ai_mat, scene, aiTextureType_AMBIENT, GL_RED)) {
                 mat.t_ambient = default_material->t_ambient;
             }
         }
 
-        if (!loadTextureFromAssimp(mat.t_albedo, ai_mat, scene, aiTextureType_BASE_COLOR, GL_RGB16F)) {
+        if (!loadTextureFromAssimp(mat.t_albedo, ai_mat, scene, aiTextureType_BASE_COLOR, GL_RGB)) {
             // If base color isnt present assume diffuse is really an albedo
-            if (!loadTextureFromAssimp(mat.t_albedo, ai_mat, scene, aiTextureType_DIFFUSE, GL_RGB16F)) {
+            if (!loadTextureFromAssimp(mat.t_albedo, ai_mat, scene, aiTextureType_DIFFUSE, GL_RGB)) {
                 aiColor4D col(1.f, 0.f, 1.f, 1.0f);
                 bool flag = true;
                 if (ai_mat->Get(AI_MATKEY_BASE_COLOR, col) != AI_SUCCESS) {
@@ -470,16 +472,16 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
                             color *= ec;
                         }
                     }
-                    mat.t_albedo = getColorTexture(color, GL_RGB16F);
+                    mat.t_albedo = getColorTexture(color, GL_RGB);
                     mat.t_albedo->is_color = true;
                     mat.t_albedo->color = color;
                 }
             }
         }
 
-        if (!loadTextureFromAssimp(mat.t_metallic, ai_mat, scene, aiTextureType_METALNESS, GL_RGB16F)) {
-            if (!loadTextureFromAssimp(mat.t_metallic, ai_mat, scene, aiTextureType_REFLECTION, GL_RGB16F)) {
-                if (!loadTextureFromAssimp(mat.t_metallic, ai_mat, scene, aiTextureType_SPECULAR, GL_RGB16F)) {
+        if (!loadTextureFromAssimp(mat.t_metallic, ai_mat, scene, aiTextureType_METALNESS, GL_RED)) {
+            if (!loadTextureFromAssimp(mat.t_metallic, ai_mat, scene, aiTextureType_REFLECTION, GL_RED)) {
+                if (!loadTextureFromAssimp(mat.t_metallic, ai_mat, scene, aiTextureType_SPECULAR, GL_RED)) {
                     float shininess;
                     if (ai_mat->Get(AI_MATKEY_SHININESS_STRENGTH, shininess) != AI_SUCCESS) {
                         mat.t_metallic = default_material->t_metallic;
@@ -487,7 +489,7 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
                     else {
                         shininess = glm::clamp(shininess, 0.0f, 1.0f);
                         auto color = glm::vec3(shininess);
-                        mat.t_metallic = getColorTexture(color);
+                        mat.t_metallic = getColorTexture(color, GL_RED);
                         mat.t_metallic->is_color = true;
                         mat.t_metallic->color = color;
                     }
@@ -495,8 +497,8 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
             }
         }
 
-        if (!loadTextureFromAssimp(mat.t_roughness, ai_mat, scene, aiTextureType_DIFFUSE_ROUGHNESS, GL_RGB16F)) {
-            if (!loadTextureFromAssimp(mat.t_roughness, ai_mat, scene, aiTextureType_SHININESS, GL_RGB16F)) {
+        if (!loadTextureFromAssimp(mat.t_roughness, ai_mat, scene, aiTextureType_DIFFUSE_ROUGHNESS, GL_RED)) {
+            if (!loadTextureFromAssimp(mat.t_roughness, ai_mat, scene, aiTextureType_SHININESS, GL_RED)) {
                 float roughness;
                 if (ai_mat->Get(AI_MATKEY_SHININESS, roughness) != AI_SUCCESS || roughness == 0.0f) { // note this is a hacky solution
                     mat.t_roughness = default_material->t_roughness;
@@ -504,7 +506,7 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
                 else {
                     roughness = glm::clamp(roughness, 0.0f, 1.0f);
                     auto color = glm::vec3(roughness);
-                    mat.t_roughness = getColorTexture(color);
+                    mat.t_roughness = getColorTexture(color, GL_RED);
                     mat.t_roughness->is_color = true;
                     mat.t_roughness->color = color;
                 }
@@ -1335,6 +1337,7 @@ bool AssetManager::loadTextureFromAssimp(Texture *&tex, aiMaterial *mat, const a
             if (tex_id == GL_FALSE) return false;
 
             tex = createTexture(p);
+            tex->format = internal_format;
             tex->resolution = resolution;
             tex->id = tex_id;
             return true;
@@ -1348,6 +1351,7 @@ bool AssetManager::loadTexture(Texture *tex, const std::string &path, GLint inte
     if(texture_id == GL_FALSE) return false;
 
     tex->id = texture_id;
+    tex->format = internal_format;
     return true;
 }
 
@@ -1356,6 +1360,7 @@ bool AssetManager::loadCubemapTexture(Texture *tex, const std::array<std::string
     if(texture_id == GL_FALSE) return false;
 
     tex->id = texture_id;
+    tex->format = internal_format;
     return true;
 }
 
