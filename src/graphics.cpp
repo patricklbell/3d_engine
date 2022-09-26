@@ -68,6 +68,7 @@ namespace graphics {
     Mesh quad, cube, line_cube, water_grid;
     Texture * simplex_gradient;
     Texture * simplex_value;
+    Texture * brdf_lut;
 
     // @hardcoded
     const int MSAA_SAMPLES = 2;
@@ -320,6 +321,35 @@ void bindDrawShadowMap(const EntityManager &entity_manager, const Camera &camera
     // Reset bound framebuffer and return to original viewport
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glViewport(0, 0, window_width, window_height);
+}
+
+// Precomputes brdf geometry function for different roughnesses and directions
+void initBRDFLut(AssetManager& asset_manager) {
+    brdf_lut = asset_manager.createTexture("brdf_lut");
+    brdf_lut->resolution = glm::ivec2(512, 512); // @hardcoded
+
+    GLuint FBO, RBO;
+    glGenFramebuffers(1, &FBO);
+    glGenRenderbuffers(1, &RBO);
+
+    // Create brdf_lut
+    glGenTextures(1, &brdf_lut->id);
+    glBindTexture(GL_TEXTURE_2D, brdf_lut->id);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RG16F, brdf_lut->resolution.x, brdf_lut->resolution.y, 0, GL_RG, GL_FLOAT, 0);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, FBO);
+    glBindRenderbuffer(GL_RENDERBUFFER, RBO);
+
+    glUseProgram(shader::generate_brdf_lut.program);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, brdf_lut->id, 0);
+    glViewport(0, 0, brdf_lut->resolution.x, brdf_lut->resolution.y);
+
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    drawQuad();
 }
 
 void initAnimationUbo() {
@@ -875,7 +905,7 @@ inline static void drawMesh(Shader& s, const Mesh* mesh, const glm::mat4& g_mode
     }
 }
 
-void drawUnifiedHdr(const EntityManager& entity_manager, const Texture* skybox, const Camera& camera) {
+void drawUnifiedHdr(const EntityManager& entity_manager, const Texture* irradiance_map, const Texture* prefiltered_specular_map, const Camera& camera) {
     glDepthMask(GL_TRUE);
     glEnable(GL_DEPTH_TEST);
 
@@ -888,6 +918,18 @@ void drawUnifiedHdr(const EntityManager& entity_manager, const Texture* skybox, 
 
     auto vp = camera.projection * camera.view;
 
+    glActiveTexture(GL_TEXTURE5);
+    glBindTexture(GL_TEXTURE_2D_ARRAY, shadow_buffer);
+
+    glActiveTexture(GL_TEXTURE6);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, irradiance_map->id);
+
+    glActiveTexture(GL_TEXTURE7);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, prefiltered_specular_map->id);
+
+    glActiveTexture(GL_TEXTURE8);
+    glBindTexture(GL_TEXTURE_2D, brdf_lut->id);
+
     // 
     // Draw normal static PBR mesh entities
     //
@@ -896,9 +938,6 @@ void drawUnifiedHdr(const EntityManager& entity_manager, const Texture* skybox, 
     glUniform3fv(shader::unified.uniform("sun_direction"), 1, &sun_direction[0]);
     glUniform3fv(shader::unified.uniform("camera_position"), 1, &camera.position[0]);
     glUniformMatrix4fv(shader::unified.uniform("view"), 1, GL_FALSE, &camera.view[0][0]);
-
-    glActiveTexture(GL_TEXTURE5);
-    glBindTexture(GL_TEXTURE_2D_ARRAY, shadow_buffer);
 
     glUniform1fv(shader::unified.uniform("shadow_cascade_distances[0]"), shadow_num, shadow_cascade_distances);
     glUniform1f(shader::unified.uniform("far_plane"), camera.far_plane);
@@ -1114,4 +1153,135 @@ void drawPost(Texture *skybox, const Camera &camera){
     glBindTexture(GL_TEXTURE_CUBE_MAP, skybox->id);
 
     drawQuad();
+}
+
+// convert HDR cubemap environment map to scaled down irradiance cubemap
+// @note that out_tex should be an empty texture
+void convoluteIrradianceFromCubemap(Texture *in_tex, Texture *out_tex) {
+    out_tex->resolution = glm::ivec2(32, 32); // @hardcoded
+
+    GLuint FBO, RBO;
+    glGenFramebuffers(1, &FBO);
+    glGenRenderbuffers(1, &RBO);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, FBO);
+    glBindRenderbuffer(GL_RENDERBUFFER, RBO);
+
+    static const glm::mat4 projection = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 10.0f);
+    static const glm::mat4 views[] =
+    {
+       glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3( 1.0f,  0.0f,  0.0f), glm::vec3(0.0f, -1.0f,  0.0f)),
+       glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(-1.0f,  0.0f,  0.0f), glm::vec3(0.0f, -1.0f,  0.0f)),
+       glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3( 0.0f,  1.0f,  0.0f), glm::vec3(0.0f,  0.0f,  1.0f)),
+       glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3( 0.0f, -1.0f,  0.0f), glm::vec3(0.0f,  0.0f, -1.0f)),
+       glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3( 0.0f,  0.0f,  1.0f), glm::vec3(0.0f, -1.0f,  0.0f)),
+       glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3( 0.0f,  0.0f, -1.0f), glm::vec3(0.0f, -1.0f,  0.0f))
+    };
+
+    // Create output cubemap
+    glGenTextures(1, &out_tex->id);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, out_tex->id);
+    for (unsigned int i = 0; i < 6; ++i)
+    {
+        glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGB16F, out_tex->resolution.x, out_tex->resolution.y, 0,
+            GL_RGB, GL_FLOAT, nullptr);
+    }
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    glUseProgram(shader::diffuse_convolution.program);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, in_tex->id);
+
+    glViewport(0, 0, out_tex->resolution.x, out_tex->resolution.y);
+    glBindFramebuffer(GL_FRAMEBUFFER, FBO);
+    for (unsigned int i = 0; i < 6; ++i) {
+        auto vp = projection * glm::mat4(glm::mat3(views[i])); // removes translation @speed
+        glUniformMatrix4fv(shader::diffuse_convolution.uniform("vp"), 1, GL_FALSE, &vp[0][0]);
+        
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+            GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, out_tex->id, 0);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+        drawCube();
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDeleteFramebuffers(1, &FBO);
+    glDeleteRenderbuffers(1, &RBO);
+}
+
+constexpr int MAX_SPECULAR_MIP = 5;
+// convert HDR cubemap environment map to specular pre computed map for different roughnesses
+// @note that out_tex should be an empty texture
+void convoluteSpecularFromCubemap(Texture* in_tex, Texture* out_tex) {
+    out_tex->resolution = glm::ivec2(128, 128); // @hardcoded may be too little for large metallic surfaces
+
+    GLuint FBO, RBO;
+    glGenFramebuffers(1, &FBO);
+    glGenRenderbuffers(1, &RBO);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, FBO);
+    glBindRenderbuffer(GL_RENDERBUFFER, RBO);
+
+    static const glm::mat4 projection = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 10.0f);
+    static const glm::mat4 views[] =
+    {
+       glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3( 1.0f,  0.0f,  0.0f), glm::vec3(0.0f, -1.0f,  0.0f)),
+       glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(-1.0f,  0.0f,  0.0f), glm::vec3(0.0f, -1.0f,  0.0f)),
+       glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3( 0.0f,  1.0f,  0.0f), glm::vec3(0.0f,  0.0f,  1.0f)),
+       glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3( 0.0f, -1.0f,  0.0f), glm::vec3(0.0f,  0.0f, -1.0f)),
+       glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3( 0.0f,  0.0f,  1.0f), glm::vec3(0.0f, -1.0f,  0.0f)),
+       glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3( 0.0f,  0.0f, -1.0f), glm::vec3(0.0f, -1.0f,  0.0f))
+    };
+
+    // Create output cubemap
+    glGenTextures(1, &out_tex->id);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, out_tex->id);
+    for (unsigned int i = 0; i < 6; ++i)
+    {
+        glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGB16F, out_tex->resolution.x, out_tex->resolution.y, 0,
+            GL_RGB, GL_FLOAT, nullptr);
+    }
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+    glGenerateMipmap(GL_TEXTURE_CUBE_MAP); // Since we store different roughnesses in mip maps
+
+    glUseProgram(shader::specular_convolution.program);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, in_tex->id);
+
+    glm::ivec2 mip_resolution = out_tex->resolution;
+    for (unsigned int mip = 0; mip < MAX_SPECULAR_MIP; ++mip) {
+        glViewport(0, 0, mip_resolution.x, mip_resolution.y);
+        
+        float roughness = (float)mip / (float)(MAX_SPECULAR_MIP - 1);
+        glUniform1f(shader::specular_convolution.uniform("roughness"), roughness);
+
+        for (unsigned int i = 0; i < 6; ++i) {
+            auto vp = projection * glm::mat4(glm::mat3(views[i])); // removes translation @speed precompute
+            glUniformMatrix4fv(shader::specular_convolution.uniform("vp"), 1, GL_FALSE, &vp[0][0]);
+
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, out_tex->id, mip);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+            drawCube();
+        }
+
+        mip_resolution /= 2; // Set resolution appropriate to mip
+    }
+
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glDeleteFramebuffers(1, &FBO);
+    glDeleteRenderbuffers(1, &RBO);
 }

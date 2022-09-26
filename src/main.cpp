@@ -186,25 +186,32 @@ int main() {
     // loadLevel(entity_manager, asset_manager, level_path, level_camera);
     // editor_camera = level_camera;
     
-    auto seaweed = asset_manager.createMesh("data/mesh/seaweed.mesh");
-    asset_manager.loadMeshFile(seaweed, seaweed->handle);
-    auto veg = (VegetationEntity*)entity_manager->createEntity(VEGETATION_ENTITY);
-    veg->mesh = seaweed;
-    veg->texture = asset_manager.createTexture("data/textures/extern/Leaves/Leaves_Pine_Texture.png");
-    asset_manager.loadTexture(veg->texture, veg->texture->handle, GL_RGBA);
+    //auto seaweed = asset_manager.createMesh("data/mesh/seaweed.mesh");
+    //asset_manager.loadMeshFile(seaweed, seaweed->handle);
+    //auto veg = (VegetationEntity*)entity_manager->createEntity(VEGETATION_ENTITY);
+    //veg->mesh = seaweed;
+    //veg->texture = asset_manager.createTexture("data/textures/extern/Leaves/Leaves_Pine_Texture.png");
+    //asset_manager.loadTexture(veg->texture, veg->texture->handle, GL_RGBA);
 
-    // auto anim_entity = (AnimatedMeshEntity*)entity_manager->createEntity(ANIMATED_MESH_ENTITY);
-    // anim_entity->mesh    = asset_manager.createMesh("data/mesh/dancing_vampire.mesh");
-    // anim_entity->animesh = asset_manager.createAnimatedMesh("data/anim/dancing_vampire.anim");
-    // asset_manager.loadMeshFile(anim_entity->mesh, "data/mesh/dancing_vampire.mesh");
-    // asset_manager.loadAnimationFile(anim_entity->animesh, "data/anim/dancing_vampire.anim");
-    // anim_entity->play("Armature|dance", 0.0, 1.0, true);
+     //auto anim_entity = (AnimatedMeshEntity*)entity_manager->createEntity(ANIMATED_MESH_ENTITY);
+     //anim_entity->mesh    = asset_manager.createMesh("data/mesh/dancing_vampire.mesh");
+     //anim_entity->animesh = asset_manager.createAnimatedMesh("data/anim/dancing_vampire.anim");
+     //asset_manager.loadMeshFile(anim_entity->mesh, "data/mesh/dancing_vampire.mesh");
+     //asset_manager.loadAnimationFile(anim_entity->animesh, "data/anim/dancing_vampire.anim");
+     //anim_entity->play("Armature|dance", 0.0, 1.0, true);
 
     std::array<std::string, 6> skybox_paths = { "data/textures/simple_skybox/0006.png", "data/textures/simple_skybox/0002.png",
                                                 "data/textures/simple_skybox/0005.png", "data/textures/simple_skybox/0004.png",
                                                 "data/textures/simple_skybox/0003.png", "data/textures/simple_skybox/0001.png" };
     auto skybox = global_assets.createTexture("skybox");
-    global_assets.loadCubemapTexture(skybox, skybox_paths);
+    if (!global_assets.loadCubemapTexture(skybox, skybox_paths, GL_RGB))
+        std::cerr << "Error loading cubemap\n";
+
+    auto skybox_irradiance = global_assets.createTexture("skybox_irradiance");
+    convoluteIrradianceFromCubemap(skybox, skybox_irradiance);
+    auto skybox_specular = global_assets.createTexture("skybox_specular");
+    convoluteSpecularFromCubemap(skybox, skybox_specular);
+    initBRDFLut(global_assets);
 
 #ifndef NDEBUG 
     checkGLError("Pre-loop");
@@ -231,7 +238,9 @@ int main() {
         Camera& camera = *camera_ptr;
 
         if (window_resized){
-            updateCameraProjection(camera);
+            updateCameraProjection(level_camera);
+            updateCameraProjection(game_camera);
+            updateCameraProjection(editor_camera);
             
             initHdrFbo(true);
 
@@ -252,7 +261,7 @@ int main() {
         bindDrawShadowMap(*entity_manager, camera);
         bindHdr();
         clearFramebuffer();
-        drawUnifiedHdr(*entity_manager, skybox, camera);
+        drawUnifiedHdr(*entity_manager, skybox_irradiance, skybox_specular, camera);
 
         if (playing) {
             handleGameControls(entity_manager, asset_manager, true_dt);

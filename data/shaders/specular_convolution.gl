@@ -1,0 +1,61 @@
+#ifdef COMPILING_VS
+layout (location = 0) in vec3 in_position;
+layout (location = 1) in vec2 in_texcoord;
+
+out vec3 position;
+
+uniform mat4 vp; // Should be untranslated
+
+void main() {
+    position = in_position;
+    gl_Position = vp * vec4(in_position, 1.0);
+}
+#endif
+
+#ifdef COMPILING_FS
+in vec3 position;
+
+out vec4 out_color;
+
+layout(binding = 0) uniform samplerCube cubemap;
+uniform float roughness;
+
+#load lib/constants.gl
+#load lib/utilities.gl
+#load lib/pbr.gl
+
+// Modified from https://learnopengl.com/PBR/IBL/Specular-IBL
+// Takes a Reimann sum of a hemisphere of samples to approximate the 
+// irradiance at each sample direction for diffuse shading
+const uint SAMPLE_COUNT = 1024u;
+void main()
+{
+    vec3 normal = normalize(position);    
+    vec3 reflect = normal; // Epic Games approximation, since we can't know look direction
+    vec3 view = reflect;
+
+    vec3 up        = abs(normal.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
+    vec3 tangent   = normalize(cross(up, normal));
+    vec3 bitangent = cross(normal, tangent);
+
+    float weight = 0.0;   
+    vec3 convoluted_color = vec3(0.0);     
+    for(uint i = 0u; i < SAMPLE_COUNT; ++i)
+    {
+        vec2 Xi = hammersley(i, SAMPLE_COUNT);
+        vec3 half_dir  = importanceSampleGGX(Xi, normal, tangent, bitangent, roughness);
+        vec3 light  = normalize(2.0 * dot(view, half_dir) * half_dir - view);
+
+        float NdotL = max(dot(normal, light), 0.0);
+        if(NdotL > 0.0)
+        {
+            convoluted_color += texture(cubemap, light).rgb * NdotL;
+            weight           += NdotL;
+        }
+    }
+    convoluted_color = convoluted_color / weight;
+
+    out_color = vec4(convoluted_color, 1.0);
+} 
+
+#endif

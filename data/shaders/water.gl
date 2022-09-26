@@ -172,7 +172,6 @@ layout (depth_any) out float gl_FragDepth;
 layout (location = 0) out vec4 out_color;
 
 
-#load lib/shadows.gl
 
 uniform vec3 sun_direction;
 uniform vec3 sun_color;
@@ -192,6 +191,7 @@ uniform vec4 foam_color;
 uniform float time;
 #define WAVE_SPEED 0.1f
 
+#load lib/shadows.gl
 #load lib/pbr.gl
 
 // Use pre generated noise from
@@ -294,8 +294,7 @@ void main(){
     normal = normalize(normal);
 
     // Maybe full brdf is unnecessary? test performance
-    vec3 ambient = vec3(0.1) * albedo;
-    vec3 hdr_color = ambient + brdfSchlickGGX(vs_in.position, normal, albedo, 0.1, 1.0f, -sun_direction, sun_color, camera_position);
+    vec3 hdr_color = brdfSchlickGGX(vs_in.position, normal, albedo, 0.1, 1.0f, -sun_direction, sun_color, camera_position, 0.1);
     
     //hdr_color = mix(deep_color.rgb, hdr_color, 1.0 - smoothstep(15.0, 25.0, scene_z));
 

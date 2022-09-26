@@ -391,8 +391,7 @@ bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const
                 {
                     auto animesh = asset_manager.getAnimatedMesh(handle);
                     if (animesh == nullptr) {
-                        auto animesh = asset_manager.createAnimatedMesh(handle);
-
+                        animesh = asset_manager.createAnimatedMesh(handle);
                         asset_manager.loadAnimationFile(animesh, handle);
                     }
 
@@ -403,9 +402,7 @@ bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const
                 {
                     auto texture = asset_manager.getTexture(handle);
                     if (texture == nullptr) {
-                        // In future this should probably be true for all meshes by saving to mesh
-                        auto texture = asset_manager.createTexture(handle);
-                        // @todo seperate mesh and animation and load with our loader
+                        texture = asset_manager.createTexture(handle);
                         asset_manager.loadTexture(texture, handle);
                     }
 

@@ -60,7 +60,7 @@ void initDefaultMaterial(AssetManager &asset_manager){
    
     default_material->t_albedo    = asset_manager.getColorTexture(glm::vec3(1,0,1), GL_SRGB);
     default_material->t_normal    = asset_manager.getColorTexture(glm::vec3(0.5,0.5,1), GL_RGB);
-    default_material->t_metallic  = asset_manager.getColorTexture(glm::vec3(0), GL_R16F);
+    default_material->t_metallic  = asset_manager.getColorTexture(glm::vec3(1), GL_R16F);
     default_material->t_roughness = asset_manager.getColorTexture(glm::vec3(1), GL_R16F);
     default_material->t_ambient   = asset_manager.getColorTexture(glm::vec3(1), GL_R16F);
 
@@ -373,7 +373,7 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
     for (auto& tpl : texture_imagedata_default_list) {
         ImageData* img_ptr = std::get<1>(tpl);
         std::string path = (*std::get<0>(tpl))->handle;
-        global_thread_pool->queueJob(std::bind(loadImageData, img_ptr, path, GL_RGB16F));
+        global_thread_pool->queueJob(std::bind(loadImageData, img_ptr, path, GL_RGB));
     }
 
     // Block main thread until texture loading is finished
@@ -385,7 +385,7 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
         auto& img     = std::get<1>(tpl);
         auto& def_tex = std::get<2>(tpl);
 
-        (*tex)->id = createGLTextureFromData(img, GL_SRGB);
+        (*tex)->id = createGLTextureFromData(img, GL_RGB);
         if ((*tex)->id == GL_FALSE) {
             (*tex) = def_tex;
         }
@@ -498,7 +498,7 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
         if (!loadTextureFromAssimp(mat.t_roughness, ai_mat, scene, aiTextureType_DIFFUSE_ROUGHNESS, GL_RGB16F)) {
             if (!loadTextureFromAssimp(mat.t_roughness, ai_mat, scene, aiTextureType_SHININESS, GL_RGB16F)) {
                 float roughness;
-                if (ai_mat->Get(AI_MATKEY_SHININESS, roughness) != AI_SUCCESS) {
+                if (ai_mat->Get(AI_MATKEY_SHININESS, roughness) != AI_SUCCESS || roughness == 0.0f) { // note this is a hacky solution
                     mat.t_roughness = default_material->t_roughness;
                 }
                 else {
@@ -1330,10 +1330,12 @@ bool AssetManager::loadTextureFromAssimp(Texture *&tex, aiMaterial *mat, const a
         } else {
 	        auto p = "data/textures/" + std::string(path.data, path.length);
 
-            auto tex_id = loadImage(p, internal_format);
+            glm::ivec2 resolution;
+            auto tex_id = loadImage(p, resolution, internal_format);
             if (tex_id == GL_FALSE) return false;
 
             tex = createTexture(p);
+            tex->resolution = resolution;
             tex->id = tex_id;
             return true;
         }
@@ -1342,7 +1344,7 @@ bool AssetManager::loadTextureFromAssimp(Texture *&tex, aiMaterial *mat, const a
 }
 
 bool AssetManager::loadTexture(Texture *tex, const std::string &path, GLint internal_format) {
-    auto texture_id = loadImage(path, internal_format);
+    auto texture_id = loadImage(path, tex->resolution, internal_format);
     if(texture_id == GL_FALSE) return false;
 
     tex->id = texture_id;
@@ -1350,7 +1352,7 @@ bool AssetManager::loadTexture(Texture *tex, const std::string &path, GLint inte
 }
 
 bool AssetManager::loadCubemapTexture(Texture *tex, const std::array<std::string,FACE_NUM_FACES> &paths, GLint internal_format) {
-    auto texture_id = loadCubemap(paths, internal_format);
+    auto texture_id = loadCubemap(paths, tex->resolution, internal_format);
     if(texture_id == GL_FALSE) return false;
 
     tex->id = texture_id;

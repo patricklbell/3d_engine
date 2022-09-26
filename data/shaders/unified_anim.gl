@@ -79,6 +79,8 @@ layout(binding = 3) uniform sampler2D roughness_map;
 uniform float roughness_mult;
 layout(binding = 4) uniform sampler2D ao_map;
 uniform float ao_mult;
+
+#load lib/shadows.gl
 #load lib/pbr.gl
 #else
 uniform float specular_int;
@@ -86,7 +88,6 @@ uniform float specular_exp;
 #load lib/blinn.gl
 #endif
 
-#load lib/shadows.gl
 
 uniform vec3      camera_position;
 uniform vec3      sun_direction;
@@ -131,10 +132,9 @@ void main() {
     //vec3  reflect    = vec4(texture(skybox, r).rgb, 1.0);
     float roughness  = roughness_mult*texture(roughness_map, texcoord).r; 
     float metallic   = metal_mult    *texture(metallic_map, texcoord).r; 
-    float ao         = ao_mult       *texture(ao_map, texcoord).r + 0.04;
+    float ao         = ao_mult       *texture(ao_map, texcoord).r;
 
-    vec3 ambient = albedo * ao;
-    vec3 hdr_color = ambient + brdfSchlickGGX(position, normal, albedo, metallic, roughness, -sun_direction, sun_color, camera_position);
+    vec3 hdr_color = brdfSchlickGGX(position, normal, albedo, metallic, roughness, -sun_direction, sun_color, camera_position, ao);
 #endif
 
     out_color = vec4(hdr_color, 1.0);

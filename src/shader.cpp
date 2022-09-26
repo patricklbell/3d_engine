@@ -19,6 +19,7 @@
 #include "globals.hpp"
 
 bool shader_binary_supported = false;
+constexpr bool do_shader_caching = false;
 
 Shader::~Shader() {
 	glDeleteProgram(program);
@@ -37,7 +38,8 @@ GLuint Shader::uniform(const std::string &name) {
 
 namespace shader {
 	Shader animated_null, null, unified, animated_unified, water, gaussian_blur,
-		plane_projection, jfa, jfa_distance, post[2], debug, depth_only, vegetation, downsample, upsample;
+		plane_projection, jfa, jfa_distance, post[2], debug, depth_only, vegetation, 
+		downsample, upsample, diffuse_convolution, specular_convolution, generate_brdf_lut;
 }
 
 using namespace shader;
@@ -137,7 +139,7 @@ char *load_shader_cache(std::string_view path, uint64_t current_update_time, GLe
 	uint64_t stored_time;
 	fread(&stored_time, sizeof(stored_time), 1, fp);
 
-	if(stored_time != current_update_time) {
+	if(stored_time >= current_update_time) {
 		fread(&binaryFormat, sizeof(binaryFormat), 1, fp);
 		fread(&length, sizeof(length), 1, fp);
 
@@ -212,12 +214,23 @@ void create_shader_from_program(Shader& shader, GLuint program_id, std::string_v
 	}
 }
 
+static bool not_alphanumeric(char c) {
+	return !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'));
+}
+
 bool loadShader(Shader& shader, std::string_view vertex_fragment_file_path, std::string_view macros="", bool geometry = false) {
-	// @todo handle macros in cache
-	uint64_t unix_update_time;
+	// @todo handle macros in cache properly for now just use a hacky way
+	// @fix this doesn't reload a shader if it's dependencies change, maybe bake these in cache file?
 	auto cache_path = std::string(vertex_fragment_file_path) + ".cache";
-	if(shader_binary_supported && macros == "") {
-		if(!std::filesystem::exists(vertex_fragment_file_path)) return false;
+	if (macros != "") {
+		std::string m_alpha = std::string(macros);
+		m_alpha.erase(std::remove_if(m_alpha.begin(), m_alpha.end(), not_alphanumeric), m_alpha.end());
+		cache_path += "." + m_alpha;
+	}
+	std::cout << "cache_path: " << cache_path << "\n";
+
+	uint64_t unix_update_time;
+	if(do_shader_caching && shader_binary_supported && std::filesystem::exists(vertex_fragment_file_path)) {
 		auto unix_timestamp = std::chrono::seconds(std::time(NULL));
 		auto update_time = std::filesystem::last_write_time(vertex_fragment_file_path).time_since_epoch();
 		unix_update_time = (update_time - unix_timestamp).count();
@@ -253,7 +266,8 @@ bool loadShader(Shader& shader, std::string_view vertex_fragment_file_path, std:
 
 	const char *path = vertex_fragment_file_path.data();
 	std::cout << "Loading shader " << path << ".\n";
-	const char *fragment_macro = "#define COMPILING_FS 1\n";	const char *vertex_macro   = "#define COMPILING_VS 1\n";
+	const char *fragment_macro = "#define COMPILING_FS 1\n";	
+	const char *vertex_macro   = "#define COMPILING_VS 1\n";
 	
 	GLuint vertex_shader_id   = glCreateShader(GL_VERTEX_SHADER);
 	GLuint fragment_shader_id = glCreateShader(GL_FRAGMENT_SHADER);
@@ -283,6 +297,10 @@ bool loadShader(Shader& shader, std::string_view vertex_fragment_file_path, std:
 		char *vertex_shader_error_message = (char *)malloc(sizeof(char) * (info_log_length+1));
 		glGetShaderInfoLog(vertex_shader_id, info_log_length, NULL, vertex_shader_error_message);
 		std::cerr << "Vertex shader:\n" << vertex_shader_error_message << "\n";
+
+		for (auto &s : linked_shader_codes) {
+			std::cerr << s;
+		}
 		free(vertex_shader_error_message);
 		free_linked_shader_codes(linked_shader_codes, loaded_shader_beg_i, shader_macro_i);
     	free(shader_code);
@@ -298,6 +316,9 @@ bool loadShader(Shader& shader, std::string_view vertex_fragment_file_path, std:
 		char *fragment_shader_error_message = (char *)malloc(sizeof(char) * (info_log_length+1));
 		glGetShaderInfoLog(fragment_shader_id, info_log_length, NULL, fragment_shader_error_message);
 		std::cerr << "Fragment shader:\n" << fragment_shader_error_message << "\n";
+		for (auto& s : linked_shader_codes) {
+			std::cerr << s;
+		}
 		free(fragment_shader_error_message);
 		free_linked_shader_codes(linked_shader_codes, loaded_shader_beg_i, shader_macro_i);
     	free(shader_code);
@@ -319,6 +340,9 @@ bool loadShader(Shader& shader, std::string_view vertex_fragment_file_path, std:
 			char *geometry_shader_error_message = (char *)malloc(sizeof(char) * (info_log_length+1));
 			glGetShaderInfoLog(geometry_shader_id, info_log_length, NULL, geometry_shader_error_message);
 			std::cerr << "Geometry shader:\n" << geometry_shader_error_message << "\n";
+			for (auto& s : linked_shader_codes) {
+				std::cerr << s;
+			}
 			free(geometry_shader_error_message);
 			free_linked_shader_codes(linked_shader_codes, loaded_shader_beg_i, shader_macro_i);
 			free(shader_code);
@@ -337,6 +361,9 @@ bool loadShader(Shader& shader, std::string_view vertex_fragment_file_path, std:
 		char *program_error_message = (char *)malloc(sizeof(char) * (info_log_length+1));
 		glGetProgramInfoLog(program_id, info_log_length, NULL, program_error_message);
 		std::cerr << "Program attaching:\n" << program_error_message << "\n";
+		for (auto& s : linked_shader_codes) {
+			std::cerr << s;
+		}
 		free(program_error_message);
 		free_linked_shader_codes(linked_shader_codes, loaded_shader_beg_i, shader_macro_i);
     	free(shader_code);
@@ -356,7 +383,7 @@ bool loadShader(Shader& shader, std::string_view vertex_fragment_file_path, std:
 
 	create_shader_from_program(shader, program_id, vertex_fragment_file_path);
 
-	if(shader_binary_supported && macros == "")
+	if(do_shader_caching && shader_binary_supported)
 		write_shader_cache(shader, cache_path, unix_update_time);
 	
 	printf("\n");
@@ -381,22 +408,25 @@ void initGlobalShaders() {
 	std::filesystem::file_time_type empty_file_time;
 	auto s = &animated_null;
 	shader_list = {
-		{"data/shaders/null_anim.gl",			&animated_null,		 true, graphics::shadow_shader_macro,		empty_file_time},
-		{"data/shaders/null.gl",				&null,				 true, graphics::shadow_shader_macro,		empty_file_time},
-		{"data/shaders/unified.gl",				&unified,			false, graphics::shadow_shader_macro,		empty_file_time},
-		{"data/shaders/unified_anim.gl",		&animated_unified,	false, graphics::shadow_shader_macro,		empty_file_time},
-		{"data/shaders/water.gl",				&water,				false, graphics::shadow_shader_macro,		empty_file_time},
-		{"data/shaders/gaussian_blur.gl",		&gaussian_blur,		false, "",									empty_file_time},
-		{"data/shaders/plane_projection.gl",	&plane_projection,	 true, "",									empty_file_time},
-		{"data/shaders/jump_flood.gl",			&jfa,				false, "",									empty_file_time},
-		{"data/shaders/jfa_to_distance.gl",		&jfa_distance,		false, "",									empty_file_time},
-		{"data/shaders/post.gl",				&post[0],			false, "",									empty_file_time},
-		{"data/shaders/post.gl",				&post[1],			false, "#define BLOOM 1\n",					empty_file_time},
-		{"data/shaders/debug.gl",				&debug,				false, "",									empty_file_time},
-		{"data/shaders/depth_only.gl",			&depth_only,		false, "",									empty_file_time},
-		{"data/shaders/seaweed.gl",				&vegetation,		false, "",									empty_file_time},
-		{"data/shaders/downsample.gl",			&downsample,		false, "",									empty_file_time},
-		{"data/shaders/blur_upsample.gl",		&upsample,			false, "",									empty_file_time},
+		{"data/shaders/null_anim.gl",			&animated_null,			true,  graphics::shadow_shader_macro,		empty_file_time},
+		{"data/shaders/null.gl",				&null,					true,  graphics::shadow_shader_macro,		empty_file_time},
+		{"data/shaders/unified.gl",				&unified,				false, graphics::shadow_shader_macro,		empty_file_time},
+		{"data/shaders/unified_anim.gl",		&animated_unified,		false, graphics::shadow_shader_macro,		empty_file_time},
+		{"data/shaders/water.gl",				&water,					false, graphics::shadow_shader_macro,		empty_file_time},
+		{"data/shaders/gaussian_blur.gl",		&gaussian_blur,			false, "",									empty_file_time},
+		{"data/shaders/plane_projection.gl",	&plane_projection,		true,  "",									empty_file_time},
+		{"data/shaders/jump_flood.gl",			&jfa,					false, "",									empty_file_time},
+		{"data/shaders/jfa_to_distance.gl",		&jfa_distance,			false, "",									empty_file_time},
+		{"data/shaders/post.gl",				&post[0],				false, "",									empty_file_time},
+		{"data/shaders/post.gl",				&post[1],				false, "#define BLOOM 1\n",					empty_file_time},
+		{"data/shaders/debug.gl",				&debug,					false, "",									empty_file_time},
+		{"data/shaders/depth_only.gl",			&depth_only,			false, "",									empty_file_time},
+		{"data/shaders/seaweed.gl",				&vegetation,			false, "",									empty_file_time},
+		{"data/shaders/downsample.gl",			&downsample,			false, "",									empty_file_time},
+		{"data/shaders/blur_upsample.gl",		&upsample,				false, "",									empty_file_time},
+		{"data/shaders/diffuse_convolution.gl",	&diffuse_convolution,	false, "",									empty_file_time},
+		{"data/shaders/specular_convolution.gl",&specular_convolution,	false, "",									empty_file_time},
+		{"data/shaders/generate_brdf_lut.gl",   &generate_brdf_lut,	    false, "",									empty_file_time},
 	};
 	// Fill in with correct file time and actually load
 	for (auto& sd : shader_list) {

@@ -65,6 +65,8 @@ void updateShadowVP(const Camera &camera);
 void initShadowFbo();
 void bindDrawShadowMap(const EntityManager &entity_manager, const Camera &camera);
 
+void initBRDFLut(AssetManager& asset_manager);
+
 void initAnimationUbo();
 
 void initWaterColliderFbo();
@@ -75,7 +77,7 @@ void distanceTransformWaterFbo(WaterEntity* water);
 
 void clearFramebuffer();
 void bindHdr();
-void drawUnifiedHdr(const EntityManager &entity_manager, const Texture* skybox, const Camera &camera);
+void drawUnifiedHdr(const EntityManager& entity_manager, const Texture* irradiance_map, const Texture* prefiltered_specular_map, const Camera& camera);
 
 void bindBackbuffer();
 void drawPost(Texture *skybox, const Camera& camera);
@@ -84,6 +86,9 @@ void blurBloomFbo();
 void initBloomFbo(bool resize=false);
 
 void initHdrFbo(bool resize=false);
+
+void convoluteIrradianceFromCubemap(Texture* in_tex, Texture* out_tex);
+void convoluteSpecularFromCubemap(Texture* in_tex, Texture* out_tex);
 
 struct BloomMipInfo {
     glm::vec2 size;

@@ -27,10 +27,10 @@ struct ImageData {
 
 
 GLuint create1x1Texture(const unsigned char color[3], const GLint internal_format = GL_RGB);
-GLuint create1x1TextureFloat(const glm::vec3& color, const GLint internal_format = GL_RGB);
+GLuint create1x1TextureFloat(const glm::fvec3& color, const GLint internal_format = GL_RGB);
 bool loadImageData(ImageData  *img, const std::string& imagepath, const GLint internal_format=GL_RGBA);
 GLuint createGLTextureFromData(ImageData *img, const GLint internal_format=GL_RGBA);
-GLuint loadImage(const std::string &imagepath, const GLint internal_format=GL_RGBA);
-GLuint loadCubemap(const std::array<std::string, FACE_NUM_FACES> &paths, const GLint internal_format=GL_RGB);
+GLuint loadImage(const std::string &imagepath, glm::ivec2& resolution, const GLint internal_format=GL_RGBA);
+GLuint loadCubemap(const std::array<std::string, FACE_NUM_FACES> &paths, glm::ivec2& resolution, const GLint internal_format=GL_RGB);
 
 #endif

@@ -170,12 +170,12 @@ void tickBonesKeyframe(AnimatedMesh::BoneKeyframes& keyframes, float time, bool 
 struct Texture {
     std::string handle;
     GLuint id = GL_FALSE;
+    glm::ivec2 resolution;
 
     // @debug
     // just used by editor (for now, probably check)
     bool is_color = false;
     glm::vec3 color;
-
 };
 
 struct Audio {

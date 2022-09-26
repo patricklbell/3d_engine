@@ -1,3 +1,5 @@
+#define SHADOWS 1
+
 layout(binding = 5) uniform sampler2DArray shadow_map;
 layout(std140, binding=0) uniform ShadowVP 
 {

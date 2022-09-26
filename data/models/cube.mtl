@@ -1,16 +1,12 @@
-# Create as many materials as desired
-# Each is referenced by name before the faces it applies to in the obj file
+# Blender MTL File: 'None'
+# Material Count: 1
 
-newmtl Material_ray.png
+newmtl Material
+Ns 179.999996
 Ka 1.000000 1.000000 1.000000
 Kd 1.000000 1.000000 1.000000
-Ks 0.000000 0.000000 0.000000
-Tr 1.000000
-illum 1
-Ns 0.000000
-#map_Kd brick_diffuse.bmp
-#map_Bump brick_normal.bmp
-map_Bump rustediron2_normal.bmp
-map_Kd rustediron2_basecolor.bmp
-map_Pr rustediron2_roughness.png
-map_Pm rustediron2_metallic.png
+Ks 0.500000 0.500000 0.500000
+Ke 0.0 0.0 0.0
+Ni 1.450000
+d 1.000000
+illum 2
