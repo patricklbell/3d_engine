@@ -37,7 +37,7 @@ GLuint Shader::uniform(const std::string &name) {
 }
 
 namespace shader {
-	Shader animated_null, null, unified, animated_unified, water, gaussian_blur,
+	Shader animated_null, null, null_vegetation, unified, animated_unified, water, gaussian_blur,
 		plane_projection, jfa, jfa_distance, post[2], debug, depth_only, vegetation, 
 		downsample, upsample, diffuse_convolution, specular_convolution, generate_brdf_lut;
 }
@@ -408,25 +408,26 @@ void initGlobalShaders() {
 	std::filesystem::file_time_type empty_file_time;
 	auto s = &animated_null;
 	shader_list = {
-		{"data/shaders/null_anim.gl",			&animated_null,			true,  graphics::shadow_shader_macro,		empty_file_time},
-		{"data/shaders/null.gl",				&null,					true,  graphics::shadow_shader_macro,		empty_file_time},
-		{"data/shaders/unified.gl",				&unified,				false, graphics::shadow_shader_macro,		empty_file_time},
-		{"data/shaders/unified_anim.gl",		&animated_unified,		false, graphics::shadow_shader_macro,		empty_file_time},
-		{"data/shaders/water.gl",				&water,					false, graphics::shadow_shader_macro,		empty_file_time},
-		{"data/shaders/gaussian_blur.gl",		&gaussian_blur,			false, "",									empty_file_time},
-		{"data/shaders/plane_projection.gl",	&plane_projection,		true,  "",									empty_file_time},
-		{"data/shaders/jump_flood.gl",			&jfa,					false, "",									empty_file_time},
-		{"data/shaders/jfa_to_distance.gl",		&jfa_distance,			false, "",									empty_file_time},
-		{"data/shaders/post.gl",				&post[0],				false, "",									empty_file_time},
-		{"data/shaders/post.gl",				&post[1],				false, "#define BLOOM 1\n",					empty_file_time},
-		{"data/shaders/debug.gl",				&debug,					false, "",									empty_file_time},
-		{"data/shaders/depth_only.gl",			&depth_only,			false, "",									empty_file_time},
-		{"data/shaders/seaweed.gl",				&vegetation,			false, "",									empty_file_time},
-		{"data/shaders/downsample.gl",			&downsample,			false, "",									empty_file_time},
-		{"data/shaders/blur_upsample.gl",		&upsample,				false, "",									empty_file_time},
-		{"data/shaders/diffuse_convolution.gl",	&diffuse_convolution,	false, "",									empty_file_time},
-		{"data/shaders/specular_convolution.gl",&specular_convolution,	false, "",									empty_file_time},
-		{"data/shaders/generate_brdf_lut.gl",   &generate_brdf_lut,	    false, "",									empty_file_time},
+		{"data/shaders/null_anim.gl",			&animated_null,			true,  graphics::shadow_shader_macro,								empty_file_time},
+		{"data/shaders/null.gl",				&null,					true,  graphics::shadow_shader_macro,								empty_file_time},
+		{"data/shaders/null.gl",				&null_vegetation,		true,  graphics::shadow_shader_macro+"\n#define ALPHA_TEXTURE 1\n",	empty_file_time},
+		{"data/shaders/unified.gl",				&unified,				false, graphics::shadow_shader_macro,								empty_file_time},
+		{"data/shaders/unified_anim.gl",		&animated_unified,		false, graphics::shadow_shader_macro,								empty_file_time},
+		{"data/shaders/water.gl",				&water,					false, graphics::shadow_shader_macro,								empty_file_time},
+		{"data/shaders/gaussian_blur.gl",		&gaussian_blur,			false, "",															empty_file_time},
+		{"data/shaders/plane_projection.gl",	&plane_projection,		true,  "",															empty_file_time},
+		{"data/shaders/jump_flood.gl",			&jfa,					false, "",															empty_file_time},
+		{"data/shaders/jfa_to_distance.gl",		&jfa_distance,			false, "",															empty_file_time},
+		{"data/shaders/post.gl",				&post[0],				false, "",															empty_file_time},
+		{"data/shaders/post.gl",				&post[1],				false, "#define BLOOM 1\n",											empty_file_time},
+		{"data/shaders/debug.gl",				&debug,					false, "",															empty_file_time},
+		{"data/shaders/depth_only.gl",			&depth_only,			false, "",															empty_file_time},
+		{"data/shaders/seaweed.gl",				&vegetation,			false, "",															empty_file_time},
+		{"data/shaders/downsample.gl",			&downsample,			false, "",															empty_file_time},
+		{"data/shaders/blur_upsample.gl",		&upsample,				false, "",															empty_file_time},
+		{"data/shaders/diffuse_convolution.gl",	&diffuse_convolution,	false, "",															empty_file_time},
+		{"data/shaders/specular_convolution.gl",&specular_convolution,	false, "",															empty_file_time},
+		{"data/shaders/generate_brdf_lut.gl",   &generate_brdf_lut,	    false, "",															empty_file_time},
 	};
 	// Fill in with correct file time and actually load
 	for (auto& sd : shader_list) {

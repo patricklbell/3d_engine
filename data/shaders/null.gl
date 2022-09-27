@@ -1,11 +1,28 @@
 #ifdef COMPILING_VS
-layout (location = 0) in vec3 vertex;
+layout (location = 0) in vec3 in_vertex;
+#if ALPHA_TEXTURE
+layout (location = 3) in vec2 in_texcoord;
+
+out VS_OUT {
+    vec2 texcoord;
+} vs_out;
+uniform float time;
+#endif
+
 
 uniform mat4 model;
 
 void main()
 {
-    gl_Position = model * vec4(vertex, 1.0);
+    vec4 vertex = vec4(in_vertex, 1.0);
+
+#if ALPHA_TEXTURE
+    // @todo make good vegetation movement 
+    vs_out.texcoord = vec2(in_texcoord.y, in_texcoord.x); // I don't know why this is needed
+    vertex.x += (1.0 - vs_out.texcoord.x)*0.3*sin(1.8*time + (1.0 - vs_out.texcoord.x*vs_out.texcoord.x)*7.0*vs_out.texcoord.x);
+#endif
+
+    gl_Position = model * vertex;
 }
 #endif
 
@@ -17,11 +34,21 @@ layout(std140, binding=0) uniform ShadowVP
     mat4 shadow_vps[INVOCATIONS];
 };
 
+#if ALPHA_TEXTURE
+in VS_OUT {
+    vec2 texcoord;
+} gs_in[];  
+out vec2 texcoord;
+#endif
+
 void main()
 {
     for(int i=0; i < 3; i++){
         gl_Position = shadow_vps[gl_InvocationID] * gl_in[i].gl_Position;
         gl_Layer    = gl_InvocationID;
+#if ALPHA_TEXTURE
+        texcoord = gs_in[i].texcoord;
+#endif
         EmitVertex();
     }
     EndPrimitive();
@@ -31,7 +58,18 @@ void main()
 
 #ifdef COMPILING_FS
 
+#if ALPHA_TEXTURE
+in vec2 texcoord;
+
+layout (location = 0) uniform sampler2D image;
+#endif
+
 void main()
 {
+#if ALPHA_TEXTURE
+    if(texture(image, texcoord).a < 0.1) {
+        discard;
+    }
+#endif
 } 
 #endif

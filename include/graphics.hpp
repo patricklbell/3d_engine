@@ -104,7 +104,7 @@ namespace graphics{
     extern GLuint hdr_fbo;
     extern GLuint hdr_buffer;
 
-    extern const char * shadow_shader_macro;
+    extern const std::string shadow_shader_macro;
     extern GLuint shadow_buffer, shadow_fbo;
 
     extern GLuint water_collider_fbos[2], water_collider_buffers[2];

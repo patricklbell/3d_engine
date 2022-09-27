@@ -46,7 +46,7 @@ namespace graphics {
     constexpr int shadow_num = 4;
     float shadow_cascade_distances[shadow_num];
     // @note make sure to change macro to shadow_num + 1
-    const char * shadow_shader_macro = "#define CASCADE_NUM 4\n#define INVOCATIONS 5\n";
+    const std::string shadow_shader_macro = "#define CASCADE_NUM 4\n#define INVOCATIONS 5\n";
     glm::mat4x4 shadow_vps[shadow_num + 1];
     GLuint shadow_fbo, shadow_buffer, shadow_matrices_ubo;
 
@@ -256,6 +256,7 @@ void bindDrawShadowMap(const EntityManager &entity_manager, const Camera &camera
     glClear(GL_DEPTH_BUFFER_BIT);
 
     std::vector<AnimatedMeshEntity*> anim_mesh_entities;
+    std::vector<VegetationEntity*> vegetation_entities;
 
     // 
     // Draw normal static mesh entities
@@ -271,6 +272,10 @@ void bindDrawShadowMap(const EntityManager &entity_manager, const Camera &camera
                 anim_mesh_entities.push_back(a_e);
                 continue;
             }
+        }
+        if (entityInherits(m_e->type, VEGETATION_ENTITY)) {
+            vegetation_entities.push_back((VegetationEntity*)m_e);
+            continue;
         }
         if(!(entityInherits(m_e->type, MESH_ENTITY)) || m_e->mesh == nullptr) continue;
 
@@ -315,6 +320,33 @@ void bindDrawShadowMap(const EntityManager &entity_manager, const Camera &camera
                 glDrawElements(mesh->draw_mode, mesh->draw_count[j], mesh->draw_type, (GLvoid*)(sizeof(*mesh->indices) * mesh->draw_start[j]));
             }
         }
+    }
+
+    if (vegetation_entities.size() > 0) {
+        glDisable(GL_CULL_FACE);
+
+        glUseProgram(shader::null_vegetation.program);
+        glUniform1f(shader::null_vegetation.uniform("time"), glfwGetTime());
+
+        for (const auto& v_e : vegetation_entities) {
+            if (v_e->texture == nullptr) continue;
+
+            auto model = createModelMatrix(v_e->position, v_e->rotation, v_e->scale);
+            glUniformMatrix4fv(shader::null_vegetation.uniform("model"), 1, GL_FALSE, &model[0][0]);
+
+            glActiveTexture(GL_TEXTURE0);
+            glBindTexture(GL_TEXTURE_2D, v_e->texture->id);
+
+            auto& mesh = v_e->mesh;
+            glBindVertexArray(mesh->vao);
+            for (int j = 0; j < mesh->num_meshes; ++j) {
+                // @note that this will break for models which have transforms
+                // Bind VAO and draw
+                glDrawElements(mesh->draw_mode, mesh->draw_count[j], mesh->draw_type, (GLvoid*)(sizeof(*mesh->indices) * mesh->draw_start[j]));
+            }
+        }
+
+        glEnable(GL_CULL_FACE);
     }
 
     glCullFace(GL_BACK);
