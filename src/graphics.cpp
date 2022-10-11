@@ -357,7 +357,11 @@ void bindDrawShadowMap(const EntityManager &entity_manager, const Camera &camera
         glDisable(GL_CULL_FACE);
 
         glUseProgram(shader::null_vegetation.program);
-        glUniform1f(shader::null_vegetation.uniform("time"), glfwGetTime());
+
+        auto wind_direction = glm::normalize(glm::vec2(0.5, 0.6));
+        glUniform2f(shader::vegetation.uniform("wind_direction"), wind_direction.x, wind_direction.y);
+        glUniform1f(shader::vegetation.uniform("wind_strength"), 1.0);
+        glUniform1f(shader::vegetation.uniform("time"), glfwGetTime());
 
         for (const auto& v_e : vegetation_entities) {
             if (v_e->texture == nullptr) continue;
@@ -1048,6 +1052,10 @@ void drawUnifiedHdr(const EntityManager& entity_manager, const Texture* irradian
         glDisable(GL_CULL_FACE);
 
         glUseProgram(shader::vegetation.program);
+
+        auto wind_direction = glm::normalize(glm::vec2(0.5, 0.6));
+        glUniform2f(shader::vegetation.uniform("wind_direction"), wind_direction.x, wind_direction.y);
+        glUniform1f(shader::vegetation.uniform("wind_strength"), 1.0);
         glUniform1f(shader::vegetation.uniform("time"), glfwGetTime());
         
         // @todo shadow casting on vegetation

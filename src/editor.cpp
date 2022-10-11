@@ -462,8 +462,8 @@ static bool loadAnimatedModelCommand(std::vector<std::string>& input_tokens, std
     return false;
 }
 
-static bool addMeshCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
-    if (input_tokens.size() >= 2) {
+static bool addVegetationCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
+    if (input_tokens.size() >= 3) {
         auto filename = "data/mesh/" + input_tokens[1] + ".mesh";
         auto mesh = asset_manager.getMesh(filename);
 
@@ -481,6 +481,57 @@ static bool addMeshCommand(std::vector<std::string>& input_tokens, std::string& 
             output += "Mesh has already been loaded, using program memory\n";
         }
 
+        auto tex_filename = input_tokens[2];
+        auto texture = asset_manager.getTexture(tex_filename);
+
+        if (texture == nullptr) {
+            texture = asset_manager.createTexture(tex_filename);
+            if (asset_manager.loadTexture(texture, tex_filename, GL_RGBA)) {
+                output += "Loaded texture at path " + tex_filename + "\n";
+            }
+            else {
+                output += "Failed to loaded texture at path " + tex_filename + " maybe it doesn't exist\n";
+                return false;
+            }
+        }
+        else {
+            output += "Texture has already been loaded, using program memory\n";
+        }
+
+        auto new_veg = (VegetationEntity*)entity_manager.createEntity(VEGETATION_ENTITY);
+        new_veg->mesh = mesh;
+        new_veg->casts_shadow = true;
+        new_veg->texture = texture;
+        // @todo make this properly integrated into model loading through custom material types, eg. lambert, pbr, flat
+        selection.addEntity(new_veg);
+
+        output += "Added vegetation entity with provided mesh to level\n";
+        return true;
+    }
+    
+    output += "Please provide a mesh name, see list_mesh, and a path to a alpha texture\n";
+    return false;
+}
+
+static bool addMeshCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
+    if (input_tokens.size() >= 2) {
+        auto filename = "data/mesh/" + input_tokens[1] + ".mesh";
+        auto mesh = asset_manager.getMesh(filename);
+
+        if (mesh == nullptr) {
+            mesh = asset_manager.createMesh(filename);
+            if (asset_manager.loadMeshFile(mesh, filename)) {
+                output += "Loaded mesh at path " + filename + "\n";
+            }
+            else {
+                output += "Failed to loaded mesh at path " + filename + " maybe it doesn't exist\n";
+                return false;
+            }
+        }
+        else {
+            output += "Mesh has already been loaded, using program memory\n";
+        }
+
         auto new_mesh_entity = (MeshEntity*)entity_manager.createEntity(MESH_ENTITY);
         new_mesh_entity->mesh = mesh;
         new_mesh_entity->casts_shadow = true;
@@ -489,7 +540,7 @@ static bool addMeshCommand(std::vector<std::string>& input_tokens, std::string& 
         output += "Added mesh entity with provided mesh to level\n";
         return true;
     }
-    
+
     output += "Please provide a mesh name, see list_mesh\n";
     return false;
 }
@@ -651,6 +702,7 @@ const std::map
     {"new_level", newLevelCommand},
     {"list_mesh", listMeshCommand},
     {"add_mesh", addMeshCommand},
+    {"add_vegetation", addVegetationCommand},
     {"add_animated_mesh", addAnimatedMeshCommand},
     {"add_collider", addColliderCommand},
     {"load_model", loadModelCommand},
@@ -743,7 +795,7 @@ void ImTerminal(EntityManager &entity_manager, AssetManager &asset_manager, bool
 
                 }
                 else if (data->EventFlag == ImGuiInputTextFlags_CallbackCompletion) {
-                    auto last_space = input_line.find_last_of(" ");
+                    auto last_space = input_line.find(" ");
                     if (last_space == std::string::npos) {
                         last_space = 0;
                     }
@@ -751,28 +803,35 @@ void ImTerminal(EntityManager &entity_manager, AssetManager &asset_manager, bool
                         last_space++;
                     }
 
-                    auto word = input_line.substr(last_space, std::string::npos);
-                    
-                    std::vector<std::string> suggestions;
-                    for (auto& d : command_to_func) {
-                        auto &keywrd = d.first;
+                    // Only do completion if we are at the first word
+                    // @todo command completion
+                    if (input_line.find(" ", last_space) == std::string::npos) {
+                        auto word = input_line.substr(last_space, std::string::npos);
 
-                        // Kind of fuzzy search and easy
-                        if (keywrd.find(word) != std::string::npos) {
-                            suggestions.emplace_back(keywrd);
+                        std::vector<std::string> suggestions;
+                        for (auto& d : command_to_func) {
+                            auto& keywrd = d.first;
+
+                            // Kind of fuzzy search and easy
+                            if (keywrd.find(word) != std::string::npos) {
+                                suggestions.emplace_back(keywrd);
+                            }
+                        }
+
+                        suggestion_out = "";
+                        if (suggestions.size() == 1) {
+                            input_line = input_line.substr(0, last_space) + suggestions[0];
+                            update_input_contents = true;
+                        }
+                        else {
+                            for (auto& s : suggestions) {
+                                suggestion_out += "\t" + s;
+                            }
                         }
                     }
-
+                }
+                else if (data->EventFlag == ImGuiInputTextFlags_CallbackEdit) {
                     suggestion_out = "";
-                    if (suggestions.size() == 1) {
-                        input_line = input_line.substr(0, last_space) + suggestions[0];
-                        update_input_contents = true;
-                    }
-                    else {
-                        for (auto& s : suggestions) {
-                            suggestion_out += "\t" + s;
-                        }
-                    }
                 }
 
                 if(update_input_contents) {
@@ -785,7 +844,7 @@ void ImTerminal(EntityManager &entity_manager, AssetManager &asset_manager, bool
         };
         ImGui::SetNextItemWidth(window_width);
         ImGui::SetKeyboardFocusHere(0);
-        auto flags = ImGuiInputTextFlags_NoHorizontalScroll | ImGuiInputTextFlags_CallbackAlways | ImGuiInputTextFlags_CallbackCharFilter | ImGuiInputTextFlags_CallbackHistory | ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackCompletion;
+        auto flags = ImGuiInputTextFlags_NoHorizontalScroll | ImGuiInputTextFlags_CallbackAlways | ImGuiInputTextFlags_CallbackCharFilter | ImGuiInputTextFlags_CallbackHistory | ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackCompletion | ImGuiInputTextFlags_CallbackEdit;
         bool enter_pressed = ImGui::InputTextWithHint("###input_line", "Enter Command", &input_line, flags, Callbacks::callback);
 
         // Add tab suggestions

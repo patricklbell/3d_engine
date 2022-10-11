@@ -1,0 +1,52 @@
+#ifdef COMPILING_VS
+#load lib/constants.gl
+
+layout (location = 0) in vec3 in_vertex;
+layout (location = 1) in vec3 in_normal;
+layout (location = 3) in vec2 in_texcoord;
+// R - edge stiffness, G - Phase offset, B - overall stiffnes, A - Precomputed ambient occlusion
+layout (location = 7) in vec4 in_color; 
+
+out VS_OUT {
+    vec2 texcoord;
+    vec4 color;
+} vs_out; 
+
+uniform mat4 mvp;
+uniform float time;
+
+uniform vec2 wind_direction;
+uniform float wind_strength;
+
+#load lib/vegetation.gl
+
+void main()
+{
+    vec3 vertex = applyWindToVegetation(in_vertex, in_normal, in_color.r, in_color.g, in_color.b, wind_direction, wind_strength, time);
+
+    gl_Position = mvp * vec4(vertex, 1.0);
+	vs_out.texcoord = in_texcoord;
+    vs_out.color = in_color;
+}
+#endif
+
+
+#ifdef COMPILING_FS
+
+in VS_OUT {
+    vec2 texcoord;
+    vec4 color;
+} fs_in; 
+
+out vec4 out_color;
+
+layout (location = 0) uniform sampler2D image;
+
+void main()
+{             
+    out_color = texture(image, fs_in.texcoord);
+    if(out_color.a < 0.1)
+        discard;
+} 
+
+#endif

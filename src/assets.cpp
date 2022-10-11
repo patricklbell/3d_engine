@@ -160,6 +160,8 @@ bool AssetManager::writeMeshFile(const Mesh *mesh, const std::string &path){
         fwrite(mesh->bone_ids, sizeof(*mesh->bone_ids), mesh->num_vertices, f);
         fwrite(mesh->weights , sizeof(*mesh->weights ), mesh->num_vertices, f);
     }
+    if (mesh->attributes & MESH_ATTRIBUTES_COLORS)
+        fwrite(mesh->colors, sizeof(*mesh->colors), mesh->num_vertices, f);
 
     // Write materials as list of image paths
     fwrite(&mesh->num_materials, sizeof(mesh->num_materials), 1, f);
@@ -243,6 +245,13 @@ static void createMeshVao(Mesh *mesh){
         glVertexAttribPointer(6, 4, GL_FLOAT, false, 0, 0);
         glEnableVertexAttribArray(6);
     }
+    if (mesh->attributes & MESH_ATTRIBUTES_COLORS) {
+        glGenBuffers(1, &mesh->colors_vbo);
+        glBindBuffer(GL_ARRAY_BUFFER, mesh->colors_vbo);
+        glBufferData(GL_ARRAY_BUFFER, mesh->num_vertices * sizeof(*mesh->colors), &mesh->colors[0], GL_STATIC_DRAW);
+        glVertexAttribPointer(7, 4, GL_FLOAT, false, 0, 0);
+        glEnableVertexAttribArray(7);
+    }
 
 	glGenBuffers(1, &mesh->indices_vbo);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh->indices_vbo);
@@ -307,6 +316,10 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
 
         mesh->weights = reinterpret_cast<decltype(mesh->weights)>(malloc(sizeof(*mesh->weights) * mesh->num_vertices));
         fread(mesh->weights, sizeof(*mesh->weights), mesh->num_vertices, f);
+    }
+    if (mesh->attributes & MESH_ATTRIBUTES_COLORS) {
+        mesh->colors = reinterpret_cast<decltype(mesh->colors)>(malloc(sizeof(*mesh->colors) * mesh->num_vertices));
+        fread(mesh->colors, sizeof(*mesh->colors), mesh->num_vertices, f);
     }
 
     // @note this doesn't support embedded materials for binary formats that assimp loads
@@ -532,7 +545,7 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
 
     mesh->material_indices = reinterpret_cast<decltype(mesh->material_indices)>(malloc(sizeof(*mesh->material_indices) * mesh->num_meshes));
 
-    mesh->attributes = (MeshAttributes)(MESH_ATTRIBUTES_VERTICES | MESH_ATTRIBUTES_NORMALS | MESH_ATTRIBUTES_TANGENTS | MESH_ATTRIBUTES_UVS);
+    mesh->attributes = (MeshAttributes)(MESH_ATTRIBUTES_VERTICES | MESH_ATTRIBUTES_NORMALS | MESH_ATTRIBUTES_TANGENTS | MESH_ATTRIBUTES_UVS | MESH_ATTRIBUTES_COLORS);
     mesh->num_indices  = 0;
     mesh->num_vertices = 0;
 	for (int i = 0; i < mesh->num_meshes; ++i) {
@@ -548,6 +561,7 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
 
         mesh->transforms[i] = aiMat4x4ToGlm(ai_meshes_global_transforms[i]);
 
+        // If every mesh has attribute then it is valid
         if (ai_mesh->mNormals == NULL) {
             mesh->attributes = (MeshAttributes)(mesh->attributes ^ MESH_ATTRIBUTES_NORMALS);
         }
@@ -557,25 +571,32 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
         if (ai_mesh->mTextureCoords[0] == NULL) {
             mesh->attributes = (MeshAttributes)(mesh->attributes ^ MESH_ATTRIBUTES_UVS);
         }
+        if (ai_mesh->mColors[0] == NULL) {
+            mesh->attributes = (MeshAttributes)(mesh->attributes ^ MESH_ATTRIBUTES_COLORS);
+        }
 	}
     std::cout << "Mesh attributes are " << (int)mesh->attributes << "\n";
     std::cout << "Number of vertices is " << mesh->num_vertices << "\n";
 
     bool mallocs_failed = false;
-    mesh->vertices = reinterpret_cast<decltype(mesh->vertices)>(malloc(sizeof(*mesh->vertices)*mesh->num_vertices));
-    mallocs_failed |= mesh->vertices == NULL;
+    mesh->vertices      = reinterpret_cast<decltype(mesh->vertices)>(malloc(sizeof(*mesh->vertices)*mesh->num_vertices));
+    mallocs_failed     |= mesh->vertices == NULL;
 
     if (mesh->attributes & MESH_ATTRIBUTES_NORMALS) {
-        mesh->normals  = reinterpret_cast<decltype(mesh->normals )>(malloc(sizeof(*mesh->normals )*mesh->num_vertices));
+        mesh->normals   = reinterpret_cast<decltype(mesh->normals )>(malloc(sizeof(*mesh->normals )*mesh->num_vertices));
         mallocs_failed |= mesh->normals == NULL;
     }
     if (mesh->attributes & MESH_ATTRIBUTES_TANGENTS) {
-        mesh->tangents = reinterpret_cast<decltype(mesh->tangents)>(malloc(sizeof(*mesh->tangents)*mesh->num_vertices));
+        mesh->tangents  = reinterpret_cast<decltype(mesh->tangents)>(malloc(sizeof(*mesh->tangents)*mesh->num_vertices));
         mallocs_failed |= mesh->normals == NULL;
     }
     if (mesh->attributes & MESH_ATTRIBUTES_UVS) {
-        mesh->uvs      = reinterpret_cast<decltype(mesh->uvs     )>(malloc(sizeof(*mesh->uvs     )*mesh->num_vertices));
+        mesh->uvs       = reinterpret_cast<decltype(mesh->uvs     )>(malloc(sizeof(*mesh->uvs     )*mesh->num_vertices));
         mallocs_failed |= mesh->uvs == NULL;
+    }
+    if (mesh->attributes & MESH_ATTRIBUTES_COLORS) {
+        mesh->colors    = reinterpret_cast<decltype(mesh->colors  )>(malloc(sizeof(*mesh->colors  )*mesh->num_vertices));
+        mallocs_failed |= mesh->colors == NULL;
     }
 
     mesh->indices  = reinterpret_cast<decltype(mesh->indices )>(malloc(sizeof(*mesh->indices )*mesh->num_indices));
@@ -587,6 +608,7 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
         free(mesh->normals);
         free(mesh->tangents);
         free(mesh->uvs);
+        free(mesh->colors);
         free(mesh->indices);
         return false;
     }
@@ -628,6 +650,16 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
                 );
 		    }
 		}
+        if (mesh->attributes & MESH_ATTRIBUTES_COLORS) {
+            for (unsigned int i = 0; i < ai_mesh->mNumVertices; i++) {
+                mesh->colors[vertices_offset + i] = glm::fvec4(
+                    ai_mesh->mColors[0][i].r,
+                    ai_mesh->mColors[0][i].g,
+                    ai_mesh->mColors[0][i].b,
+                    ai_mesh->mColors[0][i].a
+                );
+            }
+        }
 		
 		for (unsigned int i=0; i<ai_mesh->mNumFaces; i++){
 			// @note assumes the model has only triangles.

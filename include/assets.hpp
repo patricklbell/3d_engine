@@ -46,6 +46,7 @@ enum MeshAttributes : char {
     MESH_ATTRIBUTES_TANGENTS    = 1 << 2,
     MESH_ATTRIBUTES_UVS         = 1 << 3,
     MESH_ATTRIBUTES_BONES       = 1 << 4,
+    MESH_ATTRIBUTES_COLORS      = 1 << 5,
 };
 
 struct Mesh {
@@ -67,6 +68,7 @@ struct Mesh {
     glm::fvec3*     normals = nullptr;
     glm::fvec3*     tangents = nullptr;
     glm::fvec2*     uvs = nullptr;
+    glm::fvec4*     colors = nullptr;
     glm::ivec4*     bone_ids = nullptr; // Indices of bones which affect each vertex
     glm::fvec4*     weights = nullptr; // Weights for each bone
 
@@ -81,8 +83,9 @@ struct Mesh {
 
     GLuint          indices_vbo     = GL_FALSE;
     GLuint 	        vertices_vbo    = GL_FALSE;
-    GLuint 	        uvs_vbo         = GL_FALSE;
     GLuint 	        normals_vbo     = GL_FALSE;
+    GLuint 	        uvs_vbo         = GL_FALSE;
+    GLuint 	        colors_vbo      = GL_FALSE;
     GLuint 	        tangents_vbo    = GL_FALSE;
     GLuint          bone_ids_vbo    = GL_FALSE;
     GLuint          weights_vbo     = GL_FALSE;

@@ -46,7 +46,7 @@ vec4 step_jfa(in vec2 fragcoord, in float level) {
             }
         }
     }
-    return vec4(nearest_coord.xy, is_filled, 1.0);
+    return vec4(nearest_coord.xy, is_filled, is_filled);
 }
 
 void main() {

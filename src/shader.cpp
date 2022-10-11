@@ -87,14 +87,15 @@ static char *read_file_contents(std::string_view path, int &num_bytes) {
 	return data;
 }
 
-static inline void free_linked_shader_codes(std::vector<char *> &lsc, int beg, int end) {
-	for(int i = beg; i < end; ++i) {
-		free(lsc[i]);
+static inline void free_linked_shader_codes(std::vector<char *> &lsc) {
+	for (auto& s : lsc) {
+		free(s);
 	}
 }
 
 static void load_shader_dependencies(char *shader_code, int num_bytes, 
-		std::vector<char *> &linked_shader_codes, std::unordered_set<std::string> &linked_shader_paths) {
+		std::vector<char *> &linked_shader_codes, std::vector<char *>& linked_shader_codes_to_free,
+		std::unordered_set<std::string> &linked_shader_paths) {
 	int offset = 0;
 
 	constexpr std::string_view load_macro = "#load ";
@@ -115,8 +116,11 @@ static void load_shader_dependencies(char *shader_code, int num_bytes,
 					char * loaded_shader = read_file_contents(loadpath, loaded_num_bytes);
 					if(loaded_shader != nullptr) {
 						std::cout << "Successful #load at path " << loadpath << "\n";
-						load_shader_dependencies(loaded_shader, loaded_num_bytes, linked_shader_codes, linked_shader_paths);
+						load_shader_dependencies(loaded_shader, loaded_num_bytes, linked_shader_codes, linked_shader_codes_to_free, linked_shader_paths);
+						linked_shader_codes_to_free.push_back(loaded_shader);
 						linked_shader_codes.push_back(loaded_shader);	
+
+						linked_shader_codes.push_back("\n");
 					} else {
 						std::cout << "Failed to #load path " << loadpath << "\n";
 					}
@@ -281,11 +285,9 @@ bool loadShader(Shader& shader, std::string_view vertex_fragment_file_path, std:
 
 	std::vector<char *> linked_shader_codes = {(char*)glsl_version.c_str(), (char*)macros.data()};
 	std::unordered_set<std::string> linked_shader_paths;
-	int loaded_shader_beg_i = linked_shader_codes.size();
+	std::vector<char *> linked_shader_codes_to_free = { shader_code }; // Pretty cringe way @todo
+	load_shader_dependencies(shader_code, num_bytes, linked_shader_codes, linked_shader_codes_to_free, linked_shader_paths);
 
-	load_shader_dependencies(shader_code, num_bytes, linked_shader_codes, linked_shader_paths);
-
-	int shader_macro_i = linked_shader_codes.size();
 	linked_shader_codes.push_back((char*)vertex_macro);
 	linked_shader_codes.push_back((char*)shader_code);
 	glShaderSource(vertex_shader_id, linked_shader_codes.size(), &linked_shader_codes[0], NULL);
@@ -302,86 +304,81 @@ bool loadShader(Shader& shader, std::string_view vertex_fragment_file_path, std:
 			std::cerr << s;
 		}
 		free(vertex_shader_error_message);
-		free_linked_shader_codes(linked_shader_codes, loaded_shader_beg_i, shader_macro_i);
-    	free(shader_code);
+		free_linked_shader_codes(linked_shader_codes_to_free);
 		return false;
 	}
 
-	linked_shader_codes[shader_macro_i] = (char*)fragment_macro;	
+	linked_shader_codes[linked_shader_codes.size() - 2] = (char*)fragment_macro;
 	glShaderSource(fragment_shader_id, linked_shader_codes.size(), &linked_shader_codes[0], NULL);
 	glCompileShader(fragment_shader_id);
 
 	glGetShaderiv(fragment_shader_id, GL_INFO_LOG_LENGTH, &info_log_length);
-	if ( info_log_length > 0 ){
-		char *fragment_shader_error_message = (char *)malloc(sizeof(char) * (info_log_length+1));
+	if (info_log_length > 0) {
+		char* fragment_shader_error_message = (char*)malloc(sizeof(char) * (info_log_length + 1));
 		glGetShaderInfoLog(fragment_shader_id, info_log_length, NULL, fragment_shader_error_message);
 		std::cerr << "Fragment shader:\n" << fragment_shader_error_message << "\n";
 		for (auto& s : linked_shader_codes) {
 			std::cerr << s;
 		}
 		free(fragment_shader_error_message);
-		free_linked_shader_codes(linked_shader_codes, loaded_shader_beg_i, shader_macro_i);
-    	free(shader_code);
+		free_linked_shader_codes(linked_shader_codes_to_free);
 		return false;
 	}
 
 	GLuint geometry_shader_id;
-	if(geometry){
+	if (geometry) {
 		std::cout << "Compiling additional geometry shader.\n";
-		const char *geometry_macro = "#define COMPILING_GS 1\n";
+		const char* geometry_macro = "#define COMPILING_GS 1\n";
 
 		geometry_shader_id = glCreateShader(GL_GEOMETRY_SHADER);
-		linked_shader_codes[shader_macro_i] = (char*)geometry_macro;
+		linked_shader_codes[linked_shader_codes.size() - 2] = (char*)geometry_macro;
 		glShaderSource(geometry_shader_id, linked_shader_codes.size(), &linked_shader_codes[0], NULL);
 		glCompileShader(geometry_shader_id);
 
 		glGetShaderiv(geometry_shader_id, GL_INFO_LOG_LENGTH, &info_log_length);
-		if ( info_log_length > 0 ){
-			char *geometry_shader_error_message = (char *)malloc(sizeof(char) * (info_log_length+1));
+		if (info_log_length > 0) {
+			char* geometry_shader_error_message = (char*)malloc(sizeof(char) * (info_log_length + 1));
 			glGetShaderInfoLog(geometry_shader_id, info_log_length, NULL, geometry_shader_error_message);
 			std::cerr << "Geometry shader:\n" << geometry_shader_error_message << "\n";
 			for (auto& s : linked_shader_codes) {
 				std::cerr << s;
 			}
 			free(geometry_shader_error_message);
-			free_linked_shader_codes(linked_shader_codes, loaded_shader_beg_i, shader_macro_i);
-			free(shader_code);
+			free_linked_shader_codes(linked_shader_codes_to_free);
 			return false;
 		}
 	}
 
 	GLuint program_id = glCreateProgram();
 	glAttachShader(program_id, vertex_shader_id);
-	if(geometry) glAttachShader(program_id, geometry_shader_id);
+	if (geometry) glAttachShader(program_id, geometry_shader_id);
 	glAttachShader(program_id, fragment_shader_id);
 	glLinkProgram(program_id);
 
 	glGetProgramiv(program_id, GL_INFO_LOG_LENGTH, &info_log_length);
-	if ( info_log_length > 0 ){
-		char *program_error_message = (char *)malloc(sizeof(char) * (info_log_length+1));
+	if (info_log_length > 0) {
+		char* program_error_message = (char*)malloc(sizeof(char) * (info_log_length + 1));
 		glGetProgramInfoLog(program_id, info_log_length, NULL, program_error_message);
 		std::cerr << "Program attaching:\n" << program_error_message << "\n";
 		for (auto& s : linked_shader_codes) {
 			std::cerr << s;
 		}
 		free(program_error_message);
-		free_linked_shader_codes(linked_shader_codes, loaded_shader_beg_i, shader_macro_i);
-    	free(shader_code);
+		free_linked_shader_codes(linked_shader_codes_to_free);
 		return false;
 	}
 
 	glDetachShader(program_id, vertex_shader_id);
-	if(geometry) glDetachShader(program_id, geometry_shader_id);
+	if (geometry) glDetachShader(program_id, geometry_shader_id);
 	glDetachShader(program_id, fragment_shader_id);
-	
+
 	glDeleteShader(vertex_shader_id);
-	if(geometry) glDeleteShader(geometry_shader_id);
+	if (geometry) glDeleteShader(geometry_shader_id);
 	glDeleteShader(fragment_shader_id);
 
-	free_linked_shader_codes(linked_shader_codes, loaded_shader_beg_i, shader_macro_i);
-    free(shader_code);
-
 	create_shader_from_program(shader, program_id, vertex_fragment_file_path);
+
+	free_linked_shader_codes(linked_shader_codes_to_free);
 
 	if(do_shader_caching && shader_binary_supported)
 		write_shader_cache(shader, cache_path, unix_update_time);
@@ -422,7 +419,7 @@ void initGlobalShaders() {
 		{"data/shaders/post.gl",				&post[1],				false, "#define BLOOM 1\n",											empty_file_time},
 		{"data/shaders/debug.gl",				&debug,					false, "",															empty_file_time},
 		{"data/shaders/depth_only.gl",			&depth_only,			false, "",															empty_file_time},
-		{"data/shaders/seaweed.gl",				&vegetation,			false, "",															empty_file_time},
+		{"data/shaders/vegetation.gl",			&vegetation,			false, "",															empty_file_time},
 		{"data/shaders/downsample.gl",			&downsample,			false, "",															empty_file_time},
 		{"data/shaders/blur_upsample.gl",		&upsample,				false, "",															empty_file_time},
 		{"data/shaders/diffuse_convolution.gl",	&diffuse_convolution,	false, "",															empty_file_time},

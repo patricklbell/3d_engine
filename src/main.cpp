@@ -182,16 +182,16 @@ int main() {
     soloud.setPan(handle1, -0.2f);              // Set pan; -1 is left, 1 is right
     soloud.setRelativePlaySpeed(handle1, 1.0f); // Play a bit slower; 1.0f is normal
 
-    // level_path = "data/levels/test.level";
-    // loadLevel(entity_manager, asset_manager, level_path, level_camera);
-    // editor_camera = level_camera;
+     /*level_path = "data/levels/animation_test2.level";
+     loadLevel(*entity_manager, asset_manager, level_path, level_camera);
+     editor_camera = level_camera;*/
     
-    //auto seaweed = asset_manager.createMesh("data/mesh/seaweed.mesh");
-    //asset_manager.loadMeshFile(seaweed, seaweed->handle);
-    //auto veg = (VegetationEntity*)entity_manager->createEntity(VEGETATION_ENTITY);
-    //veg->mesh = seaweed;
-    //veg->texture = asset_manager.createTexture("data/textures/extern/Leaves/Leaves_Pine_Texture.png");
-    //asset_manager.loadTexture(veg->texture, veg->texture->handle, GL_RGBA);
+    auto seaweed = asset_manager.createMesh("data/mesh/seaweed.mesh");
+    asset_manager.loadMeshFile(seaweed, seaweed->handle);
+    auto veg = (VegetationEntity*)entity_manager->createEntity(VEGETATION_ENTITY);
+    veg->mesh = seaweed;
+    veg->texture = asset_manager.createTexture("data/textures/extern/Leaves/Leaves_Pine_Texture.png");
+    asset_manager.loadTexture(veg->texture, veg->texture->handle, GL_RGBA);
 
     std::array<std::string, 6> skybox_paths = { "data/textures/simple_skybox/0006.png", "data/textures/simple_skybox/0002.png",
                                                 "data/textures/simple_skybox/0005.png", "data/textures/simple_skybox/0004.png",
