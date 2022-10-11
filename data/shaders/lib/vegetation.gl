@@ -32,7 +32,7 @@ vec3 applyWindToVegetation(vec3 v, vec3 n, float branch_atten, float branch_phas
     v.xyz += wave_sum.xxy * vec3((1.0-edge_atten) * fDetailAmp * n.xy, (1.0-branch_atten) * fBranchAmp); 
 
     //const float fBendScale = 0.1 + 0.1*sin(0.5*time);
-    const float fBendScale = 0.0;
+    const float fBendScale = 0.005;
     // Bend factor - Wind variation is done on the CPU.    
     float fBF = v.z * fBendScale; 
     // Smooth bending factor and increase its nearby height limit. 

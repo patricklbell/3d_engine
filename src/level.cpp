@@ -144,12 +144,6 @@ static void readColliderEntity(ColliderEntity* e, FILE *f) {
 static void writeVegetationEntity(VegetationEntity* e, std::unordered_map<uint64_t, uint64_t> asset_lookup, FILE *f) {
     uint64_t lookup = asset_lookup[reinterpret_cast<uint64_t>(e->texture)];
     fwrite(&lookup, sizeof(lookup), 1, f);
-
-    fwrite(&e->position, sizeof(e->position), 1, f);
-    fwrite(&e->rotation, sizeof(e->rotation), 1, f);
-    fwrite(&e->scale   , sizeof(e->scale   ), 1, f);
-
-    fwrite(&e->casts_shadow, sizeof(e->casts_shadow), 1, f);
 }
 static void readVegetationEntity(VegetationEntity* e, const std::unordered_map<uint64_t, void*> index_to_asset, FILE *f) {
     uint64_t lookup;
@@ -160,12 +154,6 @@ static void readVegetationEntity(VegetationEntity* e, const std::unordered_map<u
     } else {
         std::cerr << "Unknown texture index " << lookup << " when reading vegetation entity\n";
     }
-
-    fwrite(&e->position, sizeof(e->position), 1, f);
-    fwrite(&e->rotation, sizeof(e->rotation), 1, f);
-    fwrite(&e->scale   , sizeof(e->scale   ), 1, f);
-
-    fwrite(&e->casts_shadow, sizeof(e->casts_shadow), 1, f);
 }
 
 static void writeCamera(const Camera &camera, FILE *f) {
@@ -455,7 +443,7 @@ bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const
         }
 
         // Water is a special case since there is only one per level
-        if(type & WATER_ENTITY) {
+        if(entityInherits(e->type, WATER_ENTITY)) {
             if(entity_manager.water != NULLID) {
                 std::cerr << "Duplicate water in level, skipping\n";
                 free(e);
