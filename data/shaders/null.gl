@@ -1,22 +1,42 @@
 #ifdef COMPILING_VS
 layout (location = 0) in vec3 in_vertex;
-#if ALPHA_TEXTURE
+
+#if VEGETATION
 layout (location = 3) in vec2 in_texcoord;
+#endif
 
 out VS_OUT {
     vec2 texcoord;
 } vs_out;
 uniform float time;
-#endif
 
+#if ANIMATED_BONES
+layout (location = 5) in ivec4 in_bone_ids;
+layout (location = 6) in vec4  in_weights;
+layout(std140, binding=1) uniform BoneMatrices 
+{
+    mat4 bone_matrices[MAX_BONES];
+};
+#endif
 
 uniform mat4 model;
 
-void main()
-{
-    vec4 vertex = vec4(in_vertex, 1.0);
+void main() {
+#if ANIMATED_BONES
+    mat4 bone_transform = mat4(0.0);
+    for(int i = 0 ; i < MAX_BONE_WEIGHTS; i++) {
+        if(in_bone_ids[i] == -1) 
+            continue;
 
-#if ALPHA_TEXTURE
+        bone_transform += bone_matrices[in_bone_ids[i]] * in_weights[i];
+    }
+
+    vec4 vertex = bone_transform * vec4(in_vertex, 1.0);
+#else
+    vec4 vertex = vec4(in_vertex, 1.0);
+#endif
+
+#if VEGETATION
     // @todo make good vegetation movement 
     vs_out.texcoord = vec2(in_texcoord.y, in_texcoord.x); // I don't know why this is needed
     vertex.x += (1.0 - vs_out.texcoord.x)*0.3*sin(1.8*time + (1.0 - vs_out.texcoord.x*vs_out.texcoord.x)*7.0*vs_out.texcoord.x);
@@ -24,6 +44,7 @@ void main()
 
     gl_Position = model * vertex;
 }
+
 #endif
 
 #ifdef COMPILING_GS

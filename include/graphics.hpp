@@ -110,6 +110,8 @@ namespace graphics{
     extern GLuint water_collider_fbos[2], water_collider_buffers[2];
     extern int water_collider_final_fbo;
 
+    extern const std::string animation_macro;
+
     extern Mesh quad;
     extern Mesh cube;
     extern Mesh water_grid;

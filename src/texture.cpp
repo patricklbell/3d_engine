@@ -33,7 +33,7 @@ GLuint create1x1TextureFloat(const glm::fvec3 &color, const GLint internal_forma
 bool loadImageData(ImageData *img, const std::string& imagepath, const GLint internal_format) {
 	if (internal_format == GL_RGB)			img->data = stbi_load(imagepath.c_str(), &img->x, &img->y, &img->n, STBI_rgb);
 	else if (internal_format == GL_RED)		img->data = stbi_load(imagepath.c_str(), &img->x, &img->y, &img->n, STBI_grey);
-	else if (internal_format == GL_RGB16F)	img->data = (unsigned char *)stbi_loadf(imagepath.c_str(), &img->x, &img->y, &img->n, STBI_rgb);
+	else if (internal_format == GL_RGB32F)	img->data = (unsigned char*)stbi_loadf(imagepath.c_str(), &img->x, &img->y, &img->n, STBI_rgb);
 	else									img->data = stbi_load(imagepath.c_str(), &img->x, &img->y, &img->n, STBI_rgb_alpha);
 
 	if (img->data == NULL) {
@@ -57,10 +57,10 @@ GLuint createGLTextureFromData(ImageData *img, const GLint internal_format) {
 	glBindTexture(GL_TEXTURE_2D, texture_id);
 	// @note not needed if image is in correct format
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-	if (internal_format == GL_RGB)				glTexImage2D(GL_TEXTURE_2D, 0, internal_format, img->x, img->y, 0, GL_RGB,  GL_UNSIGNED_BYTE, img->data);
-	else if (internal_format == GL_RED)			glTexImage2D(GL_TEXTURE_2D, 0, internal_format, img->x, img->y, 0, GL_RED,  GL_UNSIGNED_BYTE, img->data);
-	else if (internal_format == GL_RGB16F)		glTexImage2D(GL_TEXTURE_2D, 0, internal_format, img->x, img->y, 0, GL_RGB,  GL_FLOAT,		  img->data);
-	else										glTexImage2D(GL_TEXTURE_2D, 0, internal_format, img->x, img->y, 0, GL_RGBA, GL_UNSIGNED_BYTE, img->data);
+	if (internal_format == GL_RGB)				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, img->x, img->y, 0, GL_RGB,  GL_UNSIGNED_BYTE, img->data);
+	else if (internal_format == GL_RED)			glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, img->x, img->y, 0, GL_RED,  GL_UNSIGNED_BYTE,   img->data);
+	else if (internal_format == GL_RGB32F)		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB32F, img->x, img->y, 0, GL_RGB, GL_FLOAT,        img->data);
+	else										glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, img->x, img->y, 0, GL_RGBA, GL_UNSIGNED_BYTE, img->data);
 
 	stbi_image_free(img->data);
 
@@ -108,15 +108,15 @@ GLuint loadCubemap(const std::array<std::string, FACE_NUM_FACES> &paths, glm::iv
 		std::cout << "\tLoading texture at path " << paths[i] << "\n";
 		if (internal_format == GL_RGB)			data = stbi_load(paths[i].c_str(), &x, &y, &n, STBI_rgb);
 		else if (internal_format == GL_RED)		data = stbi_load(paths[i].c_str(), &x, &y, &n, STBI_grey);
-		else if (internal_format == GL_RGB16F)	data = (unsigned char*)stbi_loadf(paths[i].c_str(), &x, &y, &n, STBI_rgb);
+		else if (internal_format == GL_RGB32F)	data = (unsigned char*)stbi_loadf(paths[i].c_str(), &x, &y, &n, STBI_rgb);
 		else									data = stbi_load(paths[i].c_str(), &x, &y, &n, STBI_rgb_alpha);
         if (data) {
 			// @note not needed if image is in correct format
 			glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-			if (internal_format == GL_RGB)		 glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, internal_format, x, y, 0, GL_RGB , GL_UNSIGNED_BYTE, data);
-			else if (internal_format == GL_RED)  glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, internal_format, x, y, 0, GL_RED , GL_UNSIGNED_BYTE, data);
-			else if (internal_format == GL_R16F) glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, internal_format, x, y, 0, GL_RGB,  GL_FLOAT,		  data);
-			else								 glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, internal_format, x, y, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+			if (internal_format == GL_RGB)			glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, internal_format, x, y, 0, GL_RGB , GL_UNSIGNED_BYTE, data);
+			else if (internal_format == GL_RED)		glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, internal_format, x, y, 0, GL_RED , GL_UNSIGNED_BYTE, data);
+			else if (internal_format == GL_RGB32F)	glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, internal_format, x, y, 0, GL_RGB32F, GL_FLOAT,		 data);
+			else									glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, internal_format, x, y, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
         } else {
 			std::cerr << "Cubemap texture failed to load.\n";
         	glDeleteTextures(1, &texture_id);

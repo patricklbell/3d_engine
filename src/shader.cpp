@@ -100,7 +100,7 @@ static void load_shader_dependencies(char *shader_code, int num_bytes,
 	constexpr std::string_view load_macro = "#load ";
 	for(int line_i = 0; offset < num_bytes; ++line_i) {
 		int aoffset;
-		auto line = read_line(&shader_code[offset], num_bytes, aoffset);
+		auto line = read_line(&shader_code[offset], num_bytes - offset, aoffset);
 
 		if(startsWith(line, load_macro)){
 			memset(&shader_code[offset], ' ', aoffset);
@@ -408,11 +408,11 @@ void initGlobalShaders() {
 	std::filesystem::file_time_type empty_file_time;
 	auto s = &animated_null;
 	shader_list = {
-		{"data/shaders/null_anim.gl",			&animated_null,			true,  graphics::shadow_shader_macro,								empty_file_time},
+		{"data/shaders/null.gl",				&animated_null,			true,  graphics::shadow_shader_macro+graphics::animation_macro,		empty_file_time},
 		{"data/shaders/null.gl",				&null,					true,  graphics::shadow_shader_macro,								empty_file_time},
-		{"data/shaders/null.gl",				&null_vegetation,		true,  graphics::shadow_shader_macro+"\n#define ALPHA_TEXTURE 1\n",	empty_file_time},
+		{"data/shaders/null.gl",				&null_vegetation,		true,  graphics::shadow_shader_macro+"\n#define VEGETATION 1\n",	empty_file_time},
 		{"data/shaders/unified.gl",				&unified,				false, graphics::shadow_shader_macro,								empty_file_time},
-		{"data/shaders/unified_anim.gl",		&animated_unified,		false, graphics::shadow_shader_macro,								empty_file_time},
+		{"data/shaders/unified.gl",		&animated_unified,				false, graphics::shadow_shader_macro + graphics::animation_macro,	empty_file_time},
 		{"data/shaders/water.gl",				&water,					false, graphics::shadow_shader_macro,								empty_file_time},
 		{"data/shaders/gaussian_blur.gl",		&gaussian_blur,			false, "",															empty_file_time},
 		{"data/shaders/plane_projection.gl",	&plane_projection,		true,  "",															empty_file_time},

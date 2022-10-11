@@ -310,6 +310,7 @@ void handleEditorControls(EntityManager* &entity_manager, AssetManager &asset_ma
         
     }
 
+    bool camera_change = false;
     if(camera.state == Camera::TYPE::TRACKBALL){    
         if (!io.WantCaptureMouse && !(left_mouse_click_release && (glfwGetTime() - mouse_left_press_time) < 0.2) && glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) && camera_movement_active) {
             // Calculate the amount of rotation given the mouse movement.
@@ -347,8 +348,7 @@ void handleEditorControls(EntityManager* &entity_manager, AssetManager &asset_ma
 
             // Update the camera view
             camera.position = camera_look + camera.target;
-            updateCameraView(camera);
-            updateShadowVP(camera);
+            camera_change = true;
         }
         else if (!(right_mouse_click_release && (glfwGetTime() - mouse_right_press_time) < 0.2) && glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
             auto camera_right = glm::vec3(glm::transpose(camera.view)[0]);
@@ -358,15 +358,14 @@ void handleEditorControls(EntityManager* &entity_manager, AssetManager &asset_ma
             camera.position -= 0.003f * d * delta;
             camera.target -= 0.003f * d * delta;
 
-            updateCameraView(camera);
+            camera_change = true;
         }
         if(!io.WantCaptureMouse && scroll_offset.y != 0){
             float distance = glm::length(camera.position - camera.target);
             distance = abs(distance + distance*scroll_offset.y*0.1);
 
             camera.position = camera.target + glm::normalize(camera.position - camera.target)*distance;
-            updateCameraView(camera);
-            updateShadowVP(camera);
+            camera_change = true;
 
             // Handle scroll event
             scroll_offset.y = 0;
@@ -421,12 +420,16 @@ void handleEditorControls(EntityManager* &entity_manager, AssetManager &asset_ma
         auto new_target = camera.position + camera_direction_rotated;
         if(new_target != camera.target){
             camera.target = new_target;
-            updateCameraView(camera);
-            updateShadowVP(camera);
+            camera_change = true;
         }
 
         glfwSetCursorPos(window, (float)window_width/2, (float)window_height/2);
         glfwGetCursorPos(window, &mouse_position.x, &mouse_position.y);
+    }
+
+    if (camera_change) {
+        updateCameraView(camera);
+        updateShadowVP(camera);
     }
 
     ctrl_v_prev       = glfwGetKey(window, GLFW_KEY_V) && glfwGetKey(window, GLFW_KEY_LEFT_CONTROL);

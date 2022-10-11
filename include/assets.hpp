@@ -93,7 +93,7 @@ struct Mesh {
 
 #define MAX_BONE_WEIGHTS 4
 // @todo in loading you could limit loaded bone rather than in tick step
-#define MAX_BONES 100
+#define MAX_BONES 1000
 
 struct AnimatedMesh {
     std::string handle;

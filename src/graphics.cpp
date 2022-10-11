@@ -46,7 +46,7 @@ namespace graphics {
     constexpr int shadow_num = 4;
     float shadow_cascade_distances[shadow_num];
     // @note make sure to change macro to shadow_num + 1
-    const std::string shadow_shader_macro = "#define CASCADE_NUM 4\n#define INVOCATIONS 5\n";
+    const std::string shadow_shader_macro = "#define CASCADE_NUM " + std::to_string(shadow_num) + "\n#define INVOCATIONS " + std::to_string(shadow_num + 1) + "\n";
     glm::mat4x4 shadow_vps[shadow_num + 1];
     GLuint shadow_fbo, shadow_buffer, shadow_matrices_ubo;
 
@@ -61,6 +61,9 @@ namespace graphics {
     // BONES/ANIMATION
     //
     GLuint bone_matrices_ubo;
+    const std::string animation_macro = "#define MAX_BONES " + std::to_string(MAX_BONES) + 
+                                        "\n#define MAX_BONE_WEIGHTS " + std::to_string(MAX_BONE_WEIGHTS) + 
+                                        "\n#define ANIMATED_BONES 1\n";
 
     //
     // ASSETS
@@ -107,6 +110,48 @@ void updateCameraTarget(Camera& camera, glm::vec3 target) {
     camera.target = target;
     updateCameraView(camera);
     updateShadowVP(camera);
+}
+
+inline static void drawMeshMat(Shader& s, const Mesh* mesh, const glm::mat4& g_model_rot_scl, const glm::mat4& g_model_pos, const glm::mat4& vp) {
+    glBindVertexArray(mesh->vao);
+    for (int j = 0; j < mesh->num_meshes; ++j) {
+        // Since the mesh transforms encode scale this will mess up global translation so we apply translation after
+        auto model = g_model_pos * mesh->transforms[j] * g_model_rot_scl;
+        auto mvp = vp * model;
+        glUniformMatrix4fv(s.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
+        glUniformMatrix4fv(s.uniform("model"), 1, GL_FALSE, &model[0][0]);
+
+        auto& mat = mesh->materials[mesh->material_indices[j]];
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, mat.t_albedo->id);
+
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, mat.t_normal->id);
+
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, mat.t_metallic->id);
+
+        glActiveTexture(GL_TEXTURE3);
+        glBindTexture(GL_TEXTURE_2D, mat.t_roughness->id);
+
+        glActiveTexture(GL_TEXTURE4);
+        glBindTexture(GL_TEXTURE_2D, mat.t_ambient->id);
+
+        // Bind VAO and draw
+        glDrawElements(mesh->draw_mode, mesh->draw_count[j], mesh->draw_type, (GLvoid*)(sizeof(*mesh->indices) * mesh->draw_start[j]));
+    }
+}
+
+inline static void drawMeshShadow(Shader& s, const Mesh* mesh, const glm::mat4& g_model_rot_scl, const glm::mat4& g_model_pos) {
+    glBindVertexArray(mesh->vao);
+    for (int j = 0; j < mesh->num_meshes; ++j) {
+        // Since the mesh transforms encode scale this will mess up global translation so we apply translation after
+        auto model = g_model_pos * mesh->transforms[j] * g_model_rot_scl;
+        glUniformMatrix4fv(s.uniform("model"), 1, GL_FALSE, &model[0][0]);
+
+        // Bind VAO and draw
+        glDrawElements(mesh->draw_mode, mesh->draw_count[j], mesh->draw_type, (GLvoid*)(sizeof(*mesh->indices) * mesh->draw_start[j]));
+    }
 }
 
 glm::mat4x4 getShadowMatrixFromFrustrum(const Camera &camera, float near_plane, float far_plane){
@@ -279,16 +324,9 @@ void bindDrawShadowMap(const EntityManager &entity_manager, const Camera &camera
         }
         if(!(entityInherits(m_e->type, MESH_ENTITY)) || m_e->mesh == nullptr) continue;
 
-        auto g_model = createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
-
-        auto& mesh = m_e->mesh;
-        glBindVertexArray(mesh->vao);
-        for (int j = 0; j < mesh->num_meshes; ++j) {
-            auto model = g_model * mesh->transforms[j];
-            glUniformMatrix4fv(shader::null.uniform("model"), 1, GL_FALSE, &model[0][0]);
-
-            glDrawElements(mesh->draw_mode, mesh->draw_count[j], mesh->draw_type, (GLvoid*)(sizeof(*mesh->indices) * mesh->draw_start[j]));
-        }
+        auto g_model_rot_scl = glm::mat4_cast(m_e->rotation) * glm::mat4x4(m_e->scale);
+        auto g_model_pos = glm::translate(glm::mat4x4(1.0), m_e->position);
+        drawMeshShadow(shader::null, m_e->mesh, g_model_rot_scl, g_model_pos);
     }
 
     // 
@@ -309,16 +347,9 @@ void bindDrawShadowMap(const EntityManager &entity_manager, const Camera &camera
             }
             glBindBuffer(GL_UNIFORM_BUFFER, 1);
 
-            auto model = createModelMatrix(a_e->position, a_e->rotation, a_e->scale);
-            glUniformMatrix4fv(shader::animated_null.uniform("model"), 1, GL_FALSE, &model[0][0]);
-
-            auto& mesh = a_e->mesh;
-            glBindVertexArray(mesh->vao);
-            for (int j = 0; j < mesh->num_meshes; ++j) {
-                //auto model = mesh->transforms[j] * g_model; // Shouldn't be needed since this is baked into bone matrices
-                // Bind VAO and draw
-                glDrawElements(mesh->draw_mode, mesh->draw_count[j], mesh->draw_type, (GLvoid*)(sizeof(*mesh->indices) * mesh->draw_start[j]));
-            }
+            auto g_model_rot_scl = glm::mat4_cast(a_e->rotation) * glm::mat4x4(a_e->scale);
+            auto g_model_pos = glm::translate(glm::mat4x4(1.0), a_e->position);
+            drawMeshShadow(shader::animated_null, a_e->mesh, g_model_rot_scl, g_model_pos);
         }
     }
 
@@ -908,36 +939,6 @@ void clearFramebuffer() {
 //	glDepthFunc(GL_LESS); 
 //}
 
-inline static void drawMesh(Shader& s, const Mesh* mesh, const glm::mat4& g_model_rot_scl, const glm::mat4& g_model_pos, const glm::mat4& vp) {
-    glBindVertexArray(mesh->vao);
-    for (int j = 0; j < mesh->num_meshes; ++j) {
-        // Since the mesh transforms encode scale this will mess up global translation so we apply translation after
-        auto model = g_model_pos * mesh->transforms[j] * g_model_rot_scl; 
-        auto mvp = vp * model;
-        glUniformMatrix4fv(s.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
-        glUniformMatrix4fv(s.uniform("model"), 1, GL_FALSE, &model[0][0]);
-
-        auto& mat = mesh->materials[mesh->material_indices[j]];
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, mat.t_albedo->id);
-
-        glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_2D, mat.t_normal->id);
-
-        glActiveTexture(GL_TEXTURE2);
-        glBindTexture(GL_TEXTURE_2D, mat.t_metallic->id);
-
-        glActiveTexture(GL_TEXTURE3);
-        glBindTexture(GL_TEXTURE_2D, mat.t_roughness->id);
-
-        glActiveTexture(GL_TEXTURE4);
-        glBindTexture(GL_TEXTURE_2D, mat.t_ambient->id);
-
-        // Bind VAO and draw
-        glDrawElements(mesh->draw_mode, mesh->draw_count[j], mesh->draw_type, (GLvoid*)(sizeof(*mesh->indices) * mesh->draw_start[j]));
-    }
-}
-
 void drawUnifiedHdr(const EntityManager& entity_manager, const Texture* irradiance_map, const Texture* prefiltered_specular_map, const Camera& camera) {
     glDepthMask(GL_TRUE);
     glEnable(GL_DEPTH_TEST);
@@ -999,7 +1000,7 @@ void drawUnifiedHdr(const EntityManager& entity_manager, const Texture* irradian
 
         auto g_model_rot_scl = glm::mat4_cast(m_e->rotation) * glm::mat4x4(m_e->scale);
         auto g_model_pos     = glm::translate(glm::mat4x4(1.0), m_e->position);
-        drawMesh(shader::unified, m_e->mesh, g_model_rot_scl, g_model_pos, vp);
+        drawMeshMat(shader::unified, m_e->mesh, g_model_rot_scl, g_model_pos, vp);
     }
 
     // 
@@ -1033,35 +1034,9 @@ void drawUnifiedHdr(const EntityManager& entity_manager, const Texture* irradian
             glUniform1f(shader::animated_unified.uniform("metal_mult"), a_e->metal_mult);
             glUniform1f(shader::animated_unified.uniform("ao_mult"), a_e->ao_mult);
 
-            auto model = createModelMatrix(a_e->position, a_e->rotation, a_e->scale);
-            auto mvp = vp * model;
-            glUniformMatrix4fv(shader::animated_unified.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
-            glUniformMatrix4fv(shader::animated_unified.uniform("model"), 1, GL_FALSE, &model[0][0]);
-
-            auto &mesh = a_e->mesh;
-            glBindVertexArray(mesh->vao);
-            for (int j = 0; j < mesh->num_meshes; ++j) {
-                //auto model = mesh->transforms[j] * g_model; // Shouldn't be needed since this is baked into bone matrices
-
-                auto& mat = mesh->materials[mesh->material_indices[j]];
-                glActiveTexture(GL_TEXTURE0);
-                glBindTexture(GL_TEXTURE_2D, mat.t_albedo->id);
-
-                glActiveTexture(GL_TEXTURE1);
-                glBindTexture(GL_TEXTURE_2D, mat.t_normal->id);
-
-                glActiveTexture(GL_TEXTURE2);
-                glBindTexture(GL_TEXTURE_2D, mat.t_metallic->id);
-
-                glActiveTexture(GL_TEXTURE3);
-                glBindTexture(GL_TEXTURE_2D, mat.t_roughness->id);
-
-                glActiveTexture(GL_TEXTURE4);
-                glBindTexture(GL_TEXTURE_2D, mat.t_ambient->id);
-
-                // Bind VAO and draw
-                glDrawElements(mesh->draw_mode, mesh->draw_count[j], mesh->draw_type, (GLvoid*)(sizeof(*mesh->indices) * mesh->draw_start[j]));
-            }
+            auto g_model_rot_scl = glm::mat4_cast(a_e->rotation) * glm::mat4x4(a_e->scale);
+            auto g_model_pos = glm::translate(glm::mat4x4(1.0), a_e->position);
+            drawMeshMat(shader::unified, a_e->mesh, g_model_rot_scl, g_model_pos, vp);
         }
     }
 

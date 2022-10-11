@@ -59,6 +59,8 @@ namespace editor {
 
     ReferenceSelection selection;
     CopySelection copy_selection;
+
+    std::unordered_map<uint64_t, std::string> entity_type_to_string;
 }
 using namespace editor;
 
@@ -292,6 +294,13 @@ void initEditorGui(AssetManager &asset_manager){
     asset_manager.loadMeshFile(&arrow_mesh, "data/mesh/arrow.mesh");
     asset_manager.loadMeshFile(&block_arrow_mesh, "data/mesh/block_arrow.mesh");
     asset_manager.loadMeshFile(&ring_mesh, "data/mesh/ring.mesh");
+
+    entity_type_to_string[ENTITY] = "Basic Entity";
+    entity_type_to_string[MESH_ENTITY] = "Mesh";
+    entity_type_to_string[WATER_ENTITY] = "Water";
+    entity_type_to_string[COLLIDER_ENTITY] = "Mesh Collider";
+    entity_type_to_string[VEGETATION_ENTITY] = "Vegetation";
+    entity_type_to_string[ANIMATED_MESH_ENTITY] = "Animated Mesh";
 }
 
 static bool echoCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
@@ -419,6 +428,40 @@ static bool loadModelCommand(std::vector<std::string>& input_tokens, std::string
     return false;
 }
 
+static bool loadAnimatedModelCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
+    if (input_tokens.size() >= 3) {
+        auto model_filename = input_tokens[1];
+        auto mesh_filename = "data/mesh/" + input_tokens[2] + ".mesh";
+        auto anim_filename = "data/anim/" + input_tokens[2] + ".anim";
+        auto mesh = asset_manager.createMesh(mesh_filename);
+        auto anim = asset_manager.createAnimatedMesh(anim_filename);
+
+        if (asset_manager.loadAnimatedMeshAssimp(anim, mesh, model_filename)) {
+            output += "Loaded animated model " + model_filename + "\n";
+            if (asset_manager.writeMeshFile(mesh, mesh_filename)) {
+                output += "Wrote mesh file to " + mesh_filename + "\n";
+            }
+            else {
+                output += "Failed to write mesh file to " + mesh_filename + "\n";
+                return false;
+            }
+            if (asset_manager.writeAnimationFile(anim, anim_filename)) {
+                output += "Wrote mesh file to " + anim_filename + "\n";
+            }
+            else {
+                output += "Failed to write anim file to " + anim_filename + "\n";
+                return false;
+            }
+
+            return true;
+        }
+        return false;
+    }
+
+    output += "Please provide a relative path to a model (obj, gltf, fbx, ...) and a name for the new animated mesh";
+    return false;
+}
+
 static bool addMeshCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
     if (input_tokens.size() >= 2) {
         auto filename = "data/mesh/" + input_tokens[1] + ".mesh";
@@ -447,6 +490,48 @@ static bool addMeshCommand(std::vector<std::string>& input_tokens, std::string& 
         return true;
     }
     
+    output += "Please provide a mesh name, see list_mesh\n";
+    return false;
+}
+
+static bool addAnimatedMeshCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
+    if (input_tokens.size() >= 2) {
+        auto mesh_filename = "data/mesh/" + input_tokens[1] + ".mesh";
+        auto anim_filename = "data/anim/" + input_tokens[1] + ".anim";
+        auto mesh = asset_manager.getMesh(mesh_filename);
+        auto anim = asset_manager.getAnimatedMesh(anim_filename);
+
+        if (mesh == nullptr) {
+            mesh = asset_manager.createMesh(mesh_filename);
+            if (asset_manager.loadMeshFile(mesh, mesh_filename)) {
+                output += "Loaded mesh at path " + mesh_filename + "\n";
+            }
+            else {
+                output += "Failed to loaded mesh at path " + mesh_filename + " maybe it doesn't exist\n";
+                return false;
+            }
+        }
+        if (anim == nullptr) {
+            anim = asset_manager.createAnimatedMesh(anim_filename);
+            if (asset_manager.loadAnimationFile(anim, anim_filename)) {
+                output += "Loaded anim at path " + anim_filename + "\n";
+            }
+            else {
+                output += "Failed to loaded anim at path " + anim_filename + " maybe it doesn't exist\n";
+                return false;
+            }
+        }
+
+        auto new_animesh_entity = (AnimatedMeshEntity*)entity_manager.createEntity(ANIMATED_MESH_ENTITY);
+        new_animesh_entity->mesh = mesh;
+        new_animesh_entity->animesh = anim;
+        new_animesh_entity->casts_shadow = true;
+        selection.addEntity(new_animesh_entity);
+
+        output += "Added animated mesh entity with provided mesh to level\n";
+        return true;
+    }
+
     output += "Please provide a mesh name, see list_mesh\n";
     return false;
 }
@@ -566,8 +651,10 @@ const std::map
     {"new_level", newLevelCommand},
     {"list_mesh", listMeshCommand},
     {"add_mesh", addMeshCommand},
+    {"add_animated_mesh", addAnimatedMeshCommand},
     {"add_collider", addColliderCommand},
     {"load_model", loadModelCommand},
+    {"load_animated_model", loadAnimatedModelCommand},
     {"list_models", listModelsCommand},
     {"save_level", saveLevelCommand},
     {"convert_models_to_mesh", convertModelsToMeshCommand},
@@ -639,6 +726,7 @@ void ImTerminal(EntityManager &entity_manager, AssetManager &asset_manager, bool
         static bool edit_made = false;
         static bool up_press = false;
         static bool down_press = false;
+        static std::string suggestion_out = "";
         struct Callbacks { 
             static int callback(ImGuiInputTextCallbackData* data) { 
                 if (data->EventFlag == ImGuiInputTextFlags_CallbackHistory) {
@@ -652,7 +740,41 @@ void ImTerminal(EntityManager &entity_manager, AssetManager &asset_manager, bool
                     if (data->EventChar == '`') {
                         return 1;
                     }
+
                 }
+                else if (data->EventFlag == ImGuiInputTextFlags_CallbackCompletion) {
+                    auto last_space = input_line.find_last_of(" ");
+                    if (last_space == std::string::npos) {
+                        last_space = 0;
+                    }
+                    else {
+                        last_space++;
+                    }
+
+                    auto word = input_line.substr(last_space, std::string::npos);
+                    
+                    std::vector<std::string> suggestions;
+                    for (auto& d : command_to_func) {
+                        auto &keywrd = d.first;
+
+                        // Kind of fuzzy search and easy
+                        if (keywrd.find(word) != std::string::npos) {
+                            suggestions.emplace_back(keywrd);
+                        }
+                    }
+
+                    suggestion_out = "";
+                    if (suggestions.size() == 1) {
+                        input_line = input_line.substr(0, last_space) + suggestions[0];
+                        update_input_contents = true;
+                    }
+                    else {
+                        for (auto& s : suggestions) {
+                            suggestion_out += "\t" + s;
+                        }
+                    }
+                }
+
                 if(update_input_contents) {
                     data->DeleteChars(0, data->BufTextLen);
                     data->InsertChars(0, input_line.c_str());
@@ -663,9 +785,15 @@ void ImTerminal(EntityManager &entity_manager, AssetManager &asset_manager, bool
         };
         ImGui::SetNextItemWidth(window_width);
         ImGui::SetKeyboardFocusHere(0);
-        auto flags = ImGuiInputTextFlags_NoHorizontalScroll | ImGuiInputTextFlags_CallbackAlways | ImGuiInputTextFlags_CallbackCharFilter | ImGuiInputTextFlags_CallbackHistory | ImGuiInputTextFlags_EnterReturnsTrue;
+        auto flags = ImGuiInputTextFlags_NoHorizontalScroll | ImGuiInputTextFlags_CallbackAlways | ImGuiInputTextFlags_CallbackCharFilter | ImGuiInputTextFlags_CallbackHistory | ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_CallbackCompletion;
         bool enter_pressed = ImGui::InputTextWithHint("###input_line", "Enter Command", &input_line, flags, Callbacks::callback);
+
+        // Add tab suggestions
+        if (suggestion_out != "")  ImGui::TextWrapped("%s", suggestion_out.c_str());
+
         if(enter_pressed) {
+            suggestion_out = "";
+
             auto &output = result_history.emplace_back ("");
 
             // Hack to make empty lines visible
@@ -1131,8 +1259,7 @@ void drawWaterDebug(WaterEntity* w, const Camera &camera, bool flash = false){
     glDisable(GL_CULL_FACE);
     glDisable(GL_DEPTH_TEST);
     glEnable(GL_LINE_SMOOTH);
-    // Displays in renderdoc texture view but not in application?
-    //glLineWidth(200.0);
+    glLineWidth(1.0);
 
     glUseProgram(shader::debug.program);
     auto mvp = camera.projection * camera.view * createModelMatrix(w->position, glm::quat(), w->scale);
@@ -1196,8 +1323,6 @@ void drawFrustrum(Camera &drawn_camera, const Camera& camera) {
 
 void drawMeshWireframe(const Mesh &mesh, const glm::mat4& g_model_rot_scl, const glm::mat4& g_model_pos, const Camera &camera, bool flash = false){
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-    glDisable(GL_CULL_FACE);
-    glDisable(GL_DEPTH_TEST);
     glEnable(GL_LINE_SMOOTH);
     // Displays in renderdoc texture view but not in application?
     //glLineWidth(200.0);
@@ -1221,9 +1346,7 @@ void drawMeshWireframe(const Mesh &mesh, const glm::mat4& g_model_rot_scl, const
 
         glDrawElements(mesh.draw_mode, mesh.draw_count[j], mesh.draw_type, (GLvoid*)(sizeof(*mesh.indices)*mesh.draw_start[j]));
     }
-    
-    glEnable(GL_CULL_FACE);
-    glEnable(GL_DEPTH_TEST);
+
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 }
 
@@ -1372,6 +1495,7 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
     static float sidebar_open_time;
     {
         if(selection.ids.size()) {
+            // @todo fix when fe is null
             auto fe = (Entity*)entity_manager.getEntity(selection.ids[0]);
 
             // Just opened
@@ -1392,8 +1516,15 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
             ImGui::SetNextWindowSizeConstraints(ImVec2(sidebar_w, window_height), ImVec2(window_width / 2.0, window_height));
 
             ImGui::Begin("###entity", NULL, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar);
-            if(selection.ids.size() == 1) 
-                ImGui::TextWrapped("Entity Index: %d Version: %d", selection.ids[0].i, selection.ids[0].v);
+            if (selection.ids.size() == 1) {
+                std::string entity_type = "Unknown Type";
+                auto lu = entity_type_to_string.find(fe->type);
+                if (lu != entity_type_to_string.end()) {
+                    entity_type = lu->second;
+                }
+
+                ImGui::TextWrapped("Entity Index: %d Version: %d, %s", selection.ids[0].i, selection.ids[0].v, entity_type.c_str());
+            }
             else 
                 ImGui::TextWrapped("Multiple Entities Selected");
 
@@ -1577,33 +1708,36 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
             if (entityInherits(selection.type, ANIMATED_MESH_ENTITY) && selection.ids.size() == 1) {
                 auto a_e = (AnimatedMeshEntity*)fe;
 
-                if (a_e->animesh != NULL) {
-                    std::string animation_name = a_e->animation == NULL ? "None" : a_e->animation->name;
-                    if (ImGui::BeginCombo("##asset-combo", animation_name.c_str())) {
-                        for(auto &p : a_e->animesh->name_animation_map){
-                            bool is_selected = (&p.second == a_e->animation); 
-                            if (ImGui::Selectable(p.first.c_str(), is_selected))
-                                a_e->animation = &p.second;
-                            if (is_selected)
-                                ImGui::SetItemDefaultFocus(); 
+                if (ImGui::CollapsingHeader("Animations")) {
+                    if (a_e->animesh != NULL) {
+                        std::string animation_name = a_e->animation == NULL ? "None" : a_e->animation->name;
+                        ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 2.0f * pad);
+                        if (ImGui::BeginCombo("##asset-combo", animation_name.c_str())) {
+                            for(auto &p : a_e->animesh->name_animation_map){
+                                bool is_selected = (&p.second == a_e->animation); 
+                                if (ImGui::Selectable(p.first.c_str(), is_selected))
+                                    a_e->animation = &p.second;
+                                if (is_selected)
+                                    ImGui::SetItemDefaultFocus(); 
+                            }
+                            ImGui::EndCombo();
                         }
-                        ImGui::EndCombo();
                     }
-                }
 
-                bool draw_animated = false; // @debug Used by editor to toggle drawing animation, ignored when playing
-                float current_time = 0.0f;
-                float time_scale = 1.0f;
-                bool loop = false;
-                bool playing = false;
-                if (a_e->animation != NULL) {
-                    ImGui::Checkbox("Draw Animated: ", &a_e->draw_animated);
-                    if (ImGui::SliderFloat("Current Time: ", &a_e->current_time, 0.0f, a_e->animation->duration, "%.3f")) {
-                        a_e->init();
+                    bool draw_animated = false; // @debug Used by editor to toggle drawing animation, ignored when playing
+                    float current_time = 0.0f;
+                    float time_scale = 1.0f;
+                    bool loop = false;
+                    bool playing = false;
+                    if (a_e->animation != NULL) {
+                        ImGui::Checkbox("Draw Animated: ", &a_e->draw_animated);
+                        if (ImGui::SliderFloat("Current Time: ", &a_e->current_time, 0.0f, a_e->animation->duration, "%.3f")) {
+                            a_e->init();
+                        }
+                        ImGui::SliderFloat("Time Scale: ", &a_e->time_scale, -10.0f, 10.0f, "%.3f");
+                        ImGui::Checkbox("Loop: ", &a_e->loop);
+                        ImGui::Checkbox("Playing: ", &a_e->playing);
                     }
-                    ImGui::SliderFloat("Time Scale: ", &a_e->time_scale, -10.0f, 10.0f, "%.3f");
-                    ImGui::Checkbox("Loop: ", &a_e->loop);
-                    ImGui::Checkbox("Playing: ", &a_e->playing);
                 }
             }
 

@@ -58,11 +58,11 @@ Material *default_material;
 void initDefaultMaterial(AssetManager &asset_manager){
     default_material = new Material;
    
-    default_material->t_albedo    = asset_manager.getColorTexture(glm::vec3(1,0,1), GL_SRGB);
+    default_material->t_albedo    = asset_manager.getColorTexture(glm::vec3(1,0,1), GL_RGB);
     default_material->t_normal    = asset_manager.getColorTexture(glm::vec3(0.5,0.5,1), GL_RGB);
-    default_material->t_metallic  = asset_manager.getColorTexture(glm::vec3(0), GL_R16F);
-    default_material->t_roughness = asset_manager.getColorTexture(glm::vec3(1), GL_R16F);
-    default_material->t_ambient   = asset_manager.getColorTexture(glm::vec3(1), GL_R16F);
+    default_material->t_metallic  = asset_manager.getColorTexture(glm::vec3(0), GL_RED);
+    default_material->t_roughness = asset_manager.getColorTexture(glm::vec3(1), GL_RED);
+    default_material->t_ambient   = asset_manager.getColorTexture(glm::vec3(1), GL_RED);
 
     default_material->t_albedo->handle    = "DEFAULT:albedo";
     default_material->t_normal->handle    = "DEFAULT:normal";
@@ -363,7 +363,7 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
         auto &mat = mesh->materials[i];
 
         read_texture(mat.t_albedo, default_material->t_albedo, GL_RGB);
-        read_texture(mat.t_normal, default_material->t_normal, GL_RGB16F);
+        read_texture(mat.t_normal, default_material->t_normal, GL_RGB);
         read_texture(mat.t_ambient, default_material->t_ambient, GL_RED);
         read_texture(mat.t_metallic, default_material->t_metallic, GL_RED);
         read_texture(mat.t_roughness, default_material->t_roughness, GL_RED);
@@ -823,6 +823,7 @@ static void createBoneKeyframesFromAi(AnimatedMesh::BoneKeyframes &keyframes, ui
     }
 }
 
+// @fix when multi mesh model has different transforms per mesh
 bool AssetManager::loadAnimatedMeshAssimp(AnimatedMesh* animesh, Mesh *mesh, const std::string& path) {
     std::cout << "-------------------- Loading Animated Model " << path.c_str() << " With Assimp --------------------\n";
 
@@ -875,26 +876,23 @@ bool AssetManager::loadAnimatedMeshAssimp(AnimatedMesh* animesh, Mesh *mesh, con
     // Proccess each bone and each animation's keyframes
     //
     // @hardcoded Fixes fbx orientation
-    
-    // Bake global transform into mesh transforms
-    auto mesh_transform = aiMat4x4ToGlm(scene->mRootNode->mTransformation);
-    mesh_transform *= glm::mat4(
-       -1, 0, 0, 0,
-        0, 0, 1, 0,
+    auto animated_to_static = glm::mat4(
         0, 1, 0, 0,
+        0, 0, 1, 0,
+        1, 0, 0, 0,
         0, 0, 0, 1
     );
-    for (int i = 0; i < mesh->num_meshes; ++i) {
-        mesh->transforms[i] = mesh->transforms[i] * mesh_transform;
-    }
 
-    animesh->global_transform = aiMat4x4ToGlm(scene->mRootNode->mTransformation.Inverse());
-    animesh->global_transform *= glm::mat4(
-       -1, 0, 0, 0,
-        0, 0,-1, 0,
-        0,-1, 0, 0,
-        0, 0, 0, 1
-    );
+    // Bake global transform into mesh transforms
+    //auto mesh_transform = aiMat4x4ToGlm(scene->mRootNode->mTransformation);
+    //mesh_transform *= animated_to_static;
+    //for (int i = 0; i < mesh->num_meshes; ++i) {
+    //    mesh->transforms[i] = mesh->transforms[i] * mesh_transform;
+    //}
+
+    animesh->global_transform = glm::inverse(aiMat4x4ToGlm(scene->mRootNode->mTransformation));
+    //std::cout << aiMat4x4ToGlm(scene->mRootNode->mTransformation);
+    //animesh->global_transform *= animated_to_static;
 
     for (int i = 0; i < scene->mNumAnimations; i++) {
         auto& ai_animation = scene->mAnimations[i];
@@ -927,7 +925,7 @@ bool AssetManager::loadAnimatedMeshAssimp(AnimatedMesh* animesh, Mesh *mesh, con
                 id = animesh->num_bones;
                 node_name_id_map[node_name] = id;
 
-                animesh->bone_offsets.emplace_back(glm::mat4(1.0f)); // @note this might be wrong
+                animesh->bone_offsets.emplace_back(glm::mat4(1.0f));
                 auto &bn = animesh->bone_names.emplace_back();
                 std::copy(bn.begin(), bn.end(), node_name.data());
                 animesh->num_bones++;

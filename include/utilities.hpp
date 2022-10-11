@@ -37,6 +37,14 @@ std::ostream &operator<<(std::ostream &os, const glm::tvec4<T, P> &v) {
     return os << v.x << ", " << v.y << ", " << v.z << ", " << v.w;
 }
 
+template<typename T, glm::precision P>
+std::ostream& operator<<(std::ostream& os, const glm::tmat4x4<T, P>& m) {
+    return os << "{ \n\t"   << m[0][0] << ", " << m[0][1] << ", " << m[0][2] << ", " << m[0][3] << "\n\t"
+                            << m[1][0] << ", " << m[1][1] << ", " << m[1][2] << ", " << m[1][3] << "\n\t"
+                            << m[2][0] << ", " << m[2][1] << ", " << m[2][2] << ", " << m[2][3] << "\n\t"
+                            << m[3][0] << ", " << m[3][1] << ", " << m[3][2] << ", " << m[3][3] << "\n}";
+}
+
 float linearstep(float e1, float e2, float x);
 
 std::vector<std::string> split(std::string s, std::string delimiter);
