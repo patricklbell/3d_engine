@@ -74,7 +74,7 @@ static char *read_file_contents(std::string_view path, int &num_bytes) {
 	
 	// @note adds \0 to fread
 	rewind(fp);
-	char *data = (char*)malloc((num_bytes + 1) * sizeof(char));
+	char *data = (char*)malloc((num_bytes + 2) * sizeof(char));
 	if (data == NULL) {
 		fclose(fp);
 		return nullptr;
@@ -82,7 +82,9 @@ static char *read_file_contents(std::string_view path, int &num_bytes) {
 	fread(data, sizeof(char), num_bytes, fp);
 	fclose(fp);
 
-	data[num_bytes] = '\0';
+	// Add newline for glsl compiler
+	data[num_bytes] = '\n';
+	data[num_bytes + 1] = '\0';
 
 	return data;
 }
@@ -119,8 +121,6 @@ static void load_shader_dependencies(char *shader_code, int num_bytes,
 						load_shader_dependencies(loaded_shader, loaded_num_bytes, linked_shader_codes, linked_shader_codes_to_free, linked_shader_paths);
 						linked_shader_codes_to_free.push_back(loaded_shader);
 						linked_shader_codes.push_back(loaded_shader);	
-
-						linked_shader_codes.push_back("\n");
 					} else {
 						std::cout << "Failed to #load path " << loadpath << "\n";
 					}

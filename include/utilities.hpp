@@ -9,6 +9,7 @@
 #include <queue>
 #include <atomic>
 #include <unordered_map>
+#include <iostream>
 
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
