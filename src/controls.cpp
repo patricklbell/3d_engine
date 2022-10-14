@@ -171,9 +171,9 @@ void handleEditorControls(EntityManager* &entity_manager, AssetManager &asset_ma
     controls::right_mouse_click_release= !io.WantCaptureMouse && !glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT)  && mouse_right_prev;
 
     // Unlike other inputs, calculate delta but update mouse position immediately
-    glm::dvec2 delta_mouse_position = mouse_position;
+    glm::dvec2 old_mouse_position = mouse_position;
     glfwGetCursorPos(window, &mouse_position.x, &mouse_position.y);
-    delta_mouse_position = mouse_position - delta_mouse_position;
+    glm::dvec2 delta_mouse_position = mouse_position - old_mouse_position;
 
     if(glfwGetKey(window, GLFW_KEY_GRAVE_ACCENT) && !backtick_key_prev) 
         editor::do_terminal = !editor::do_terminal;
@@ -351,12 +351,23 @@ void handleEditorControls(EntityManager* &entity_manager, AssetManager &asset_ma
             camera_change = true;
         }
         else if (!(right_mouse_click_release && (glfwGetTime() - mouse_right_press_time) < 0.2) && glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
-            auto camera_right = glm::vec3(glm::transpose(camera.view)[0]);
+            auto inverse_vp = glm::inverse(camera.projection * camera.view);
 
-            auto delta = (float)delta_mouse_position.x * camera_right - (float)delta_mouse_position.y * camera.up;
-            auto d = glm::length(camera.position - camera.target);
-            camera.position -= 0.003f * d * delta;
-            camera.target -= 0.003f * d * delta;
+            // Find Normalized Device coordinates mouse positions
+            auto new_mouse_position_ndc = (mouse_position / glm::dvec2((float)window_width, (float)window_height) - glm::dvec2(0.5)) * 2.0;
+            auto old_mouse_position_ndc = (old_mouse_position / glm::dvec2((float)window_width, (float)window_height) - glm::dvec2(0.5)) * 2.0;
+
+            // Project these mouse coordinates onto near plane to determine world coordinates
+            auto new_mouse_position_world = glm::vec3(inverse_vp * glm::vec4(new_mouse_position_ndc.x, -new_mouse_position_ndc.y, 0, 1));
+            auto old_mouse_position_world = glm::vec3(inverse_vp * glm::vec4(old_mouse_position_ndc.x, -old_mouse_position_ndc.y, 0, 1));
+
+            // Scale movement such that point under mouse on plane of target (parallel to near plane) stays constant
+            float ratio;
+            ratio = glm::length(camera.position - camera.target) / camera.near_plane;
+            auto delta = ratio * (new_mouse_position_world - old_mouse_position_world);
+
+            camera.position -= delta;
+            camera.target -= delta;
 
             camera_change = true;
         }
