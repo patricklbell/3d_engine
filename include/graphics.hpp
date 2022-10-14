@@ -77,7 +77,7 @@ void distanceTransformWaterFbo(WaterEntity* water);
 
 void clearFramebuffer();
 void bindHdr();
-void drawUnifiedHdr(const EntityManager& entity_manager, const Texture* irradiance_map, const Texture* prefiltered_specular_map, const Camera& camera);
+void drawEntitiesHdr(const EntityManager& entity_manager, const Texture* irradiance_map, const Texture* prefiltered_specular_map, const Camera& camera);
 
 void bindBackbuffer();
 void drawPost(Texture *skybox, const Camera& camera);
@@ -118,6 +118,9 @@ namespace graphics{
 
     extern Texture * simplex_gradient;
     extern Texture * simplex_value;
+
+    extern bool do_msaa;
+    extern int MSAA_SAMPLES;
 }
     
 #endif

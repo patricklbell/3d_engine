@@ -121,9 +121,9 @@ int main() {
     glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
     glfwSwapInterval(0);
 
-    // @todo MSAA with different levels
-    glDisable(GL_MULTISAMPLE);
+    // Configure gl global state
     glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);  
+    glEnable(GL_SAMPLE_ALPHA_TO_COVERAGE);
 
     GL_version = std::string((char*)glGetString(GL_VERSION));
     GL_vendor = std::string((char*)glGetString(GL_VENDOR));
@@ -148,10 +148,6 @@ int main() {
     initShadowFbo();
     initAnimationUbo();
     initWaterColliderFbo();
-    initHdrFbo();
-    if(graphics::do_bloom){
-        initBloomFbo();
-    }
     initEditorGui(global_assets);
     initEditorControls();
 
@@ -193,11 +189,13 @@ int main() {
     if (!global_assets.loadCubemapTexture(skybox, skybox_paths, GL_RGB))
         std::cerr << "Error loading cubemap\n";
 
+
     auto skybox_irradiance = global_assets.createTexture("skybox_irradiance");
     convoluteIrradianceFromCubemap(skybox, skybox_irradiance);
     auto skybox_specular = global_assets.createTexture("skybox_specular");
     convoluteSpecularFromCubemap(skybox, skybox_specular);
     initBRDFLut(global_assets);
+
 
 #ifndef NDEBUG 
     checkGLError("Pre-loop");
@@ -207,6 +205,7 @@ int main() {
     double last_filesystem_hotswap_check = last_time;
     uint64_t frame_num = 0;
     window_resized = true;
+
     do {
         
         double current_time = glfwGetTime();
@@ -247,7 +246,13 @@ int main() {
         bindDrawShadowMap(*entity_manager, camera);
         bindHdr();
         clearFramebuffer();
-        drawUnifiedHdr(*entity_manager, skybox_irradiance, skybox_specular, camera);
+        drawEntitiesHdr(*entity_manager, skybox_irradiance, skybox_specular, camera);
+
+        if (graphics::do_bloom) {
+            blurBloomFbo();
+        }
+        bindBackbuffer();
+        drawPost(skybox, camera);
 
         if (playing) {
             handleGameControls(entity_manager, asset_manager, true_dt);
@@ -255,13 +260,6 @@ int main() {
         else {
             handleEditorControls(entity_manager, asset_manager, true_dt);
         }
-        
-        if (graphics::do_bloom) {
-            blurBloomFbo();
-        }
-        bindBackbuffer();
-        drawPost(skybox, camera);
-        
         if (!playing) {
             drawEditorGui(*entity_manager, asset_manager);
         }

@@ -687,6 +687,27 @@ static bool toggleBloomCommand(std::vector<std::string>& input_tokens, std::stri
     return true;
 }
 
+static bool setMsaaCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
+    if (input_tokens.size() >= 2) {
+        graphics::do_bloom = !graphics::do_bloom;
+        int msaa_samples = std::stoi(input_tokens[1]);
+        if (msaa_samples <= 0) {
+            graphics::do_msaa = false;
+            output += "Disabled MSAA\n";
+        }
+        else {
+            graphics::do_msaa = true;
+            graphics::MSAA_SAMPLES = msaa_samples;
+            output += "Enabled MSAA with " + std::to_string(msaa_samples) + " samples\n";
+        }
+
+        initHdrFbo(true);
+        return true;
+    }
+    output += "Please specify the number of samples, eg. 4 or 0 (no MSAA)";
+    return false;
+}
+
 static bool helpCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager);
 
 const std::map
@@ -712,6 +733,7 @@ const std::map
     {"convert_models_to_mesh", convertModelsToMeshCommand},
     {"add_water", addWaterCommand},
     {"toggle_bloom", toggleBloomCommand},
+    {"set_msaa", setMsaaCommand},
 };
 
 static bool helpCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {

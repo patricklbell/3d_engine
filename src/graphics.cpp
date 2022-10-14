@@ -34,9 +34,12 @@ namespace graphics {
     // HDR
     //
     GLuint hdr_fbo = { GL_FALSE };
+    GLuint hdr_fbo_resolve_multisample = { GL_FALSE };
     GLuint hdr_buffer = { GL_FALSE };
+    GLuint hdr_buffer_resolve_multisample = { GL_FALSE };
     GLuint hdr_depth = { GL_FALSE };
     // Used by water pass to write and read from same depth buffer
+    // and resolved to by msaa
     GLuint hdr_depth_copy;
 
     // 
@@ -73,8 +76,11 @@ namespace graphics {
     Texture * simplex_value;
     Texture * brdf_lut;
 
-    // @hardcoded
-    const int MSAA_SAMPLES = 2;
+    // 
+    // MSAA
+    //
+    bool do_msaa = false;
+    int MSAA_SAMPLES = 4;
 }
 
 using namespace graphics;
@@ -449,52 +455,6 @@ void initWaterColliderFbo() {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-// Since water buffer wont need to be bound otherwise just combine these operations
-//void bindDrawWaterColliderMap(const EntityManager &entity_manager, WaterEntity *water){
-//    // Create orthographic VP
-//    // This makes the horizontal axis of the texture the x dimension
-//    float x_len = water->scale[0][0];
-//    float z_len = water->scale[2][2];
-//    constexpr float height = 0.02;
-//    const auto view = glm::lookAt(water->position + glm::vec3(0,2*height,0), water->position, glm::vec3(1,0,0));
-//    const auto projection = glm::ortho(z_len, -z_len, -x_len, x_len, height, 3.0f*height);
-//    const auto vp = projection * view;
-//
-//    glBindFramebuffer(GL_FRAMEBUFFER, water_collider_fbos[0]);
-//    glViewport(0, 0, WATER_COLLIDER_SIZE, WATER_COLLIDER_SIZE);
-//
-//    // Render entities only when they intersect water plane
-//    glUseProgram(shader::white.program);
-//    glDisable(GL_DEPTH_TEST);
-//    glDepthMask(GL_TRUE);
-//    glDisable(GL_CULL_FACE);
-//    
-//    glClearColor(0,0,0,1);
-//    glClear(GL_COLOR_BUFFER_BIT);
-//
-//    glUniform1f(shader::white.uniform("height"), 2.0*height);
-//    for (int i = 0; i < ENTITY_COUNT; ++i) {
-//        auto m_e = reinterpret_cast<MeshEntity*>(entity_manager.entities[i]);
-//        if(m_e == nullptr || m_e->type != EntityType::MESH_ENTITY || m_e->mesh == nullptr) continue;
-//
-//        auto model = createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
-//        auto mvp = vp * model;
-//        glUniformMatrix4fv(shader::white.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
-//
-//        auto &mesh = m_e->mesh;
-//        for (int j = 0; j < mesh->num_materials; ++j) {
-//            glBindVertexArray(mesh->vao);
-//            glDrawElements(mesh->draw_mode, mesh->draw_count[j], mesh->draw_type, (GLvoid*)(sizeof(GLubyte)*mesh->draw_start[j]));
-//        }
-//    }
-//    // Reset gl state to expected degree
-//    glEnable(GL_CULL_FACE);
-//    glEnable(GL_DEPTH_TEST);
-//    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-//    glViewport(0, 0, window_width, window_height);
-//    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-//}
-
 void bindDrawWaterColliderMap(const EntityManager& entity_manager, WaterEntity* water) {
     glBindFramebuffer(GL_FRAMEBUFFER, water_collider_fbos[0]);
     glViewport(0, 0, WATER_COLLIDER_SIZE, WATER_COLLIDER_SIZE);
@@ -628,53 +588,85 @@ void initBloomFbo(bool resize) {
 void initHdrFbo(bool resize) {
     if (!resize || hdr_fbo == GL_FALSE) {
         glGenFramebuffers(1, &hdr_fbo);
-        glBindFramebuffer(GL_FRAMEBUFFER, hdr_fbo);
 
         glGenTextures(1, &hdr_buffer);
     }
-    else {
-        glBindFramebuffer(GL_FRAMEBUFFER, hdr_fbo);
+    if (do_msaa && (!resize || hdr_fbo_resolve_multisample == GL_FALSE)) {
+        glGenFramebuffers(1, &hdr_fbo_resolve_multisample);
+        glGenTextures(1, &hdr_buffer_resolve_multisample);
     }
 
-    glBindTexture(GL_TEXTURE_2D, hdr_buffer);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, window_width, window_height, 0, GL_RGBA, GL_FLOAT, NULL);
-    //glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, 4, GL_RGBA16F, window_width, window_height, GL_TRUE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    // attach texture to framebuffer
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, hdr_buffer, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, hdr_fbo);
 
-    // @fix if there is no water this copy is unnecessary
+    if (do_msaa) {
+        glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, hdr_buffer);
+        glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, MSAA_SAMPLES, GL_RGBA16F, window_width, window_height, GL_TRUE);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D_MULTISAMPLE, hdr_buffer, 0);
+    } else {
+        glBindTexture(GL_TEXTURE_2D, hdr_buffer);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, window_width, window_height, 0, GL_RGBA, GL_FLOAT, NULL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, hdr_buffer, 0);
+    }
+
+    // Initialize depth textures if necessary
     if (!resize || hdr_depth == GL_FALSE) {
         // create and attach depth buffer
         glGenTextures(1, &hdr_depth);
         glGenTextures(1, &hdr_depth_copy);
     }
-    glBindTexture(GL_TEXTURE_2D, hdr_depth_copy);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH24_STENCIL8, window_width, window_height, 0, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8, NULL);
-    //glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, 4, GL_DEPTH24_STENCIL8, window_width, window_height, GL_TRUE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-    glBindTexture(GL_TEXTURE_2D, hdr_depth);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH24_STENCIL8, window_width, window_height, 0, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8, NULL);
-    //glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, 4, GL_DEPTH24_STENCIL8, window_width, window_height, GL_TRUE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, hdr_depth, 0);
-
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-        std::cerr << "Hdr framebuffer not complete.\n";
+    // Create actual depth texture, multisampled if necessary
+    if (do_msaa) {
+        glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, hdr_depth);
+        glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, MSAA_SAMPLES, GL_DEPTH24_STENCIL8, window_width, window_height, GL_TRUE);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D_MULTISAMPLE, hdr_depth, 0);
+    } else {
+        glBindTexture(GL_TEXTURE_2D, hdr_depth);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH24_STENCIL8, window_width, window_height, 0, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8, NULL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, hdr_depth, 0);
     }
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        std::cerr << "Hdr framebuffer not complete, error code: " << glCheckFramebufferStatus(GL_FRAMEBUFFER) << ".\n";
 
     static const GLuint attachments[] = { GL_COLOR_ATTACHMENT0 };
     glDrawBuffers(1, attachments);
+
+    // Create copy of depth texture which is sampled by water shader and/or msaa post processing
+    // @fix if there is no water (and not msaa) this texture is unnecessary (and might be unnecessary anyway)
+    glBindTexture(GL_TEXTURE_2D, hdr_depth_copy);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH24_STENCIL8, window_width, window_height, 0, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    // Since we perform post processing on screen texture we need an intermediate fbo to resolve to
+    if (do_msaa) {
+        glBindFramebuffer(GL_FRAMEBUFFER, hdr_fbo_resolve_multisample);
+
+        glBindTexture(GL_TEXTURE_2D, hdr_depth_copy); // @note Might be redundant
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, hdr_depth_copy, 0);
+
+        glBindTexture(GL_TEXTURE_2D, hdr_buffer_resolve_multisample);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, window_width, window_height, 0, GL_RGBA, GL_FLOAT, NULL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, hdr_buffer_resolve_multisample, 0);
+
+        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+            std::cerr << "Hdr resolve framebuffer not complete, error code: " << glCheckFramebufferStatus(GL_FRAMEBUFFER) << ".\n";
+    }
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
@@ -869,7 +861,8 @@ void blurBloomFbo() {
     glUniform2f(shader::downsample.uniform("resolution"), window_width, window_height);
 
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, hdr_buffer);
+    if(do_msaa) glBindTexture(GL_TEXTURE_2D, hdr_buffer_resolve_multisample);
+    else        glBindTexture(GL_TEXTURE_2D, hdr_buffer);
 
     for (int i = 0; i < bloom_mip_infos.size(); ++i) {
         const auto& mip = bloom_mip_infos[i];
@@ -922,6 +915,12 @@ void clearFramebuffer() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 }
 
+static void resolveMultisampleHdrBuffer() {
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, hdr_fbo);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, hdr_fbo_resolve_multisample);
+    glBlitFramebuffer(0, 0, window_width, window_height, 0, 0, window_width, window_height, GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+}
+
 //void drawSkybox(const Texture* skybox, const Camera &camera) {
 //    glDepthMask(GL_FALSE);
 //    glEnable(GL_DEPTH_TEST);
@@ -943,7 +942,7 @@ void clearFramebuffer() {
 //	glDepthFunc(GL_LESS); 
 //}
 
-void drawUnifiedHdr(const EntityManager& entity_manager, const Texture* irradiance_map, const Texture* prefiltered_specular_map, const Camera& camera) {
+void drawEntitiesHdr(const EntityManager& entity_manager, const Texture* irradiance_map, const Texture* prefiltered_specular_map, const Camera& camera) {
     glDepthMask(GL_TRUE);
     glEnable(GL_DEPTH_TEST);
 
@@ -1101,12 +1100,21 @@ void drawUnifiedHdr(const EntityManager& entity_manager, const Texture* irradian
             // @debug the geometry shader and tesselation
             //glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
+            if (do_msaa) {
+                resolveMultisampleHdrBuffer();
+                bindHdr();
+            }
+
             glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, hdr_buffer);
+            if (do_msaa)
+                glBindTexture(GL_TEXTURE_2D, hdr_buffer_resolve_multisample);
+            else
+                glBindTexture(GL_TEXTURE_2D, hdr_buffer);
             // Copy depth buffer
             glActiveTexture(GL_TEXTURE1);
             glBindTexture(GL_TEXTURE_2D, hdr_depth_copy);
-            glCopyTextureSubImage2D(hdr_depth_copy, 0, 0, 0, 0, 0, window_width, window_height);
+            if(!do_msaa) // resolving copies depth already
+                glCopyTextureSubImage2D(hdr_depth_copy, 0, 0, 0, 0, 0, window_width, window_height);
             glActiveTexture(GL_TEXTURE2);
             glBindTexture(GL_TEXTURE_2D, simplex_gradient->id);
             glActiveTexture(GL_TEXTURE3);
@@ -1130,6 +1138,10 @@ void drawUnifiedHdr(const EntityManager& entity_manager, const Texture* irradian
             glDepthFunc(GL_LESS);
         }
     }
+    
+    if (do_msaa) {
+        resolveMultisampleHdrBuffer();
+    }
 }
 
 void bindBackbuffer(){
@@ -1148,7 +1160,8 @@ void drawPost(Texture *skybox, const Camera &camera){
     glUniform2f(post.uniform("resolution"), window_width, window_height);
 
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, hdr_buffer);
+    if (do_msaa) glBindTexture(GL_TEXTURE_2D, hdr_buffer_resolve_multisample);
+    else         glBindTexture(GL_TEXTURE_2D, hdr_buffer);
 
     if (do_bloom) {
         glActiveTexture(GL_TEXTURE1);
@@ -1156,7 +1169,8 @@ void drawPost(Texture *skybox, const Camera &camera){
     }
 
     glActiveTexture(GL_TEXTURE2);
-    glBindTexture(GL_TEXTURE_2D, hdr_depth);
+    if (do_msaa) glBindTexture(GL_TEXTURE_2D, hdr_depth_copy);
+    else         glBindTexture(GL_TEXTURE_2D, hdr_depth);
 
     // @note view uniform badly named as it is only for the skybox so must be untranslated
     auto untranslated_view = glm::mat4(glm::mat3(camera.view));
