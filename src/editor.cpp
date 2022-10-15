@@ -689,7 +689,6 @@ static bool toggleBloomCommand(std::vector<std::string>& input_tokens, std::stri
 
 static bool setMsaaCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
     if (input_tokens.size() >= 2) {
-        graphics::do_bloom = !graphics::do_bloom;
         int msaa_samples = std::stoi(input_tokens[1]);
         if (msaa_samples <= 0) {
             graphics::do_msaa = false;

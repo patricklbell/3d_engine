@@ -1148,6 +1148,8 @@ void bindBackbuffer(){
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
+// @todo there is aliasing between objects and the skybox, this could probably be fixed
+// by binding the raw multisampled texture and blending edges based on depth coverage 
 void drawPost(Texture *skybox, const Camera &camera){
     // Draw screen space quad so clearing is unnecessary
     //glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
