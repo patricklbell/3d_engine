@@ -12,6 +12,7 @@
 #include <glm/detail/type_vec.hpp>
 #include <glm/fwd.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/matrix_decompose.hpp>
 
 #include "utilities.hpp"
 #include "assets.hpp"
@@ -122,6 +123,32 @@ glm::mat4x4 createModelMatrix(const glm::vec3& pos, const glm::mat3x3& rot, cons
 
 glm::mat4x4 createModelMatrix(const glm::vec3& pos, const glm::quat& rot, const glm::vec3& scl) {
     return glm::translate(glm::mat4x4(1.0), pos) * glm::mat4_cast(rot) * glm::scale(glm::mat4(1.0f), scl);
+}
+
+glm::mat4x4 lerpMatrix(glm::mat4& m1, glm::mat4& m2, float t) {
+    glm::vec3 scale1;
+    glm::quat rotation1;
+    glm::vec3 translation1;
+    glm::vec3 skew1;
+    glm::vec4 perspective1;
+    glm::decompose(m1, scale1, rotation1, translation1, skew1, perspective1);
+    //std::cout << "lerping matrices: \n\tscale: " << scale1 << "\n\tposition: " << translation1 << "\n\trotation: " << rotation1 << "\n";
+
+    glm::vec3 scale2;
+    glm::quat rotation2;
+    glm::vec3 translation2;
+    glm::vec3 skew2;
+    glm::vec4 perspective2;
+    glm::decompose(m2, scale2, rotation2, translation2, skew2, perspective2);
+    //std::cout << "-->\n\tscale: " << scale2 << "\n\tposition: " << translation2 << "\n\trotation: " << rotation2 << "\n";
+
+    glm::vec3 scale = glm::mix(scale1, scale2, t);
+    glm::quat rotation = glm::slerp(glm::conjugate(rotation1), glm::conjugate(rotation2), t);
+    glm::vec3 translation = glm::mix(translation1, translation2, t);
+    // @todo skew, perspective
+    //glm::vec3 skew = glm::mix(skew1, skew2, t);
+    //glm::vec4 perspective = glm::mix(perspective1, perspective2, t);
+    return createModelMatrix(translation, rotation, scale);
 }
 
 // https://cadxfem.org/inf/Fast%20MinimumStorage%20RayTriangle%20Intersection.pdf

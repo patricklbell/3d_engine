@@ -1,5 +1,7 @@
 #include "entities.hpp"
 #include "graphics.hpp"
+#include "utilities.hpp"
+#include <iostream>
 
 glm::vec3 camera_move_target, camera_move_origin;
 float camera_move_time, camera_move_duration;
@@ -22,6 +24,65 @@ void updateCameraMove(float dt) {
         updateCameraView(game_camera);
 
         do_camera_move = camera_move_time <= camera_move_duration;
+    }
+}
+
+static std::string getPlayerActionAnimationName(PlayerActionType& type) {
+    switch (type)
+    {
+    case PlayerActionType::STEP_FORWARD:
+        return "Armature|STEP";
+    case PlayerActionType::TURN_LEFT:
+        return "Armature|TURN_LEFT";
+    case PlayerActionType::TURN_RIGHT:
+        return "Armature|TURN_RIGHT";
+    default:
+        return "Unknown Action " + std::to_string((uint64_t)type);
+    }
+}
+
+void updatePlayerEntity(float dt, PlayerEntity *player) {
+    if (player->actions.size() > 0) {
+        auto& a = player->actions[0];
+        if (!a.active) {
+            a.active = true;
+            a.beg_position = player->position;
+            a.beg_rotation = player->rotation;
+
+            // Play animations that accompany actions
+            auto animation_name1 = getPlayerActionAnimationName(a.type);
+            std::string animation_name2;
+            if (player->actions.size() > 1)
+                animation_name2 = getPlayerActionAnimationName(player->actions[1].type);
+            else
+                animation_name2 = "Armature|IDLE";
+
+            float animation_speed1 = player->getAnimationDuration(animation_name1) / a.duration;
+            float animation_speed2;
+            if (player->actions.size() > 1)
+                animation_speed2 = player->getAnimationDuration(animation_name2) / player->actions[1].duration;
+            else
+                animation_speed2 = 1.0;
+
+            player->playBlended(animation_name1, 0.0, animation_speed1, 
+                                animation_name2, 0.0, animation_speed2, 
+                                createModelMatrix(a.delta_position, a.delta_rotation, glm::vec3(1.0)),
+                                0.8, false);
+        }
+
+        float t = glm::smoothstep(0.0f, a.duration, a.time);
+
+        // Speed up actions if there are multiple queued
+        float speed_factor = 1.0f + ((float)player->actions.size() / (float)player->MAX_ACTION_BUFFER) * player->MAX_ACTION_SPEEDUP;
+        a.time += dt*speed_factor;
+
+        if (t >= 1.0f) {
+            player->rotation *= a.delta_rotation;
+            player->position += player->rotation * a.delta_position;
+
+            player->play("Armature|IDLE", 0.0, 1.0, true);
+            player->actions.erase(player->actions.begin());
+        }
     }
 }
 
@@ -52,6 +113,12 @@ void playGame(EntityManager* &entity_manager) {
     has_played = true;
 }
 
-void updateGameEntities(float dt) {
+void updateGameEntities(float dt, EntityManager* &entity_manager) {
     updateCameraMove(dt);
+
+    if (entity_manager->player != NULLID) {
+        auto player = (PlayerEntity*)entity_manager->getEntity(entity_manager->player);
+        if(player != nullptr) 
+            updatePlayerEntity(dt, player);
+    }
 }

@@ -32,6 +32,7 @@ enum EntityType : uint64_t {
     COLLIDER_ENTITY         =(1 << 2) | MESH_ENTITY,
     VEGETATION_ENTITY       =(1 << 3) | MESH_ENTITY,
     ANIMATED_MESH_ENTITY    =(1 << 4) | MESH_ENTITY,
+    PLAYER_ENTITY           =(1 << 5) | ANIMATED_MESH_ENTITY,
 };
 struct Entity {
     EntityType type = ENTITY;
@@ -45,6 +46,9 @@ struct MeshEntity : Entity {
     glm::vec3 position      = glm::vec3(0.0);
     glm::quat rotation      = glm::quat(0.0,0.0,0.0,1.0);
     glm::mat3 scale         = glm::mat3(1.0);
+
+    // @editor
+    glm::vec3 gizmo_position_offset = glm::vec3(0.0);
 
     Mesh* mesh = nullptr;
 
@@ -67,12 +71,30 @@ struct AnimatedMeshEntity : MeshEntity {
     // Produced by traversing node tree and updated per tick
     std::array<glm::mat4, MAX_BONES> final_bone_matrices = { glm::mat4(1.0f) };
 
-    bool draw_animated = false; // @debug Used by editor to toggle drawing animation, ignored when playing
-    float current_time = 0.0f;
-    float time_scale = 1.0f;
+    // @editor Used by editor to toggle drawing animation, ignored when playing
+    bool draw_animated = false; 
+
+    // 
+    // Animation state machine
+    //
     bool loop = false;
     bool playing = false;
+    float current_time = 0.0f;
+    float time_scale = 1.0f;
     AnimatedMesh::Animation* animation = nullptr;
+
+    // 
+    // Animation blending
+    //
+    bool blending = false;
+    float current_bias = 0.0f;
+    float bias = 0.5f;
+    float current_time_blend_to = 0.0f;
+    float time_scale_blend_to = 0.0f;
+    AnimatedMesh::Animation* animation_blend_to = nullptr;
+    // Transforms to apply to animation which we are blending to, this is useful 
+    // if there is some transform coming when animation finishes, eg turning, stepping
+    glm::mat4 transform_blend_to;
 
     AnimatedMeshEntity(Id _id = NULLID) : MeshEntity(_id) {
         type = EntityType::ANIMATED_MESH_ENTITY;
@@ -81,6 +103,11 @@ struct AnimatedMeshEntity : MeshEntity {
     bool tick(float dt);
     void init();
     bool play(const std::string& name, float start_time, float _time_scale, bool _loop);
+    bool playBlended(const std::string& name1, float start_time1, float _time_scale1,
+                     const std::string& name2, float start_time2, float _time_scale2,
+                     glm::mat4 delta_transform,
+                     float bias, bool _loop);
+    float getAnimationDuration(const std::string& name);
 };
 
 
@@ -120,6 +147,38 @@ struct VegetationEntity : MeshEntity {
 };
 
 
+enum class PlayerActionType : uint64_t {
+    STEP_FORWARD = 0,
+    TURN_LEFT,
+    TURN_RIGHT,
+};
+
+struct PlayerAction {
+    PlayerActionType type;
+
+    glm::vec3 beg_position;
+    glm::quat beg_rotation;
+    glm::vec3 delta_position;
+    glm::quat delta_rotation;
+
+    bool active = false;
+    float duration;
+    float time;
+};
+
+struct PlayerEntity : AnimatedMeshEntity {
+    const int MAX_ACTION_BUFFER = 4;
+    const float MAX_ACTION_SPEEDUP = 2.0f;
+    std::vector<PlayerAction> actions;
+
+    PlayerEntity(Id _id = NULLID) : AnimatedMeshEntity(_id) {
+        type = EntityType::PLAYER_ENTITY;
+    }
+
+    bool turn_left();
+    bool turn_right();
+    bool step_forward();
+};
 
 inline Entity *allocateEntity(Id id, EntityType type){
     switch (type) {
@@ -133,6 +192,8 @@ inline Entity *allocateEntity(Id id, EntityType type){
             return new VegetationEntity(id);
         case ANIMATED_MESH_ENTITY:
             return new AnimatedMeshEntity(id);
+        case PLAYER_ENTITY:
+            return new PlayerEntity(id);
 
         default:
             return new Entity(id);
@@ -150,6 +211,8 @@ inline constexpr size_t entitySize(EntityType type){
             return sizeof(MeshEntity);
         case WATER_ENTITY:
             return sizeof(WaterEntity);
+        case PLAYER_ENTITY:
+            return sizeof(PlayerEntity);
 
         default:
             return sizeof(Entity);
@@ -173,6 +236,7 @@ struct EntityManager {
     uint64_t id_counter = 0;
 
     Id water = NULLID;
+    Id player = NULLID;
 
     ~EntityManager(){
         clear();
@@ -193,6 +257,7 @@ struct EntityManager {
         free_entity_stack = {};
         delete_entity_stack = {};
         water = NULLID;
+        player = NULLID;
 
         id_counter = 0;
     }

@@ -178,9 +178,16 @@ int main() {
     soloud.setPan(handle1, -0.2f);              // Set pan; -1 is left, 1 is right
     soloud.setRelativePlaySpeed(handle1, 1.0f); // Play a bit slower; 1.0f is normal
 
-     /*level_path = "data/levels/animation_test2.level";
+     level_path = "data/levels/player_test.level";
      loadLevel(*entity_manager, asset_manager, level_path, level_camera);
-     editor_camera = level_camera;*/
+     editor_camera = level_camera;
+
+    //auto player = (PlayerEntity*)entity_manager->createEntity(PLAYER_ENTITY);
+    //entity_manager->player = player->id;
+    //player->mesh = asset_manager.createMesh("data/mesh/character.mesh");
+    //player->animesh = asset_manager.createAnimatedMesh("data/anim/character.anim");
+    //asset_manager.loadMeshFile(player->mesh, player->mesh->handle);
+    //asset_manager.loadAnimationFile(player->animesh, player->animesh->handle);
 
     std::array<std::string, 6> skybox_paths = { "data/textures/simple_skybox/0006.png", "data/textures/simple_skybox/0002.png",
                                                 "data/textures/simple_skybox/0005.png", "data/textures/simple_skybox/0004.png",
@@ -207,9 +214,9 @@ int main() {
     window_resized = true;
 
     do {
-        
+        static float time_warp = 1.0;
         double current_time = glfwGetTime();
-        float true_dt = current_time - last_time;
+        float true_dt = (current_time - last_time) * time_warp;
         last_time = current_time;
         static const float dt = 1.0/60.0;
 
@@ -241,7 +248,8 @@ int main() {
         }
 
         entity_manager->tickAnimatedMeshes(true_dt);
-        updateGameEntities(true_dt);
+        if(playing)
+            updateGameEntities(true_dt, entity_manager);
 
         bindDrawShadowMap(*entity_manager, camera);
         bindHdr();

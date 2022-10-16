@@ -147,12 +147,21 @@ struct AnimatedMesh {
         uint64_t id = -1;
 
         glm::mat4 local_transform = glm::mat4(1.0f);
-        glm::mat4 global_transform; // Used when traversing the tree
+
         int32_t parent_index = -1;
     };
+
+    // Updated per frame for traversing tree
+    struct BoneNodeAnimation {
+        glm::mat4 global_transform;
+        // There is probably a better way to apply transforms with blending @todo
+        glm::mat4 global_transform_blended; // Used when traversing the tree
+    };
+
     // Flattened tree which describes Bone relationships
     // needed since transformations are relative to parent
     std::vector<BoneNode> bone_node_list;
+    std::vector<BoneNodeAnimation> bone_node_animation_list;
 
     struct Animation {
         std::string name;

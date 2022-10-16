@@ -971,12 +971,13 @@ bool AssetManager::loadAnimatedMeshAssimp(AnimatedMesh* animesh, Mesh *mesh, con
         }
     }
     convertAiNodeToBoneNodeTree(animesh->bone_node_list, scene->mRootNode, node_name_id_map, -1);
+    animesh->bone_node_animation_list.resize(animesh->bone_node_list.size());
 
     // The "scene" pointer will be deleted automatically by "importer"
     return true;
 }
 
-constexpr uint16_t ANIMATION_FILE_VERSION = 0U;
+constexpr uint16_t ANIMATION_FILE_VERSION = 1U;
 constexpr uint16_t ANIMATION_FILE_MAGIC   = 32891U;
 bool AssetManager::writeAnimationFile(const AnimatedMesh* animesh, const std::string& path) {
     std::cout << "--------------------Save Mesh " << path << "--------------------\n";
@@ -1077,6 +1078,7 @@ bool AssetManager::loadAnimationFile(AnimatedMesh* animesh, const std::string& p
 
     animesh->bone_node_list.resize(num_nodes);
     fread(&animesh->bone_node_list[0], sizeof(animesh->bone_node_list[0]), animesh->bone_node_list.size(), f);
+    animesh->bone_node_animation_list.resize(num_nodes);
 
     uint64_t num_animations;
     fread(&num_animations, sizeof(num_animations), 1, f);
@@ -1126,6 +1128,9 @@ bool AssetManager::loadAnimationFile(AnimatedMesh* animesh, const std::string& p
 
             animation.bone_id_keyframe_index_map[id] = index;
         }
+
+        // @debug
+        std::cout << "Loaded animation " << animation.name << " with duration " << animation.duration << " ticks, " << animation.num_bone_keyframes << " keyframes, and " << animation.ticks_per_second << " ticks/s\n";
     }
 
     fclose(f);

@@ -39,6 +39,11 @@ std::ostream &operator<<(std::ostream &os, const glm::tvec4<T, P> &v) {
 }
 
 template<typename T, glm::precision P>
+std::ostream& operator<<(std::ostream& os, const glm::tquat<T, P>& v) {
+    return os << v.x << ", " << v.y << ", " << v.z << ", " << v.w;
+}
+
+template<typename T, glm::precision P>
 std::ostream& operator<<(std::ostream& os, const glm::tmat4x4<T, P>& m) {
     return os << "{ \n\t"   << m[0][0] << ", " << m[0][1] << ", " << m[0][2] << ", " << m[0][3] << "\n\t"
                             << m[1][0] << ", " << m[1][1] << ", " << m[1][2] << ", " << m[1][3] << "\n\t"
@@ -56,6 +61,8 @@ glm::mat4x4 createModelMatrix(const glm::vec3 &pos, const glm::quat &rot, const 
 glm::mat4x4 createModelMatrix(const glm::vec3& pos, const glm::mat3x3& rot, const glm::mat3x3& scl);
 glm::mat4x4 createModelMatrix(const glm::vec3& pos, const glm::mat3x3& rot, const glm::vec3& scl);
 glm::mat4x4 createModelMatrix(const glm::vec3& pos, const glm::quat& rot, const glm::vec3& scl);
+
+glm::mat4x4 lerpMatrix(glm::mat4& m1, glm::mat4& m2, float t);
 
 void screenPosToWorldRay(glm::ivec2 mouse_position, glm::mat4 view, glm::mat4 projection, glm::vec3 &out_origin, glm::vec3 &out_direction);
 

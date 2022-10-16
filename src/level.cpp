@@ -18,6 +18,9 @@ static void writeMeshEntity(MeshEntity* e, std::unordered_map<uint64_t, uint64_t
     fwrite(&e->position, sizeof(e->position), 1, f);
     fwrite(&e->rotation, sizeof(e->rotation), 1, f);
     fwrite(&e->scale   , sizeof(e->scale   ), 1, f);
+
+    // @editor, it will be annoying but the level file will probably have to be translated for release
+    fwrite(&e->gizmo_position_offset, sizeof(e->gizmo_position_offset), 1, f);
            
     uint64_t lookup = asset_lookup[reinterpret_cast<uint64_t>(e->mesh)];
     fwrite(&lookup, sizeof(lookup), 1, f);
@@ -33,6 +36,8 @@ static void readMeshEntity(MeshEntity* e, const std::unordered_map<uint64_t, voi
     fread(&e->position, sizeof(e->position), 1, f);
     fread(&e->rotation, sizeof(e->rotation), 1, f);
     fread(&e->scale   , sizeof(e->scale   ), 1, f);
+
+    fread(&e->gizmo_position_offset, sizeof(e->gizmo_position_offset), 1, f);
            
     uint64_t lookup;
     fread(&lookup, sizeof(lookup), 1, f);
@@ -139,6 +144,11 @@ static void readColliderEntity(ColliderEntity* e, FILE *f) {
     fread(&e->collider_scale   , sizeof(e->collider_scale   ), 1, f);
 
     fread(&e->selectable, sizeof(e->selectable), 1, f);
+}
+
+static void writePlayerEntity(PlayerEntity* e, FILE* f) {
+}
+static void readPlayerEntity(PlayerEntity* e, FILE* f) {
 }
 
 static void writeVegetationEntity(VegetationEntity* e, std::unordered_map<uint64_t, uint64_t> asset_lookup, FILE *f) {
@@ -295,6 +305,9 @@ void saveLevel(EntityManager & entity_manager, const std::string & level_path, c
         if(entityInherits(e->type, VEGETATION_ENTITY)) {
             writeVegetationEntity((VegetationEntity*)e, asset_lookup, f);
         }
+        if (entityInherits(e->type, PLAYER_ENTITY)) {
+            writePlayerEntity((PlayerEntity*)e, f);
+        }
     }
 
     fclose(f);
@@ -441,22 +454,39 @@ bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const
         if(entityInherits(e->type, VEGETATION_ENTITY)) {
             readVegetationEntity((VegetationEntity*)e, index_to_asset, f);
         }
+        if (entityInherits(e->type, PLAYER_ENTITY)) {
+            readPlayerEntity((PlayerEntity*)e, f);
+        }
 
-        // Water is a special case since there is only one per level
-        if(entityInherits(e->type, WATER_ENTITY)) {
-            if(entity_manager.water != NULLID) {
-                std::cerr << "Duplicate water in level, skipping\n";
-                free(e);
-                continue;
-            } else {
-                entity_manager.setEntity(entity_manager.getFreeId().i, e);
-                entity_manager.water = e->id;
+        // Water and players are special cases since there can only be one per level
+        bool unique = entityInherits(e->type, WATER_ENTITY) || entityInherits(e->type, PLAYER_ENTITY);
+        if(unique) {
+            if (entityInherits(e->type, PLAYER_ENTITY)) {
+                if (entity_manager.player != NULLID) {
+                    std::cerr << "Duplicate player in level, skipping\n";
+                    free(e);
+                    continue;
+                }
+                else {
+                    entity_manager.setEntity(entity_manager.getFreeId().i, e);
+                    entity_manager.player = e->id;
+                }
+            }  else if (entityInherits(e->type, WATER_ENTITY)) {
+                if(entity_manager.water != NULLID) {
+                    std::cerr << "Duplicate water in level, skipping\n";
+                    free(e);
+                    continue;
+                } else {
+                    entity_manager.setEntity(entity_manager.getFreeId().i, e);
+                    entity_manager.water = e->id;
+                }
             }
         } else {
             // @todo preserve ids, you probably need to write free entity ids or
             // reorder to preserve relationships but remove gaps
             entity_manager.setEntity(entity_manager.getFreeId().i, e);
         }
+
         std::cout << "Loaded entity of type " << type << " with id " << e->id.i << ".\n";
     }
     fclose(f);

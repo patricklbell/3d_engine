@@ -74,7 +74,8 @@ void ReferenceSelection::addEntity(Entity* e) {
     else                type = (EntityType)(type & e->type);
 
     if (entityInherits(e->type, MESH_ENTITY)) {
-        avg_position = (float)avg_position_count * avg_position + ((MeshEntity*)e)->position;
+        auto pos = ((MeshEntity*)e)->position + ((MeshEntity*)e)->gizmo_position_offset;
+        avg_position = (float)avg_position_count * avg_position + pos;
         avg_position_count++;
         avg_position /= (float)avg_position_count;
     }
@@ -100,7 +101,8 @@ void ReferenceSelection::toggleEntity(const EntityManager &entity_manager, Entit
         ids.erase(ids.begin() + id_to_erase);
 
         if (entityInherits(e->type, MESH_ENTITY)) {
-            avg_position = (float)avg_position_count * avg_position - ((MeshEntity*)e)->position;
+            auto pos = ((MeshEntity*)e)->position + ((MeshEntity*)e)->gizmo_position_offset;
+            avg_position = (float)avg_position_count * avg_position - pos;
             avg_position_count--;
             avg_position /= (float)avg_position_count;
         }
@@ -112,7 +114,8 @@ void ReferenceSelection::toggleEntity(const EntityManager &entity_manager, Entit
         else                type = (EntityType)(type & e->type);
 
         if (entityInherits(e->type, MESH_ENTITY)) {
-            avg_position = (float)avg_position_count * avg_position + ((MeshEntity*)e)->position;
+            auto pos = ((MeshEntity*)e)->position + ((MeshEntity*)e)->gizmo_position_offset;
+            avg_position = (float)avg_position_count * avg_position + pos;
             avg_position_count++;
             avg_position /= (float)avg_position_count;
         }
@@ -1610,30 +1613,44 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
 
             const float img_w = glm::min(sidebar_w - pad, 70.0f);
             static const std::vector<std::string> image_file_extensions = { ".jpg", ".png", ".bmp", ".tiff", ".tga" };
+            static bool editing_gizmo_position_offset = false;
 
             auto button_size = ImVec2(ImGui::GetWindowWidth() / 2.0f - pad, 2.0f * pad);
             if (entityInherits(selection.type, MESH_ENTITY)) {
                 auto m_e = (MeshEntity*)fe;
+
                 TransformType edited_transform;
-                if (selection.ids.size() == 1) {
-                    edited_transform = editTransform(camera, m_e->position, m_e->rotation, m_e->scale);
-                }
-                else {
-                    glm::vec3 position = m_e->position;
-                    glm::quat rotation = m_e->rotation;
-                    glm::mat3 scale = m_e->scale;
 
-                    // @todo support multiple selection rotation and scale
-                    edited_transform = editTransform(camera, position, rotation, scale, TransformType::POS);
+                if (!editing_gizmo_position_offset) {
+                    if (selection.ids.size() == 1) {
+                        auto pos = m_e->position + m_e->gizmo_position_offset;
+                        edited_transform = editTransform(camera, pos, m_e->rotation, m_e->scale);
+                        m_e->position = pos - m_e->gizmo_position_offset;
+                    }
+                    else {
+                        glm::vec3 position = m_e->position + m_e->gizmo_position_offset;
+                        glm::quat rotation = m_e->rotation;
+                        glm::mat3 scale = m_e->scale;
+                        
+                        // @todo support multiple selection rotation and scale
+                        edited_transform = editTransform(camera, position, rotation, scale, TransformType::POS);
 
-                    auto offset = position - m_e->position;
-                    for (const auto& id : selection.ids) {
-                        auto e = (MeshEntity*)entity_manager.getEntity(id);
-                        if (e == nullptr) continue;
-                        e->position += offset;
+                        auto offset = position - m_e->position - m_e->gizmo_position_offset;
+                        for (const auto& id : selection.ids) {
+                            auto e = (MeshEntity*)entity_manager.getEntity(id);
+                            if (e == nullptr) continue;
+                            e->position += offset;
+                        }
                     }
                 }
+                else {
+                    auto pos = m_e->position + m_e->gizmo_position_offset;
+                    edited_transform = editTransform(camera, pos, glm::quat(), glm::mat3(), TransformType::POS);
+                    m_e->gizmo_position_offset = pos - m_e->position;
+                }
                 editor::transform_active = edited_transform != TransformType::NONE;
+
+                ImGui::Checkbox("Gizmo Offset", &editing_gizmo_position_offset);
 
                 bool casts_shadow = m_e->casts_shadow;
                 if (ImGui::Checkbox("Casts Shadows", &casts_shadow)) {

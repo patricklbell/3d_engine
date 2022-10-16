@@ -539,6 +539,12 @@ void handleGameControls(EntityManager* &entity_manager, AssetManager& asset_mana
     static bool backtick_key_prev   = false;
     static bool mouse_left_prev     = false;
     static bool r_key_prev          = false;
+    static bool left_key_prev       = false;
+    static bool up_key_prev         = false;
+    static bool down_key_prev       = false;
+    static bool right_key_prev      = false;
+
+    static float last_input_time = 0.0f;
 
     ImGuiIO& io = ImGui::GetIO();
     controls::left_mouse_click_press = !io.WantCaptureMouse && glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) && !mouse_left_prev;
@@ -596,8 +602,36 @@ void handleGameControls(EntityManager* &entity_manager, AssetManager& asset_mana
         drawMeshWireframe(*s->mesh, g_model_rot_scl, g_model_pos, game_camera, true);
     }
 
+    // Handle player controls
+    if (entity_manager->player != NULLID) {
+        auto player = (PlayerEntity*)entity_manager->getEntity(entity_manager->player);
+        if (player != nullptr && glfwGetTime() - last_input_time > 0.1) {
+            if (glfwGetKey(window, GLFW_KEY_LEFT)) {
+                last_input_time = glfwGetTime();
+                player->turn_left();
+            }
+            if (glfwGetKey(window, GLFW_KEY_RIGHT)) {
+                last_input_time = glfwGetTime();
+                player->turn_right();
+            }
+            if (glfwGetKey(window, GLFW_KEY_UP)) {
+                last_input_time = glfwGetTime();
+                player->step_forward();
+            }
+            if (glfwGetKey(window, GLFW_KEY_DOWN)) {
+                last_input_time = glfwGetTime();
+                player->turn_right();
+                player->turn_right();
+            }
+        }
+    }
+
     backtick_key_prev   = glfwGetKey(window, GLFW_KEY_GRAVE_ACCENT);
     p_key_prev          = glfwGetKey(window, GLFW_KEY_P);
     r_key_prev          = glfwGetKey(window, GLFW_KEY_R);
+    left_key_prev       = glfwGetKey(window, GLFW_KEY_LEFT);
+    up_key_prev         = glfwGetKey(window, GLFW_KEY_UP);
+    down_key_prev       = glfwGetKey(window, GLFW_KEY_DOWN);
+    right_key_prev      = glfwGetKey(window, GLFW_KEY_RIGHT);
     mouse_left_prev     = glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT);
 }
