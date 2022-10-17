@@ -28,6 +28,17 @@ enum class TransformType : uint64_t {
     ALL = 7
 };
 
+struct InfoMessage {
+    float time;
+    std::string contents;
+    float duration = 1.0;
+    enum class Urgency {
+        NORMAL = 0,
+    } urgency;
+};
+
+void pushInfoMessage(std::string contents, InfoMessage::Urgency urgency = InfoMessage::Urgency::NORMAL, float duration = 1.0);
+
 void initEditorGui(AssetManager &asset_manager);
 
 void ImTerminal(EntityManager &entity_manager, AssetManager &asset_manager, bool is_active);

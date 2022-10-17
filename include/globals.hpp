@@ -37,6 +37,7 @@ extern std::string GL_version, GL_vendor, GL_renderer;
 extern std::string level_path;
 extern bool playing;
 extern bool has_played;
+extern float global_time_warp;
 
 struct ThreadPool;
 extern ThreadPool *global_thread_pool;

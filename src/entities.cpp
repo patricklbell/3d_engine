@@ -3,6 +3,7 @@
 
 #include <glm/glm.hpp>
 #include <glm/gtx/common.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 #include "entities.hpp"
 #include "assets.hpp"
@@ -70,7 +71,7 @@ void tickAnimatedMesh(AnimatedMeshEntity& entity, float time, bool looping, cons
                 parent_transform_blended = animesh->bone_node_animation_list[node.parent_index].global_transform_blended;
             }
             else {
-                parent_transform_blended = animesh->global_transform*entity.transform_blend_to;
+                parent_transform_blended = animesh->global_transform * entity.transform_blend_to;
             }
 
             aninode.global_transform_blended = parent_transform_blended * node_transform_blended;
@@ -98,13 +99,14 @@ bool AnimatedMeshEntity::tick(float dt) {
     if (animation != nullptr && playing) {
         current_time += dt * time_scale * animation->ticks_per_second;
         if (current_time >= animation->duration) {
-            if (loop) {
-                //std::cout << "Looping animation\n";
+            if (loop && !blending) {
                 current_time = glm::fmod(current_time, animation->duration);
+                std::cout << "Looping animation 1\n";
             }
             else {
                 current_time = animation->duration;
                 playing = false;
+                std::cout << "Reached end of animation 1\n";
             }
         }
 
@@ -112,11 +114,15 @@ bool AnimatedMeshEntity::tick(float dt) {
             current_bias = glm::smoothstep(bias, 1.0f, current_time / animation->duration);
             std::cout << "Using blended tick, ratio: " << current_time / animation->duration << " bias: " << current_bias << "\n";
 
-            if (current_bias >= 1.0f) {
+            if (current_bias >= 0.99f) {
                 animation = animation_blend_to;
                 current_time = current_time_blend_to;
                 time_scale = time_scale_blend_to;
                 blending = false;
+
+                // Apply transforms when animation actually fully blends
+                rotation *= rotation_blend_to;
+                position += rotation * position_blend_to;
             } else {
                 current_time_blend_to += dt * time_scale_blend_to * animation_blend_to->ticks_per_second;
                 if (current_time_blend_to >= animation_blend_to->duration) {
@@ -166,8 +172,8 @@ bool AnimatedMeshEntity::play(const std::string& name, float start_time = 0.0f, 
 
 bool AnimatedMeshEntity::playBlended(const std::string& name1, float start_time1 = 0.0f, float _time_scale1 = 1.0f,
                                      const std::string& name2="", float start_time2 = 0.0f, float _time_scale2 = 1.0f,
-                                     glm::mat4 delta_transform=glm::mat4(1.0),
-                                     float bias = 0.5f, bool _loop = false) {
+                                     glm::vec3 delta_pos=glm::vec3(), glm::quat delta_rot=glm::quat(),
+                                     float _bias = 0.5f, bool _loop = false) {
     auto lu1 = animesh->name_animation_map.find(name1);
     auto lu2 = animesh->name_animation_map.find(name2);
     if (lu1 == animesh->name_animation_map.end()) {
@@ -191,9 +197,11 @@ bool AnimatedMeshEntity::playBlended(const std::string& name1, float start_time1
         animation_blend_to = &lu2->second;
 
         current_bias = 0.0f;
-        bias = bias;
+        bias = _bias;
 
-        transform_blend_to = delta_transform;
+        position_blend_to = delta_pos;
+        rotation_blend_to = delta_rot;
+        transform_blend_to = glm::mat4_cast(rotation_blend_to) * glm::translate(glm::mat4(1.0), position_blend_to * glm::inverse(scale));
 
         playing = true;
         blending = true;

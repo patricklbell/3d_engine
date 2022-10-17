@@ -211,6 +211,7 @@ void handleEditorControls(EntityManager* &entity_manager, AssetManager &asset_ma
         if (editor::selection.ids.size() && !(editor::selection.type & WATER_ENTITY)
             && glfwGetKey(window, GLFW_KEY_C) && !c_key_prev && glfwGetKey(window, GLFW_KEY_LEFT_CONTROL)) {
             referenceToCopySelection(*entity_manager, editor::selection, editor::copy_selection);
+            pushInfoMessage("Copied selection");
         }
         if (editor::copy_selection.entities.size() != 0 && 
             !ctrl_v_prev && glfwGetKey(window, GLFW_KEY_V) && glfwGetKey(window, GLFW_KEY_LEFT_CONTROL)) {
@@ -220,31 +221,39 @@ void handleEditorControls(EntityManager* &entity_manager, AssetManager &asset_ma
         }
         if (glfwGetKey(window, GLFW_KEY_D) && !d_key_prev && glfwGetKey(window, GLFW_KEY_LEFT_SHIFT)) {
             editor::draw_debug_wireframe = !editor::draw_debug_wireframe;
+            pushInfoMessage(editor::draw_debug_wireframe ? "Debug wireframe on" : "Debug wireframe off");
         }
         if (glfwGetKey(window, GLFW_KEY_C) && !c_key_prev
             && !glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) && glfwGetKey(window, GLFW_KEY_LEFT_SHIFT)) {
             if (camera.state == Camera::TYPE::TRACKBALL) {
                 camera.state = Camera::TYPE::STATIC;
+                pushInfoMessage("Static camera");
             }
             else if (camera.state == Camera::TYPE::SHOOTER) {
                 camera.state = Camera::TYPE::TRACKBALL;
                 if (editor::selection.ids.size() == 1) {
                     updateCameraTarget(camera, editor::selection.avg_position);
                 }
+                pushInfoMessage("Orbit camera");
             }
             else if (camera.state == Camera::TYPE::STATIC) {
                 camera.state = Camera::TYPE::SHOOTER;
 
                 mouse_position = glm::dvec2(window_width / 2, window_height / 2);
                 delta_mouse_position = glm::dvec2(0, 0);
+                pushInfoMessage("Shooter style camera");
             }
         }
 
-        if (glfwGetKey(window, GLFW_KEY_P) && !p_key_prev)
+        if (glfwGetKey(window, GLFW_KEY_P) && !p_key_prev) {
             playGame(entity_manager);
+            pushInfoMessage("Playing");
+        }
 
-        if (glfwGetKey(window, GLFW_KEY_F) && !f_key_prev)
+        if (glfwGetKey(window, GLFW_KEY_F) && !f_key_prev) {
             editor::draw_level_camera = !editor::draw_level_camera;
+            pushInfoMessage(editor::draw_level_camera ? "Camera wireframe on" : "Camera wireframe off");
+        }
     }
 
     if (right_mouse_click_release && (glfwGetTime() - mouse_right_press_time) < 0.2) {
@@ -543,6 +552,7 @@ void handleGameControls(EntityManager* &entity_manager, AssetManager& asset_mana
     static bool up_key_prev         = false;
     static bool down_key_prev       = false;
     static bool right_key_prev      = false;
+    static bool t_key_prev          = false;
 
     static float last_input_time = 0.0f;
 
@@ -553,59 +563,71 @@ void handleGameControls(EntityManager* &entity_manager, AssetManager& asset_mana
     glfwGetCursorPos(window, &mouse_position.x, &mouse_position.y);
     delta_mouse_position = mouse_position - delta_mouse_position;
 
-    if (glfwGetKey(window, GLFW_KEY_P) && !p_key_prev)
+    if (glfwGetKey(window, GLFW_KEY_P) && !p_key_prev) {
         pauseGame(entity_manager);
-    if (glfwGetKey(window, GLFW_KEY_R) && !r_key_prev)
+        pushInfoMessage("Switched to editor");
+    }
+    if (glfwGetKey(window, GLFW_KEY_R) && !r_key_prev) {
         resetGameEntities();
+        pushInfoMessage("Resetting");
+    }
     if (glfwGetKey(window, GLFW_KEY_GRAVE_ACCENT) && !backtick_key_prev)
         editor::do_terminal = !editor::do_terminal;
+
+    if (glfwGetKey(window, GLFW_KEY_T) && !glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) && !t_key_prev) {
+        global_time_warp *= 0.9;
+        pushInfoMessage("Time warp " + std::to_string(global_time_warp), InfoMessage::Urgency::NORMAL, 0.25);
+    } else if (glfwGetKey(window, GLFW_KEY_T) && glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) && !t_key_prev) {
+        global_time_warp *= 1.1;
+        pushInfoMessage("Time warp " + std::to_string(global_time_warp), InfoMessage::Urgency::NORMAL, 0.25);
+    }
 
     // 
     // Selection and Actions
     //
-    static Id selected_id = NULLID;
-    static CollisionNeighbours selected_neighbours;
-    
-    if (controls::left_mouse_click_press) {
-        glm::vec3 n;
-        auto collider = pickColliderWithMouse(game_camera, *entity_manager, n, true);
+    //static Id selected_id = NULLID;
+    //static CollisionNeighbours selected_neighbours;
+    //
+    //if (controls::left_mouse_click_press) {
+    //    glm::vec3 n;
+    //    auto collider = pickColliderWithMouse(game_camera, *entity_manager, n, true);
 
-        if (collider != nullptr) {
-            if (isPickPsuedo(collider, selected_neighbours)) {
-                clearNeighbour(*entity_manager, selected_neighbours);
+    //    if (collider != nullptr) {
+    //        if (isPickPsuedo(collider, selected_neighbours)) {
+    //            clearNeighbour(*entity_manager, selected_neighbours);
 
-                auto s = (ColliderEntity*)entity_manager->getEntity(selected_id);
-                auto offset = collider->collider_position - s->collider_position;
-                s->collider_position += offset;
-                s->position += offset;
+    //            auto s = (ColliderEntity*)entity_manager->getEntity(selected_id);
+    //            auto offset = collider->collider_position - s->collider_position;
+    //            s->collider_position += offset;
+    //            s->position += offset;
 
-                selected_neighbours = findColliderNeighbours(*entity_manager, collider);
-                addPsuedoNeighbours(*entity_manager, asset_manager, s, selected_neighbours);
-            }
-            else if (collider->id != selected_id){
-                selected_id = collider->id;
-                selected_neighbours = findColliderNeighbours(*entity_manager, collider);
-                addPsuedoNeighbours(*entity_manager, asset_manager, collider, selected_neighbours);
-            }
-        }
-        else {
-            clearNeighbour(*entity_manager, selected_neighbours);
-            selected_id = NULLID;
-        }
-    }
+    //            selected_neighbours = findColliderNeighbours(*entity_manager, collider);
+    //            addPsuedoNeighbours(*entity_manager, asset_manager, s, selected_neighbours);
+    //        }
+    //        else if (collider->id != selected_id){
+    //            selected_id = collider->id;
+    //            selected_neighbours = findColliderNeighbours(*entity_manager, collider);
+    //            addPsuedoNeighbours(*entity_manager, asset_manager, collider, selected_neighbours);
+    //        }
+    //    }
+    //    else {
+    //        clearNeighbour(*entity_manager, selected_neighbours);
+    //        selected_id = NULLID;
+    //    }
+    //}
 
-    // For now just use wireframe, in future some kind of edge detection, or saturation effect
-    auto s = (ColliderEntity*)entity_manager->getEntity(selected_id);
-    if (s != nullptr && (s->type & COLLIDER_ENTITY) && s->mesh != nullptr) {
-        auto g_model_rot_scl = glm::mat4_cast(s->rotation) * glm::mat4x4(s->scale);
-        auto g_model_pos = glm::translate(glm::mat4x4(1.0), s->position);
-        drawMeshWireframe(*s->mesh, g_model_rot_scl, g_model_pos, game_camera, true);
-    }
+    //// For now just use wireframe, in future some kind of edge detection, or saturation effect
+    //auto s = (ColliderEntity*)entity_manager->getEntity(selected_id);
+    //if (s != nullptr && (s->type & COLLIDER_ENTITY) && s->mesh != nullptr) {
+    //    auto g_model_rot_scl = glm::mat4_cast(s->rotation) * glm::mat4x4(s->scale);
+    //    auto g_model_pos = glm::translate(glm::mat4x4(1.0), s->position);
+    //    drawMeshWireframe(*s->mesh, g_model_rot_scl, g_model_pos, game_camera, true);
+    //}
 
     // Handle player controls
     if (entity_manager->player != NULLID) {
         auto player = (PlayerEntity*)entity_manager->getEntity(entity_manager->player);
-        if (player != nullptr && glfwGetTime() - last_input_time > 0.1) {
+        if (player != nullptr && glfwGetTime() - last_input_time > 3*dt) {
             if (glfwGetKey(window, GLFW_KEY_LEFT)) {
                 last_input_time = glfwGetTime();
                 player->turn_left();
@@ -626,6 +648,7 @@ void handleGameControls(EntityManager* &entity_manager, AssetManager& asset_mana
         }
     }
 
+    t_key_prev          = glfwGetKey(window, GLFW_KEY_T);
     backtick_key_prev   = glfwGetKey(window, GLFW_KEY_GRAVE_ACCENT);
     p_key_prev          = glfwGetKey(window, GLFW_KEY_P);
     r_key_prev          = glfwGetKey(window, GLFW_KEY_R);

@@ -61,8 +61,17 @@ namespace editor {
     CopySelection copy_selection;
 
     std::unordered_map<uint64_t, std::string> entity_type_to_string;
+    std::vector<InfoMessage> info_message_queue;
 }
 using namespace editor;
+
+void pushInfoMessage(std::string contents, InfoMessage::Urgency urgency, float duration) {
+    InfoMessage &m = info_message_queue.emplace_back();;
+    m.contents = contents;
+    m.urgency = urgency;
+    m.duration = duration;
+    m.time = glfwGetTime();
+}
 
 void ReferenceSelection::addEntity(Entity* e) {
     for (const auto &id : ids) {
@@ -1536,6 +1545,44 @@ void drawColliders(const EntityManager &entity_manager, const Camera &camera) {
     }
 }
 
+static void drawInfoTextGui() {
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
+    ImGui::SetNextWindowSize(ImVec2(window_width, window_height));
+    ImGui::Begin("Perf Counter", NULL, ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoDecoration);
+    ImGui::TextWrapped("%s\n%.3f ms/frame (%.1f FPS)",
+        GL_renderer.c_str(), 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+
+    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 0, 0, 255));
+    if (level_path != "")
+        ImGui::TextWrapped("%s\n", level_path.c_str());
+    if (editor::use_level_camera)
+        ImGui::TextWrapped("Editing level camera!\n");
+    ImGui::PopStyleColor();
+
+    for (int i = 0; i < info_message_queue.size(); i++) {
+        auto& m = info_message_queue[i];
+
+        // @hardcoded
+        if (i < 10) {
+            float alpha = glm::smoothstep(m.duration, m.duration * 0.8f, (float)glfwGetTime() - m.time);
+
+            if(m.urgency != InfoMessage::Urgency::NORMAL)
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 0, 0, alpha));
+            else
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1, 1, 1, alpha));
+            ImGui::TextWrapped(m.contents.c_str());
+            ImGui::PopStyleColor();
+        }
+
+        if (glfwGetTime() - m.time > m.duration) {
+            info_message_queue.erase(info_message_queue.begin() + i);
+            i--;
+        }
+    }
+
+    ImGui::End();
+}
+
 void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
     if (!use_level_camera && draw_level_camera) {
         drawFrustrum(level_camera, editor_camera);
@@ -1993,23 +2040,8 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
     //    }
     //    ImGui::End();
     //}
-    
-    {
-        ImGui::SetNextWindowPos(ImVec2(0,0));
-        ImGui::SetNextWindowSize(ImVec2(window_width, window_height));
-        ImGui::Begin("Perf Counter", NULL, ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoDecoration);
-        ImGui::TextWrapped("%s\n%.3f ms/frame (%.1f FPS)", 
-                GL_renderer.c_str(),1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
-        
-        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255,0,0,255));
-        if(level_path != "")
-            ImGui::TextWrapped("%s\n", level_path.c_str());
-        if (editor::use_level_camera)
-            ImGui::TextWrapped("Editing level camera!\n");
-        ImGui::PopStyleColor();
 
-        ImGui::End();
-    }
+    drawInfoTextGui();
 
     ImTerminal(entity_manager, asset_manager, do_terminal);
 
@@ -2101,19 +2133,7 @@ void drawGameGui(EntityManager& entity_manager, AssetManager& asset_manager) {
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
-    {
-        ImGui::SetNextWindowPos(ImVec2(0, 0));
-        ImGui::SetNextWindowSize(ImVec2(window_width, window_height));
-        ImGui::Begin("Perf Counter", NULL, ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoDecoration);
-        ImGui::TextWrapped("%s\n%.3f ms/frame (%.1f FPS)",
-            GL_renderer.c_str(), 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
-
-        ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 0, 0, 255));
-        ImGui::TextWrapped("%s\n", level_path.c_str());
-        ImGui::PopStyleColor();
-
-        ImGui::End();
-    }
+    drawInfoTextGui();
 
     ImTerminal(entity_manager, asset_manager, do_terminal);
 

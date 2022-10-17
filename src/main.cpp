@@ -51,6 +51,7 @@ ThreadPool *global_thread_pool;
 bool playing = false;
 bool has_played = false;
 SoLoud::Soloud soloud;
+float global_time_warp = 1.0;
 
 int main() {
     exepath = getexepath();
@@ -214,9 +215,8 @@ int main() {
     window_resized = true;
 
     do {
-        static float time_warp = 1.0;
         double current_time = glfwGetTime();
-        float true_dt = (current_time - last_time) * time_warp;
+        float true_dt = (current_time - last_time) * global_time_warp;
         last_time = current_time;
         static const float dt = 1.0/60.0;
 

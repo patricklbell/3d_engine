@@ -95,6 +95,9 @@ struct AnimatedMeshEntity : MeshEntity {
     // Transforms to apply to animation which we are blending to, this is useful 
     // if there is some transform coming when animation finishes, eg turning, stepping
     glm::mat4 transform_blend_to;
+    // These are the transforms that are actually applied after animation finishes blending
+    glm::vec3 position_blend_to;
+    glm::quat rotation_blend_to;
 
     AnimatedMeshEntity(Id _id = NULLID) : MeshEntity(_id) {
         type = EntityType::ANIMATED_MESH_ENTITY;
@@ -105,8 +108,8 @@ struct AnimatedMeshEntity : MeshEntity {
     bool play(const std::string& name, float start_time, float _time_scale, bool _loop);
     bool playBlended(const std::string& name1, float start_time1, float _time_scale1,
                      const std::string& name2, float start_time2, float _time_scale2,
-                     glm::mat4 delta_transform,
-                     float bias, bool _loop);
+                     glm::vec3 delta_pos, glm::quat delta_rot,
+                     float _bias, bool _loop);
     float getAnimationDuration(const std::string& name);
 };
 
@@ -168,7 +171,7 @@ struct PlayerAction {
 
 struct PlayerEntity : AnimatedMeshEntity {
     const int MAX_ACTION_BUFFER = 4;
-    const float MAX_ACTION_SPEEDUP = 2.0f;
+    const float MAX_ACTION_SPEEDUP = 1.4f;
     std::vector<PlayerAction> actions;
 
     PlayerEntity(Id _id = NULLID) : AnimatedMeshEntity(_id) {

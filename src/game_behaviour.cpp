@@ -49,6 +49,9 @@ void updatePlayerEntity(float dt, PlayerEntity *player) {
             a.beg_position = player->position;
             a.beg_rotation = player->rotation;
 
+            // Speed up actions if there are multiple queued
+            float speed_factor = 1.0f + ((float)player->actions.size() / (float)player->MAX_ACTION_BUFFER) * player->MAX_ACTION_SPEEDUP;
+
             // Play animations that accompany actions
             auto animation_name1 = getPlayerActionAnimationName(a.type);
             std::string animation_name2;
@@ -64,23 +67,16 @@ void updatePlayerEntity(float dt, PlayerEntity *player) {
             else
                 animation_speed2 = 1.0;
 
-            player->playBlended(animation_name1, 0.0, animation_speed1, 
-                                animation_name2, 0.0, animation_speed2, 
-                                createModelMatrix(a.delta_position, a.delta_rotation, glm::vec3(1.0)),
-                                0.8, false);
+            std::cout << "Animation speed 1: " << animation_speed1 << "\n";
+
+            player->playBlended(animation_name1, 0.0, animation_speed1*speed_factor, 
+                                animation_name2, 0.0, animation_speed2*speed_factor, 
+                                a.delta_position, a.delta_rotation,
+                                0.8, true);
         }
 
-        float t = glm::smoothstep(0.0f, a.duration, a.time);
-
-        // Speed up actions if there are multiple queued
-        float speed_factor = 1.0f + ((float)player->actions.size() / (float)player->MAX_ACTION_BUFFER) * player->MAX_ACTION_SPEEDUP;
-        a.time += dt*speed_factor;
-
-        if (t >= 1.0f) {
-            player->rotation *= a.delta_rotation;
-            player->position += player->rotation * a.delta_position;
-
-            player->play("Armature|IDLE", 0.0, 1.0, true);
+        a.time += dt;
+        if (a.time >= a.duration) {
             player->actions.erase(player->actions.begin());
         }
     }
