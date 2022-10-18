@@ -176,6 +176,7 @@ struct AnimatedMesh {
 
     std::unordered_map<std::string, Animation> name_animation_map;
 };
+float getAnimationDuration(const AnimatedMesh &animesh, const std::string& name);
 
 void tickBonesKeyframe(AnimatedMesh::BoneKeyframes& keyframes, float time, bool looping);
 

@@ -2,6 +2,7 @@
 #include "graphics.hpp"
 #include "utilities.hpp"
 #include <iostream>
+#include <glm/gtc/matrix_transform.hpp>
 
 glm::vec3 camera_move_target, camera_move_origin;
 float camera_move_time, camera_move_duration;
@@ -42,41 +43,40 @@ static std::string getPlayerActionAnimationName(PlayerActionType& type) {
 }
 
 void updatePlayerEntity(float dt, PlayerEntity *player) {
+    // Speed up animations if there are multiple queued
+    player->time_scale_mult = 1.0f + ((float)player->actions.size() / (float)player->MAX_ACTION_BUFFER) * player->MAX_ACTION_SPEEDUP;
+
+    // Set default animation to idle, @todo make init
+    if (player->default_event.animation == nullptr) {
+        auto event = player->play("Armature|IDLE", 0.0f, true);
+        event->blend = false;
+    }
+
     if (player->actions.size() > 0) {
         auto& a = player->actions[0];
+
         if (!a.active) {
             a.active = true;
-            a.beg_position = player->position;
-            a.beg_rotation = player->rotation;
-
-            // Speed up actions if there are multiple queued
-            float speed_factor = 1.0f + ((float)player->actions.size() / (float)player->MAX_ACTION_BUFFER) * player->MAX_ACTION_SPEEDUP;
 
             // Play animations that accompany actions
-            auto animation_name1 = getPlayerActionAnimationName(a.type);
-            std::string animation_name2;
-            if (player->actions.size() > 1)
-                animation_name2 = getPlayerActionAnimationName(player->actions[1].type);
-            else
-                animation_name2 = "Armature|IDLE";
+            if (player->animesh != nullptr) {
+                auto anim_name = getPlayerActionAnimationName(a.type);
+                
 
-            float animation_speed1 = player->getAnimationDuration(animation_name1) / a.duration;
-            float animation_speed2;
-            if (player->actions.size() > 1)
-                animation_speed2 = player->getAnimationDuration(animation_name2) / player->actions[1].duration;
-            else
-                animation_speed2 = 1.0;
+                auto event = player->play(anim_name, 0.0f);
+                event->delta_position = a.delta_position;
+                event->delta_rotation = a.delta_rotation;
+                event->delta_transform = glm::mat4_cast(a.delta_rotation) * glm::translate(glm::mat4(1.0), a.delta_position * glm::inverse(player->scale));
 
-            std::cout << "Animation speed 1: " << animation_speed1 << "\n";
-
-            player->playBlended(animation_name1, 0.0, animation_speed1*speed_factor, 
-                                animation_name2, 0.0, animation_speed2*speed_factor, 
-                                a.delta_position, a.delta_rotation,
-                                0.8, true);
+                event->transform_animation = true;
+                event->transform_entity = true;
+                event->blend = true;
+                event->time_scale = event->duration / a.duration;
+            }
         }
 
-        a.time += dt;
-        if (a.time >= a.duration) {
+        a.time += dt * player->time_scale_mult;
+        if (a.time >= a.duration - a.duration*0.1) {
             player->actions.erase(player->actions.begin());
         }
     }

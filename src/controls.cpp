@@ -627,7 +627,7 @@ void handleGameControls(EntityManager* &entity_manager, AssetManager& asset_mana
     // Handle player controls
     if (entity_manager->player != NULLID) {
         auto player = (PlayerEntity*)entity_manager->getEntity(entity_manager->player);
-        if (player != nullptr && glfwGetTime() - last_input_time > 3*dt) {
+        if (player != nullptr) {
             if (glfwGetKey(window, GLFW_KEY_LEFT)) {
                 last_input_time = glfwGetTime();
                 player->turn_left();

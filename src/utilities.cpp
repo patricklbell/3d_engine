@@ -19,7 +19,7 @@
 #include "graphics.hpp"
 
 float linearstep(float e1, float e2, float x) {
-    return (x - e1) / (e2 - e1);
+    return glm::clamp((x - e1) / (e2 - e1), 0.0f, 1.0f);
 }
 
 std::vector<std::string> split(std::string s, std::string delimiter) {

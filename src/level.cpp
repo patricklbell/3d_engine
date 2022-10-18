@@ -60,20 +60,20 @@ static void writeAnimatedMeshEntity(AnimatedMeshEntity* e, std::unordered_map<ui
     uint64_t lookup = asset_lookup[reinterpret_cast<uint64_t>(e->animesh)];
     fwrite(&lookup, sizeof(lookup), 1, f);
 
-    fwrite(&e->current_time, sizeof(e->current_time), 1, f);
-    fwrite(&e->time_scale, sizeof(e->time_scale), 1, f);
-    fwrite(&e->loop, sizeof(e->loop), 1, f);
-    fwrite(&e->playing, sizeof(e->playing), 1, f);
+    fwrite(&e->default_event.current_time, sizeof(e->default_event.current_time), 1, f);
+    fwrite(&e->default_event.time_scale, sizeof(e->default_event.time_scale), 1, f);
+    fwrite(&e->default_event.loop, sizeof(e->default_event.loop), 1, f);
+    fwrite(&e->default_event.playing, sizeof(e->default_event.playing), 1, f);
 
-    if(e->animation != nullptr) {
-        auto len = e->animation->name.size();
+    if (e->default_event.animation != nullptr) {
+        auto len = e->default_event.animation->name.size();
         if(len > 255 || len < 0) {
-            std::cerr << "Animation " << e->animation->name << " longer than 255 or corrupted, truncating\n";
+            std::cerr << "Animation " << e->default_event.animation->name << " longer than 255 or corrupted, truncating\n";
         }
 
         uint8_t nl = len;
         fwrite(&nl, sizeof(nl), 1, f);
-        fwrite(e->animation->name.data(), nl, 1, f);
+        fwrite(e->default_event.animation->name.data(), nl, 1, f);
     } else {
         uint8_t nl = 0;
         fwrite(&nl, sizeof(nl), 1, f);
@@ -89,10 +89,10 @@ static void readAnimatedMeshEntity(AnimatedMeshEntity* e, const std::unordered_m
         std::cerr << "Unknown animated mesh index " << lookup << " when reading animated mesh entity\n";
     }
 
-    fread(&e->current_time, sizeof(e->current_time), 1, f);
-    fread(&e->time_scale, sizeof(e->time_scale), 1, f);
-    fread(&e->loop, sizeof(e->loop), 1, f);
-    fread(&e->playing, sizeof(e->playing), 1, f);
+    fread(&e->default_event.current_time, sizeof(e->default_event.current_time), 1, f);
+    fread(&e->default_event.time_scale, sizeof(e->default_event.time_scale), 1, f);
+    fread(&e->default_event.loop, sizeof(e->default_event.loop), 1, f);
+    fread(&e->default_event.playing, sizeof(e->default_event.playing), 1, f);
 
     uint8_t animation_name_len;
     fread(&animation_name_len, sizeof(animation_name_len), 1, f);
@@ -104,7 +104,7 @@ static void readAnimatedMeshEntity(AnimatedMeshEntity* e, const std::unordered_m
         if(e->animesh != nullptr) {
             auto lu = e->animesh->name_animation_map.find(animation_name);
             if(lu != e->animesh->name_animation_map.end()) {
-                e->animation = &lu->second;
+                e->default_event.animation = &lu->second;
             } else {
                 std::cerr << "Unknown animation " << animation_name << " when reading animated mesh entity\n";
             }

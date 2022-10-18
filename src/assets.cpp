@@ -1326,6 +1326,17 @@ AnimatedMesh* AssetManager::createAnimatedMesh(const std::string& handle) {
     return animesh;
 }
 
+float getAnimationDuration(const AnimatedMesh& animesh, const std::string& name) {
+    auto lu = animesh.name_animation_map.find(name);
+    if (lu == animesh.name_animation_map.end()) {
+        std::cerr << "Failed to get animation duration " << name << " because it wasn't loaded\n"; // @debug
+        return 0.0;
+    }
+    else {
+        return lu->second.duration / lu->second.ticks_per_second;
+    }
+}
+
 //
 // --------------------------------- Textures ----------------------------------
 //

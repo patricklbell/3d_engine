@@ -1653,7 +1653,7 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
                     entity_type = lu->second;
                 }
 
-                ImGui::TextWrapped("Entity Index: %d Version: %d, %s", selection.ids[0].i, selection.ids[0].v, entity_type.c_str());
+                ImGui::TextWrapped("Entity Index: %d Version: %d, %s", (int)selection.ids[0].i, (int)selection.ids[0].v, entity_type.c_str());
             }
             else 
                 ImGui::TextWrapped("Multiple Entities Selected");
@@ -1853,16 +1853,16 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
                 auto a_e = (AnimatedMeshEntity*)fe;
 
                 if (ImGui::CollapsingHeader("Animations")) {
-                    if (a_e->animesh != NULL) {
-                        std::string animation_name = a_e->animation == NULL ? "None" : a_e->animation->name;
+                    if (a_e->animesh != nullptr) {
+                        std::string animation_name = a_e->default_event.animation == nullptr ? "None" : a_e->default_event.animation->name;
                         ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - 2.0f * pad);
                         if (ImGui::BeginCombo("##asset-combo", animation_name.c_str())) {
-                            for(auto &p : a_e->animesh->name_animation_map){
-                                bool is_selected = (&p.second == a_e->animation); 
+                            for (auto& p : a_e->animesh->name_animation_map) {
+                                bool is_selected = (&p.second == a_e->default_event.animation);
                                 if (ImGui::Selectable(p.first.c_str(), is_selected))
-                                    a_e->animation = &p.second;
+                                    a_e->default_event.animation = &p.second;
                                 if (is_selected)
-                                    ImGui::SetItemDefaultFocus(); 
+                                    ImGui::SetItemDefaultFocus();
                             }
                             ImGui::EndCombo();
                         }
@@ -1873,14 +1873,14 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
                     float time_scale = 1.0f;
                     bool loop = false;
                     bool playing = false;
-                    if (a_e->animation != NULL) {
+                    if (a_e->default_event.animation != nullptr) {
                         ImGui::Checkbox("Draw Animated: ", &a_e->draw_animated);
-                        if (ImGui::SliderFloat("Current Time: ", &a_e->current_time, 0.0f, a_e->animation->duration, "%.3f")) {
+                        if (ImGui::SliderFloat("Current Time: ", &a_e->default_event.current_time, 0.0f, a_e->default_event.animation->duration, "%.3f")) {
                             a_e->init();
                         }
-                        ImGui::SliderFloat("Time Scale: ", &a_e->time_scale, -10.0f, 10.0f, "%.3f");
-                        ImGui::Checkbox("Loop: ", &a_e->loop);
-                        ImGui::Checkbox("Playing: ", &a_e->playing);
+                        ImGui::SliderFloat("Time Scale: ", &a_e->default_event.time_scale, -10.0f, 10.0f, "%.3f");
+                        ImGui::Checkbox("Loop: ", &a_e->default_event.loop);
+                        ImGui::Checkbox("Playing: ", &a_e->default_event.playing);
                     }
                 }
             }

@@ -43,9 +43,9 @@ struct Entity {
 
 
 struct MeshEntity : Entity {
-    glm::vec3 position      = glm::vec3(0.0);
-    glm::quat rotation      = glm::quat(0.0,0.0,0.0,1.0);
-    glm::mat3 scale         = glm::mat3(1.0);
+    glm::vec3 position = glm::vec3(0.0);
+    glm::quat rotation = glm::quat(0.0, 0.0, 0.0, 1.0);
+    glm::mat3 scale = glm::mat3(1.0);
 
     // @editor
     glm::vec3 gizmo_position_offset = glm::vec3(0.0);
@@ -59,7 +59,7 @@ struct MeshEntity : Entity {
 
     uint8_t casts_shadow = true;
 
-    MeshEntity(Id _id=NULLID) : Entity(_id){
+    MeshEntity(Id _id = NULLID) : Entity(_id) {
         type = EntityType::MESH_ENTITY;
     }
 };
@@ -74,30 +74,45 @@ struct AnimatedMeshEntity : MeshEntity {
     // @editor Used by editor to toggle drawing animation, ignored when playing
     bool draw_animated = false; 
 
+    // Global multiplier for all animations, here for convenience
+    float time_scale_mult = 1.0;
+
     // 
     // Animation state machine
     //
-    bool loop = false;
-    bool playing = false;
-    float current_time = 0.0f;
-    float time_scale = 1.0f;
-    AnimatedMesh::Animation* animation = nullptr;
+    // If there are multiple events we need to keep the previous one buffered for
+    // blending, this flag determines wheter event 0 is playing
+    bool playing_first = true; 
+    struct AnimationEvent {
+        bool playing = true;
+        bool loop = false;
 
-    // 
-    // Animation blending
-    //
-    bool blending = false;
-    float current_bias = 0.0f;
-    float bias = 0.5f;
-    float current_time_blend_to = 0.0f;
-    float time_scale_blend_to = 0.0f;
-    AnimatedMesh::Animation* animation_blend_to = nullptr;
-    // Transforms to apply to animation which we are blending to, this is useful 
-    // if there is some transform coming when animation finishes, eg turning, stepping
-    glm::mat4 transform_blend_to;
-    // These are the transforms that are actually applied after animation finishes blending
-    glm::vec3 position_blend_to;
-    glm::quat rotation_blend_to;
+        float start_time = 0.0f;
+        float current_time = 0.0f;
+        float duration = 1.0f;
+        float time_scale = 1.0f;
+
+        AnimatedMesh::Animation* animation = nullptr;
+
+        // Blending with previous and next animation/default state
+        bool blend = false;
+        float blend_prev_end = 0.1;
+        float blend_prev_amount = 0.5;
+        float blend_next_start = 0.9;
+        float blend_next_amount = 0.5;
+
+        // Transforms to apply during animation
+        glm::vec3 delta_position = glm::vec3(0.0);
+        glm::quat delta_rotation = glm::quat();
+        glm::mat4 delta_transform = glm::mat4(1.0f); // This must be updated or transform won't properly be blended
+
+        bool transform_animation = false;
+        // Whether to apply these transforms to entity when animation finishes
+        bool transform_entity = false; 
+        bool transform_inverted = false; // Used for blending with previous
+    };
+    std::vector<AnimationEvent> animation_events;
+    AnimationEvent default_event;
 
     AnimatedMeshEntity(Id _id = NULLID) : MeshEntity(_id) {
         type = EntityType::ANIMATED_MESH_ENTITY;
@@ -105,12 +120,9 @@ struct AnimatedMeshEntity : MeshEntity {
 
     bool tick(float dt);
     void init();
-    bool play(const std::string& name, float start_time, float _time_scale, bool _loop);
-    bool playBlended(const std::string& name1, float start_time1, float _time_scale1,
-                     const std::string& name2, float start_time2, float _time_scale2,
-                     glm::vec3 delta_pos, glm::quat delta_rot,
-                     float _bias, bool _loop);
-    float getAnimationDuration(const std::string& name);
+    AnimationEvent *play(const std::string& name, float start_time = 0.0f, bool fallback = false, bool immediate = false, bool playing = true);
+    bool isAnimationFinished();
+    bool isDefaultAnimationFinished();
 };
 
 
@@ -151,22 +163,21 @@ struct VegetationEntity : MeshEntity {
 
 
 enum class PlayerActionType : uint64_t {
-    STEP_FORWARD = 0,
+    NONE = 0,
+    STEP_FORWARD,
     TURN_LEFT,
     TURN_RIGHT,
 };
 
 struct PlayerAction {
-    PlayerActionType type;
+    PlayerActionType type = PlayerActionType::NONE;
 
-    glm::vec3 beg_position;
-    glm::quat beg_rotation;
-    glm::vec3 delta_position;
-    glm::quat delta_rotation;
+    glm::fvec3 delta_position = glm::vec3(0.0);
+    glm::fquat delta_rotation = glm::quat();
 
     bool active = false;
-    float duration;
-    float time;
+    float duration = 0.0f;
+    float time = 0.0f;
 };
 
 struct PlayerEntity : AnimatedMeshEntity {
