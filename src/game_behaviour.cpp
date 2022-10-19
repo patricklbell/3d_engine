@@ -60,10 +60,9 @@ void updatePlayerEntity(float dt, PlayerEntity *player) {
 
             // Play animations that accompany actions
             if (player->animesh != nullptr) {
-                auto anim_name = getPlayerActionAnimationName(a.type);
-                
+                std::cout << "Playing animation " << getPlayerActionAnimationName(a.type) << "\n";
+                auto event = player->play(getPlayerActionAnimationName(a.type));
 
-                auto event = player->play(anim_name, 0.0f);
                 event->delta_position = a.delta_position;
                 event->delta_rotation = a.delta_rotation;
                 event->delta_transform = glm::mat4_cast(a.delta_rotation) * glm::translate(glm::mat4(1.0), a.delta_position * glm::inverse(player->scale));
@@ -76,7 +75,31 @@ void updatePlayerEntity(float dt, PlayerEntity *player) {
         }
 
         a.time += dt * player->time_scale_mult;
-        if (a.time >= a.duration - a.duration*0.1) {
+
+        // Blend with next actions
+        if (player->actions.size() > 1 && a.time >= a.duration * 0.8) {
+            auto& b = player->actions[1];
+            if (!b.active) {
+                b.active = true;
+
+                // Play animations that accompany actions
+                if (player->animesh != nullptr) {
+                    std::cout << "Playing animation " << getPlayerActionAnimationName(b.type) << "\n";
+                    auto event = player->play(getPlayerActionAnimationName(b.type));
+
+                    event->delta_position = b.delta_position;
+                    event->delta_rotation = b.delta_rotation;
+                    event->delta_transform = glm::mat4_cast(b.delta_rotation) * glm::translate(glm::mat4(1.0), b.delta_position * glm::inverse(player->scale));
+
+                    event->transform_animation = true;
+                    event->transform_entity = true;
+                    event->blend = true;
+                    event->time_scale = event->duration / b.duration;
+                }
+            }
+        }
+
+        if (a.time >= a.duration) {
             player->actions.erase(player->actions.begin());
         }
     }

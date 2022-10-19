@@ -625,22 +625,23 @@ void handleGameControls(EntityManager* &entity_manager, AssetManager& asset_mana
     //}
 
     // Handle player controls
+    const float repeat_time = 0.3/global_time_warp;
     if (entity_manager->player != NULLID) {
         auto player = (PlayerEntity*)entity_manager->getEntity(entity_manager->player);
         if (player != nullptr) {
-            if (glfwGetKey(window, GLFW_KEY_LEFT)) {
+            if (glfwGetKey(window, GLFW_KEY_LEFT) && (!left_key_prev || glfwGetTime() - last_input_time > repeat_time)) {
                 last_input_time = glfwGetTime();
                 player->turn_left();
             }
-            if (glfwGetKey(window, GLFW_KEY_RIGHT)) {
+            else if (glfwGetKey(window, GLFW_KEY_RIGHT) && (!right_key_prev || glfwGetTime() - last_input_time > repeat_time)) {
                 last_input_time = glfwGetTime();
                 player->turn_right();
             }
-            if (glfwGetKey(window, GLFW_KEY_UP)) {
+            else if (glfwGetKey(window, GLFW_KEY_UP) && (!up_key_prev || glfwGetTime() - last_input_time > repeat_time)) {
                 last_input_time = glfwGetTime();
                 player->step_forward();
             }
-            if (glfwGetKey(window, GLFW_KEY_DOWN)) {
+            else if (glfwGetKey(window, GLFW_KEY_DOWN) && (!down_key_prev || glfwGetTime() - last_input_time > repeat_time)) {
                 last_input_time = glfwGetTime();
                 player->turn_right();
                 player->turn_right();

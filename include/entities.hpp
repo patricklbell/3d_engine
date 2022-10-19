@@ -181,7 +181,7 @@ struct PlayerAction {
 };
 
 struct PlayerEntity : AnimatedMeshEntity {
-    const int MAX_ACTION_BUFFER = 4;
+    const int MAX_ACTION_BUFFER = 2;
     const float MAX_ACTION_SPEEDUP = 1.4f;
     std::vector<PlayerAction> actions;
 

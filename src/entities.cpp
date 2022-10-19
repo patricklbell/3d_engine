@@ -8,6 +8,7 @@
 #include "entities.hpp"
 #include "assets.hpp"
 #include "utilities.hpp"
+#include "editor.hpp"
 
 EntityManager level_entity_manager;
 EntityManager game_entity_manager;
@@ -15,7 +16,7 @@ EntityManager game_entity_manager;
 // Updates bones matrices of animesh in accordance with events, if event2 is 
 // provided then a linear blending from 1 -> 2 is applied in accordance, this
 // function assumes that all parameters are valid and complete
-void tickAnimatedMesh(AnimatedMesh* animesh, std::array<glm::mat4, MAX_BONES> &bone_matrices, AnimatedMeshEntity::AnimationEvent* event1, AnimatedMeshEntity::AnimationEvent* event2=nullptr, float bias=0.0f, bool apply_blend_transform = true) {
+void tickAnimatedMesh(AnimatedMesh* animesh, std::array<glm::mat4, MAX_BONES> &bone_matrices, AnimatedMeshEntity::AnimationEvent* event1, AnimatedMeshEntity::AnimationEvent* event2=nullptr, float bias=0.0f, bool blend_transform_forward = true) {
     bool blend = event2 != nullptr;
 
     for(int i = 0; i < animesh->bone_node_list.size(); ++i) {
@@ -75,8 +76,12 @@ void tickAnimatedMesh(AnimatedMesh* animesh, std::array<glm::mat4, MAX_BONES> &b
 
                 // If there is a transform that will be applied when the animation completes then we
                 // want to apply this to the animation we are blending with
-                if (apply_blend_transform && event1->transform_animation) {
-                    parent_transform_blended *= event1->delta_transform;
+                if (blend_transform_forward) {
+                    if(event1->transform_entity)
+                        parent_transform_blended *= event1->delta_transform;
+                } else {
+                    if (event2->transform_entity)
+                        parent_transform_blended *= event2->delta_transform;
                 }
             }
 
@@ -114,8 +119,6 @@ bool AnimatedMeshEntity::tick(float dt) {
     }
 
     bool blend = animation_events.size() > 0 && event->blend;
-    if (animation_events.size() == 1 && default_event.animation == nullptr)
-        blend = false;
 
     // 
     // Animation blending
@@ -127,18 +130,18 @@ bool AnimatedMeshEntity::tick(float dt) {
         // @todo multiple blending, might not be necessary
         float progress = event->current_time / event->duration;
         if (progress < event->blend_prev_end) {
+            blend_prev = true;
+
             if (playing_first) {
                 blend_event = &default_event;
             } else {
                 blend_event = &animation_events[0];
             }
 
-            bias = linearstep(0.0f, event->blend_prev_end, progress);
+            bias = linearstep(event->blend_prev_end, 0.0f, progress);
             // Kinda hacky way to fully blend with default state @fix
             if (blend_event != &default_event)
                 bias = linearstep(event->blend_prev_amount, 1.0, bias);
-
-            blend_prev = true;
         } else if (progress > event->blend_next_start) {
             if (!playing_first && animation_events.size() > 2) {
                 blend_event = &animation_events[2];
@@ -152,19 +155,10 @@ bool AnimatedMeshEntity::tick(float dt) {
             // Kinda hacky way to fully blend with default state @fix
             if (blend_event != &default_event)
                 bias *= event->blend_next_amount;
-
         } else {
             blend = false;
         }
     }
-
-    // @debug
-    auto tmpstr = blend_prev ? "previous animation " : "next animation ";
-    if (event->animation != nullptr)
-        std::cout << "Animation " << event->animation->name << " (" << event->current_time / event->duration << ") ";
-    if (blend && blend_event->animation != nullptr)
-        std::cout << " blending with " << tmpstr << blend_event->animation->name << " (" << blend_event->current_time / blend_event->duration << ") " << " with bias " << bias;
-    std::cout << "\n";
 
     // Actually tick animation matrices following correct blending
     if (bias <= 0.0f) {
@@ -177,48 +171,61 @@ bool AnimatedMeshEntity::tick(float dt) {
         if (blend_prev) {
             // @fix If the transform of the previous event has been applied to entity
             // we need to invert it for blending to reproduce its previous state
-            // This is only needed if the previous animation is reset
-            /*if (blend_event->transform_entity && !blend_event->transform_inverted) {
+            if (blend_event->transform_entity && !blend_event->transform_inverted) {
                 blend_event->delta_transform = glm::inverse(blend_event->delta_transform);
-                blend_event->transform_animation = true;
-            }*/
+            }
 
-            tickAnimatedMesh(animesh, final_bone_matrices, event, blend_event, 1.0 - bias, false);
+            tickAnimatedMesh(animesh, final_bone_matrices, event, blend_event, bias, false);
         } else {
             tickAnimatedMesh(animesh, final_bone_matrices, event, blend_event, bias);
         }
     }
 
     // 
-    // Update events times and state
+    // Update event times and state
     //
-    if (blend && bias > 0.0f && blend_event->animation != nullptr && blend_event->playing) {
-        blend_event->current_time += dt * blend_event->time_scale * time_scale_mult;
+    bool erase_first = false;
+    if (blend && bias > 0.0f) {
+        if(blend_event->playing)
+            blend_event->current_time += dt * blend_event->time_scale * time_scale_mult;
 
         if (blend_event->current_time >= blend_event->duration) {
             if (blend_event->loop) {
                 blend_event->current_time = glm::fmod(blend_event->current_time, blend_event->duration);
-            }
-            else {
+            } else {
                 blend_event->current_time = blend_event->duration;
                 blend_event->playing = false;
             }
         }
     }
-    if (event != nullptr && event->animation != nullptr && event->playing) {
-        event->current_time += dt * event->time_scale * time_scale_mult;
+    if (event != nullptr) {
+        if(event->playing)
+            event->current_time += dt * event->time_scale * time_scale_mult;
 
         if (event->current_time >= event->duration) {
             if (event->loop) {
                 event->current_time = glm::fmod(event->current_time, event->duration);
-            }
-            else {
+            } else {
                 event->current_time = event->duration;
                 event->playing = false;
 
+                // Apply transform when animation completes
+                if (event->transform_entity) {
+                    rotation *= event->delta_rotation;
+                    position += rotation * event->delta_position;
+                }
+
+                // @debug
+                auto tmpstr = blend_prev ? "previous animation " : "next animation ";
+                if (event->animation != nullptr)
+                    std::cout << "End of animation " << event->animation->name << " (" << event->current_time / event->duration << ") ";
+                if (blend && blend_event->animation != nullptr)
+                    std::cout << " blending with " << tmpstr << blend_event->animation->name << " (" << blend_event->current_time / blend_event->duration << ") " << " with bias " << bias;
+                std::cout << "\n";
+
                 if (!is_default) {
                     if (!playing_first) {
-                        animation_events.erase(animation_events.begin());
+                        erase_first = true;
                     }
                     playing_first = false;
                 }
@@ -230,14 +237,24 @@ bool AnimatedMeshEntity::tick(float dt) {
                 //    if(blend_event->current_time > blend_event->start_time)
                 //        blend_event->playing = true;
                 //}
-
-                // Apply transform when animation completes
-                if (event->transform_entity) {
-                    rotation *= event->delta_rotation;
-                    position += rotation * event->delta_position;
-                }
             }
         }
+    }
+
+    // @note IMPORTANT pointers are invalidated after this so no more actions can be taken
+    if (erase_first) {
+        std::cout << "Erasing first event, before: ";
+        for (const auto& a : animation_events) {
+            if (a.animation != nullptr) std::cout << a.animation->name << ", ";
+        }
+        std::cout << "\n";
+        animation_events.erase(animation_events.begin());
+
+        std::cout << "After: ";
+        for (const auto& a : animation_events) {
+            if (a.animation != nullptr) std::cout << a.animation->name << ", ";
+        }
+        std::cout << "\n";
     }
 
     return event->playing;
@@ -255,22 +272,21 @@ AnimatedMeshEntity::AnimationEvent *AnimatedMeshEntity::play(const std::string& 
     }
     
     if (immediate) {
-        if (fallback)
-            playing_first = false;
+        playing_first = false;
 
         if(animation_events.size() > 0)
             animation_events.resize(1);
-    }
-
-    // If we are playing the fallback but there is a previous animation buffered, clear it
-    if (!playing_first && animation_events.size() == 1) {
-        animation_events.clear();
     }
 
     AnimatedMeshEntity::AnimationEvent* event;
     if (fallback) {
         event = &default_event;
     } else {
+        // If we are playing the fallback but there is a previous animation buffered, clear it
+        if (!playing_first && animation_events.size() == 1) {
+            animation_events.clear();
+        }
+
         if (animation_events.size() == 0) {
             playing_first = true;
         }
@@ -287,8 +303,7 @@ AnimatedMeshEntity::AnimationEvent *AnimatedMeshEntity::play(const std::string& 
 }
 
 bool PlayerEntity::turn_left() {
-    if (actions.size() > MAX_ACTION_BUFFER ||
-        (actions.size() > 0 && actions[actions.size()-1].type == PlayerActionType::TURN_LEFT))
+    if (actions.size() > MAX_ACTION_BUFFER)
         return false;
 
     static const glm::quat rotate_left(glm::vec3(0.0, PI / 2.0, 0.0));
@@ -301,12 +316,12 @@ bool PlayerEntity::turn_left() {
     a.delta_position = glm::vec3(0.0);
     a.delta_rotation = rotate_left;
 
+    pushInfoMessage("Added TURN_LEFT action");
     return true;
 }
 
 bool PlayerEntity::turn_right() {
-    if (actions.size() > MAX_ACTION_BUFFER ||
-        (actions.size() > 0 && actions[actions.size()-1].type == PlayerActionType::TURN_RIGHT))
+    if (actions.size() > MAX_ACTION_BUFFER)
         return false;
 
     static const glm::quat rotate_right(glm::vec3(0.0, -PI / 2.0, 0.0));
@@ -319,12 +334,12 @@ bool PlayerEntity::turn_right() {
     a.delta_position = glm::vec3(0.0);
     a.delta_rotation = rotate_right;
 
+    pushInfoMessage("Added TURN_RIGHT action");
     return true;
 }
 
 bool PlayerEntity::step_forward() {
-    if (actions.size() > MAX_ACTION_BUFFER ||
-        (actions.size() > 0 && actions[actions.size()-1].type == PlayerActionType::STEP_FORWARD))
+    if (actions.size() > MAX_ACTION_BUFFER)
         return false;
 
     auto &a = actions.emplace_back();
@@ -335,5 +350,6 @@ bool PlayerEntity::step_forward() {
     a.delta_position = glm::vec3(0.0, 0.0, 1.0);
     a.delta_rotation = glm::quat();
 
+    pushInfoMessage("Added STEP_FORWARD action");
     return true;
 }
