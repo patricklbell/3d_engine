@@ -2,6 +2,7 @@
 #define ENTITIES_HPP
 #include <cstddef>
 #include <stack>
+#include <iostream>
 
 #include <glm/gtc/quaternion.hpp>
 
@@ -83,6 +84,12 @@ struct AnimatedMeshEntity : MeshEntity {
     // If there are multiple events we need to keep the previous one buffered for
     // blending, this flag determines wheter event 0 is playing
     bool playing_first = true; 
+    //@debug
+    enum class BlendState {
+        NONE = 0,
+        PREVIOUS,
+        NEXT,
+    } blend_state = BlendState::NONE;
     struct AnimationEvent {
         bool playing = true;
         bool loop = false;
@@ -96,6 +103,7 @@ struct AnimatedMeshEntity : MeshEntity {
 
         // Blending with previous and next animation/default state
         bool blend = false;
+        float blend_prev_start = 0.0;
         float blend_prev_end = 0.1;
         float blend_prev_amount = 0.5;
         float blend_next_start = 0.9;
@@ -106,7 +114,6 @@ struct AnimatedMeshEntity : MeshEntity {
         glm::quat delta_rotation = glm::quat();
         glm::mat4 delta_transform = glm::mat4(1.0f); // This must be updated or transform won't properly be blended
 
-        bool transform_animation = false;
         // Whether to apply these transforms to entity when animation finishes
         bool transform_entity = false; 
         bool transform_inverted = false; // Used for blending with previous
@@ -180,12 +187,12 @@ struct PlayerAction {
     float time = 0.0f;
 };
 
+const int MAX_ACTION_BUFFER = 3;
+const float MAX_ACTION_SPEEDUP = 1.4f;
 struct PlayerEntity : AnimatedMeshEntity {
-    const int MAX_ACTION_BUFFER = 2;
-    const float MAX_ACTION_SPEEDUP = 1.4f;
     std::vector<PlayerAction> actions;
 
-    PlayerEntity(Id _id = NULLID) : AnimatedMeshEntity(_id) {
+    PlayerEntity(Id _id = NULLID) : AnimatedMeshEntity( _id) {
         type = EntityType::PLAYER_ENTITY;
     }
 
@@ -232,13 +239,36 @@ inline constexpr size_t entitySize(EntityType type){
             return sizeof(Entity);
     }
 }
+
 inline constexpr bool entityInherits(EntityType derived, EntityType base) {
     return (derived & base) == base; 
 }
 
 inline Entity* copyEntity(Entity* src) {
     auto cpy = allocateEntity(src->id, src->type);
-    memcpy(cpy, src, entitySize(src->type));
+    switch (src->type) {
+        case ANIMATED_MESH_ENTITY:
+            *((AnimatedMeshEntity*)cpy) = *((AnimatedMeshEntity*)src);
+            break;
+        case VEGETATION_ENTITY:
+            *((VegetationEntity*)cpy) = *((VegetationEntity*)src);
+            break;
+        case COLLIDER_ENTITY:
+            *((ColliderEntity*)cpy) = *((ColliderEntity*)src);
+            break;
+        case MESH_ENTITY:
+            *((MeshEntity*)cpy) = *((MeshEntity*)src);
+            break;
+        case WATER_ENTITY:
+            *((WaterEntity*)cpy) = *((WaterEntity*)src);
+            break;
+        case PLAYER_ENTITY:
+            *((PlayerEntity*)cpy) = *((PlayerEntity*)src);
+            break;
+        default:
+            std::cerr << "Unknown entity type in copyEntity, throwing!\n";
+            assert(false);
+    }
     return cpy;
 }
 

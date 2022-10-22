@@ -146,7 +146,7 @@ ColliderEntity* pickColliderWithMouse(Camera& camera, EntityManager& entity_mana
 }
 
 void handleEditorControls(EntityManager* &entity_manager, AssetManager &asset_manager, float dt) {
-    // Stores the previous state of input, updated at end of function
+    // Stores the previous state of input, updated at end of function @todo control/keymap system
     static bool c_key_prev               = false;
     static bool p_key_prev               = false;
     static bool d_key_prev               = false;
@@ -177,20 +177,6 @@ void handleEditorControls(EntityManager* &entity_manager, AssetManager &asset_ma
 
     if(glfwGetKey(window, GLFW_KEY_GRAVE_ACCENT) && !backtick_key_prev) 
         editor::do_terminal = !editor::do_terminal;
-    
-    if (!io.WantCaptureKeyboard && glfwGetKey(window, GLFW_KEY_C) && !c_key_prev
-        && !glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) && !glfwGetKey(window, GLFW_KEY_LEFT_SHIFT))
-        editor::use_level_camera = !editor::use_level_camera;
-    
-    if (!io.WantCaptureKeyboard && glfwGetKey(window, GLFW_KEY_B) && !b_key_prev) {
-        if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT)) {
-            editor::draw_colliders = !editor::draw_colliders;
-        }
-        else {
-            editor::editor_mode = (EditorMode)(((int)editor::editor_mode + 1) % (int)EditorMode::NUM);
-            editor::selection.clear();
-        }
-    }
 
     // @todo
     Camera* camera_ptr = &editor_camera;
@@ -207,6 +193,19 @@ void handleEditorControls(EntityManager* &entity_manager, AssetManager &asset_ma
                 }
             }
             editor::selection.clear();
+        }
+        if (glfwGetKey(window, GLFW_KEY_C) && !c_key_prev
+            && !glfwGetKey(window, GLFW_KEY_LEFT_CONTROL) && !glfwGetKey(window, GLFW_KEY_LEFT_SHIFT))
+            editor::use_level_camera = !editor::use_level_camera;
+
+        if (glfwGetKey(window, GLFW_KEY_B) && !b_key_prev) {
+            if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT)) {
+                editor::draw_colliders = !editor::draw_colliders;
+            }
+            else {
+                editor::editor_mode = (EditorMode)(((int)editor::editor_mode + 1) % (int)EditorMode::NUM);
+                editor::selection.clear();
+            }
         }
         if (editor::selection.ids.size() && !(editor::selection.type & WATER_ENTITY)
             && glfwGetKey(window, GLFW_KEY_C) && !c_key_prev && glfwGetKey(window, GLFW_KEY_LEFT_CONTROL)) {
@@ -553,6 +552,8 @@ void handleGameControls(EntityManager* &entity_manager, AssetManager& asset_mana
     static bool down_key_prev       = false;
     static bool right_key_prev      = false;
     static bool t_key_prev          = false;
+    static bool space_key_prev      = false;
+    static bool a_key_prev          = false;
 
     static float last_input_time = 0.0f;
 
@@ -563,25 +564,57 @@ void handleGameControls(EntityManager* &entity_manager, AssetManager& asset_mana
     glfwGetCursorPos(window, &mouse_position.x, &mouse_position.y);
     delta_mouse_position = mouse_position - delta_mouse_position;
 
-    if (glfwGetKey(window, GLFW_KEY_P) && !p_key_prev) {
-        pauseGame(entity_manager);
-        pushInfoMessage("Switched to editor");
-    }
-    if (glfwGetKey(window, GLFW_KEY_R) && !r_key_prev) {
-        resetGameEntities();
-        pushInfoMessage("Resetting");
-    }
-    if (glfwGetKey(window, GLFW_KEY_GRAVE_ACCENT) && !backtick_key_prev)
-        editor::do_terminal = !editor::do_terminal;
+    if (!io.WantCaptureKeyboard) {
+        if (glfwGetKey(window, GLFW_KEY_P) && !p_key_prev) {
+            pauseGame(entity_manager);
+            pushInfoMessage("Switched to editor");
+        }
+        if (glfwGetKey(window, GLFW_KEY_R) && !r_key_prev) {
+            resetGameEntities();
+            pushInfoMessage("Resetting");
+        }
+        if (glfwGetKey(window, GLFW_KEY_GRAVE_ACCENT) && !backtick_key_prev)
+            editor::do_terminal = !editor::do_terminal;
+        if (glfwGetKey(window, GLFW_KEY_A) && !a_key_prev && glfwGetKey(window, GLFW_KEY_LEFT_SHIFT))
+            editor::debug_animations = !editor::debug_animations;
 
-    if (glfwGetKey(window, GLFW_KEY_T) && !glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) && !t_key_prev) {
-        global_time_warp *= 0.9;
-        pushInfoMessage("Time warp " + std::to_string(global_time_warp), InfoMessage::Urgency::NORMAL, 0.25);
-    } else if (glfwGetKey(window, GLFW_KEY_T) && glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) && !t_key_prev) {
-        global_time_warp *= 1.1;
-        pushInfoMessage("Time warp " + std::to_string(global_time_warp), InfoMessage::Urgency::NORMAL, 0.25);
-    }
+        if (glfwGetKey(window, GLFW_KEY_T) && !glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) && !t_key_prev) {
+            global_time_warp *= 0.8;
+            pushInfoMessage("Time warp " + std::to_string(global_time_warp), InfoMessage::Urgency::NORMAL, 0.25);
+        }
+        else if (glfwGetKey(window, GLFW_KEY_T) && glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) && !t_key_prev) {
+            global_time_warp *= 1.2;
+            pushInfoMessage("Time warp " + std::to_string(global_time_warp), InfoMessage::Urgency::NORMAL, 0.25);
+        }
 
+        if (glfwGetKey(window, GLFW_KEY_SPACE) && !space_key_prev)
+            global_paused = !global_paused;
+
+        // Handle player controls
+        const float repeat_time = 0.3 / global_time_warp;
+        if (entity_manager->player != NULLID) {
+            auto player = (PlayerEntity*)entity_manager->getEntity(entity_manager->player);
+            if (player != nullptr) {
+                if (glfwGetKey(window, GLFW_KEY_LEFT) && (!left_key_prev || glfwGetTime() - last_input_time > repeat_time)) {
+                    last_input_time = glfwGetTime();
+                    player->turn_left();
+                }
+                else if (glfwGetKey(window, GLFW_KEY_RIGHT) && (!right_key_prev || glfwGetTime() - last_input_time > repeat_time)) {
+                    last_input_time = glfwGetTime();
+                    player->turn_right();
+                }
+                else if (glfwGetKey(window, GLFW_KEY_UP) && (!up_key_prev || glfwGetTime() - last_input_time > repeat_time)) {
+                    last_input_time = glfwGetTime();
+                    player->step_forward();
+                }
+                else if (glfwGetKey(window, GLFW_KEY_DOWN) && (!down_key_prev || glfwGetTime() - last_input_time > repeat_time)) {
+                    last_input_time = glfwGetTime();
+                    player->turn_right();
+                    player->turn_right();
+                }
+            }
+        }
+    }
     // 
     // Selection and Actions
     //
@@ -624,31 +657,8 @@ void handleGameControls(EntityManager* &entity_manager, AssetManager& asset_mana
     //    drawMeshWireframe(*s->mesh, g_model_rot_scl, g_model_pos, game_camera, true);
     //}
 
-    // Handle player controls
-    const float repeat_time = 0.3/global_time_warp;
-    if (entity_manager->player != NULLID) {
-        auto player = (PlayerEntity*)entity_manager->getEntity(entity_manager->player);
-        if (player != nullptr) {
-            if (glfwGetKey(window, GLFW_KEY_LEFT) && (!left_key_prev || glfwGetTime() - last_input_time > repeat_time)) {
-                last_input_time = glfwGetTime();
-                player->turn_left();
-            }
-            else if (glfwGetKey(window, GLFW_KEY_RIGHT) && (!right_key_prev || glfwGetTime() - last_input_time > repeat_time)) {
-                last_input_time = glfwGetTime();
-                player->turn_right();
-            }
-            else if (glfwGetKey(window, GLFW_KEY_UP) && (!up_key_prev || glfwGetTime() - last_input_time > repeat_time)) {
-                last_input_time = glfwGetTime();
-                player->step_forward();
-            }
-            else if (glfwGetKey(window, GLFW_KEY_DOWN) && (!down_key_prev || glfwGetTime() - last_input_time > repeat_time)) {
-                last_input_time = glfwGetTime();
-                player->turn_right();
-                player->turn_right();
-            }
-        }
-    }
-
+    a_key_prev          = glfwGetKey(window, GLFW_KEY_A);
+    space_key_prev      = glfwGetKey(window, GLFW_KEY_SPACE);
     t_key_prev          = glfwGetKey(window, GLFW_KEY_T);
     backtick_key_prev   = glfwGetKey(window, GLFW_KEY_GRAVE_ACCENT);
     p_key_prev          = glfwGetKey(window, GLFW_KEY_P);

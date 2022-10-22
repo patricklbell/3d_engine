@@ -48,7 +48,7 @@ AssetManager global_assets;
 std::string GL_version, GL_vendor, GL_renderer;
 std::string level_path = "";
 ThreadPool *global_thread_pool;
-bool playing = false;
+bool playing = false, global_paused = false;
 bool has_played = false;
 SoLoud::Soloud soloud;
 float global_time_warp = 1.0;
@@ -183,12 +183,14 @@ int main() {
      loadLevel(*entity_manager, asset_manager, level_path, level_camera);
      editor_camera = level_camera;
 
-    //auto player = (PlayerEntity*)entity_manager->createEntity(PLAYER_ENTITY);
-    //entity_manager->player = player->id;
-    //player->mesh = asset_manager.createMesh("data/mesh/character.mesh");
-    //player->animesh = asset_manager.createAnimatedMesh("data/anim/character.anim");
-    //asset_manager.loadMeshFile(player->mesh, player->mesh->handle);
-    //asset_manager.loadAnimationFile(player->animesh, player->animesh->handle);
+    /*{
+        auto player = (PlayerEntity*)entity_manager->createEntity(PLAYER_ENTITY);
+        entity_manager->player = player->id;
+        player->mesh = asset_manager.createMesh("data/mesh/character.mesh");
+        player->animesh = asset_manager.createAnimatedMesh("data/anim/character.anim");
+        asset_manager.loadMeshFile(player->mesh, player->mesh->handle);
+        asset_manager.loadAnimationFile(player->animesh, player->animesh->handle);
+    }*/
 
     std::array<std::string, 6> skybox_paths = { "data/textures/simple_skybox/0006.png", "data/textures/simple_skybox/0002.png",
                                                 "data/textures/simple_skybox/0005.png", "data/textures/simple_skybox/0004.png",
@@ -218,7 +220,11 @@ int main() {
         double current_time = glfwGetTime();
         float true_dt = (current_time - last_time) * global_time_warp;
         last_time = current_time;
-        static const float dt = 1.0/60.0;
+        float dt = 1.0/60.0;
+        if (global_paused) {
+            true_dt = 0.0f;
+            dt = 0.0f;
+        }
 
         // @todo
         Camera* camera_ptr = &editor_camera;

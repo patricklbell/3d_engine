@@ -737,9 +737,12 @@ AnimatedMesh::~AnimatedMesh() {
 
         for (uint64_t i = 0; i < animation.num_bone_keyframes; ++i) {
             auto& keyframe = animation.bone_keyframes[i];
-            free(keyframe.position_keys);
-            free(keyframe.rotation_keys);
-            free(keyframe.scale_keys);
+            free(keyframe.positions);
+            free(keyframe.position_keys.times);
+            free(keyframe.rotations);
+            free(keyframe.rotation_keys.times);
+            free(keyframe.scales);
+            free(keyframe.scale_keys.times);
         }
         free(animation.bone_keyframes);
     }
@@ -820,38 +823,31 @@ static void convertAiNodeToBoneNodeTree(std::vector<AnimatedMesh::BoneNode> &nod
     }
 }
 
-static void createBoneKeyframesFromAi(AnimatedMesh::BoneKeyframes &keyframes, uint64_t id, const aiNodeAnim * channel) {
-    keyframes.id = id;
-    keyframes.local_transformation = glm::mat4(1.0f);
+static void createBoneKeyframesFromAi(AnimatedMesh::BoneKeyframes &keyframe, uint64_t id, const aiNodeAnim * channel) {
+    keyframe.id = id;
 
-    keyframes.num_position_keys = channel->mNumPositionKeys;
-    keyframes.prev_position_key = 0;
-    keyframes.position_keys = reinterpret_cast<decltype(keyframes.position_keys)>(malloc(sizeof(*keyframes.position_keys) * keyframes.num_position_keys));
-    for (uint64_t pi = 0; pi < keyframes.num_position_keys; ++pi) {
-        auto& data = keyframes.position_keys[pi];
-
-        data.position = aiVec3ToGlm(channel->mPositionKeys[pi].mValue);
-        data.time     = channel->mPositionKeys[pi].mTime;
+    keyframe.position_keys.num_keys = channel->mNumPositionKeys;
+    keyframe.position_keys.times = reinterpret_cast<decltype(keyframe.position_keys.times)>(malloc(sizeof(*keyframe.position_keys.times) * keyframe.position_keys.num_keys));
+    keyframe.positions = reinterpret_cast<decltype(keyframe.positions)>(malloc(sizeof(*keyframe.positions) * keyframe.position_keys.num_keys));
+    for (uint64_t i = 0; i < keyframe.position_keys.num_keys; ++i) {
+        keyframe.positions[i]           = aiVec3ToGlm(channel->mPositionKeys[i].mValue);
+        keyframe.position_keys.times[i] = channel->mPositionKeys[i].mTime;
     }
 
-    keyframes.num_rotation_keys = channel->mNumRotationKeys;
-    keyframes.prev_rotation_key = 0;
-    keyframes.rotation_keys = reinterpret_cast<decltype(keyframes.rotation_keys)>(malloc(sizeof(*keyframes.rotation_keys) * keyframes.num_rotation_keys));
-    for (uint64_t ri = 0; ri < keyframes.num_rotation_keys; ++ri) {
-        auto& data = keyframes.rotation_keys[ri];
-
-        data.rotation = aiQuatToGlm(channel->mRotationKeys[ri].mValue);
-        data.time = channel->mRotationKeys[ri].mTime;
+    keyframe.rotation_keys.num_keys = channel->mNumRotationKeys;
+    keyframe.rotation_keys.times = reinterpret_cast<decltype(keyframe.rotation_keys.times)>(malloc(sizeof(*keyframe.rotation_keys.times) * keyframe.rotation_keys.num_keys));
+    keyframe.rotations = reinterpret_cast<decltype(keyframe.rotations)>(malloc(sizeof(*keyframe.rotations) * keyframe.rotation_keys.num_keys));
+    for (uint64_t i = 0; i < keyframe.rotation_keys.num_keys; ++i) {
+        keyframe.rotations[i] = aiQuatToGlm(channel->mRotationKeys[i].mValue);
+        keyframe.rotation_keys.times[i] = channel->mRotationKeys[i].mTime;
     }
 
-    keyframes.num_scale_keys = channel->mNumScalingKeys;
-    keyframes.prev_scale_key = 0;
-    keyframes.scale_keys = reinterpret_cast<decltype(keyframes.scale_keys)>(malloc(sizeof(*keyframes.scale_keys) * keyframes.num_scale_keys));
-    for (uint64_t pi = 0; pi < keyframes.num_scale_keys; ++pi) {
-        auto& data = keyframes.scale_keys[pi];
-
-        data.scale = aiVec3ToGlm(channel->mScalingKeys[pi].mValue);
-        data.time = channel->mScalingKeys[pi].mTime;
+    keyframe.scale_keys.num_keys = channel->mNumScalingKeys;
+    keyframe.scale_keys.times = reinterpret_cast<decltype(keyframe.scale_keys.times)>(malloc(sizeof(*keyframe.scale_keys.times) * keyframe.scale_keys.num_keys));
+    keyframe.scales = reinterpret_cast<decltype(keyframe.scales)>(malloc(sizeof(*keyframe.scales) * keyframe.scale_keys.num_keys));
+    for (uint64_t i = 0; i < keyframe.scale_keys.num_keys; ++i) {
+        keyframe.scales[i] = aiVec3ToGlm(channel->mScalingKeys[i].mValue);
+        keyframe.scale_keys.times[i] = channel->mScalingKeys[i].mTime;
     }
 }
 
@@ -1020,12 +1016,18 @@ bool AssetManager::writeAnimationFile(const AnimatedMesh* animesh, const std::st
             auto& keyframe = animation.bone_keyframes[j];
 
             fwrite(&keyframe.id, sizeof(keyframe.id), 1, f);
-            fwrite(&keyframe.num_position_keys, sizeof(keyframe.num_position_keys), 1, f);
-            fwrite(&keyframe.num_rotation_keys, sizeof(keyframe.num_rotation_keys), 1, f);
-            fwrite(&keyframe.num_scale_keys   , sizeof(keyframe.num_scale_keys   ), 1, f);
-            fwrite(keyframe.position_keys, sizeof(keyframe.position_keys[0]), keyframe.num_position_keys, f);
-            fwrite(keyframe.rotation_keys, sizeof(keyframe.rotation_keys[0]), keyframe.num_rotation_keys, f);
-            fwrite(keyframe.scale_keys   , sizeof(keyframe.scale_keys   [0]), keyframe.num_scale_keys   , f);
+
+            auto write_keys = [&f](AnimatedMesh::BoneKeyframes::Keys& keys) {
+                fwrite(&keys.num_keys, sizeof(keys.num_keys), 1, f);
+                fwrite(keys.times, sizeof(*keys.times), keys.num_keys, f);
+            };
+
+            write_keys(keyframe.position_keys);
+            fwrite(keyframe.positions, sizeof(*keyframe.positions), keyframe.position_keys.num_keys, f);
+            write_keys(keyframe.rotation_keys);
+            fwrite(keyframe.rotations, sizeof(*keyframe.rotations), keyframe.rotation_keys.num_keys, f);
+            write_keys(keyframe.scale_keys);
+            fwrite(keyframe.scales, sizeof(*keyframe.scales), keyframe.scale_keys.num_keys, f);
         }
 
         uint64_t num_bone_id_indices = animation.bone_id_keyframe_index_map.size();
@@ -1102,21 +1104,27 @@ bool AssetManager::loadAnimationFile(AnimatedMesh* animesh, const std::string& p
             auto& keyframe = animation.bone_keyframes[j];
 
             fread(&keyframe.id, sizeof(keyframe.id), 1, f);
-            fread(&keyframe.num_position_keys, sizeof(keyframe.num_position_keys), 1, f);
-            fread(&keyframe.num_rotation_keys, sizeof(keyframe.num_rotation_keys), 1, f);
-            fread(&keyframe.num_scale_keys, sizeof(keyframe.num_scale_keys), 1, f);
 
-            keyframe.position_keys = reinterpret_cast<decltype(keyframe.position_keys)>(malloc(sizeof(*keyframe.position_keys) * keyframe.num_position_keys));
-            keyframe.rotation_keys = reinterpret_cast<decltype(keyframe.rotation_keys)>(malloc(sizeof(*keyframe.rotation_keys) * keyframe.num_rotation_keys));
-            keyframe.scale_keys    = reinterpret_cast<decltype(keyframe.scale_keys   )>(malloc(sizeof(*keyframe.scale_keys   ) * keyframe.num_scale_keys   ));
-            fread(keyframe.position_keys, sizeof(keyframe.position_keys[0]), keyframe.num_position_keys, f);
-            fread(keyframe.rotation_keys, sizeof(keyframe.rotation_keys[0]), keyframe.num_rotation_keys, f);
-            fread(keyframe.scale_keys, sizeof(keyframe.scale_keys[0]), keyframe.num_scale_keys, f);
+            auto read_keys = [&f](AnimatedMesh::BoneKeyframes::Keys& keys) {
+                fread(&keys.num_keys, sizeof(keys.num_keys), 1, f);
 
-            keyframe.local_transformation = glm::mat4(1.0f);
-            keyframe.prev_position_key = 0;
-            keyframe.prev_rotation_key = 0;
-            keyframe.prev_scale_key    = 0;
+                keys.times = reinterpret_cast<decltype(keys.times)>(malloc(sizeof(*keys.times) * keys.num_keys));
+                fread(keys.times, sizeof(*keys.times), keys.num_keys, f);
+
+                keys.prev_key_i = 0;
+            };
+
+            read_keys(keyframe.position_keys);
+            keyframe.positions = reinterpret_cast<decltype(keyframe.positions)>(malloc(sizeof(*keyframe.positions) * keyframe.position_keys.num_keys));
+            fread(keyframe.positions, sizeof(*keyframe.positions), keyframe.position_keys.num_keys, f);
+
+            read_keys(keyframe.rotation_keys);
+            keyframe.rotations = reinterpret_cast<decltype(keyframe.rotations)>(malloc(sizeof(*keyframe.rotations) * keyframe.rotation_keys.num_keys));
+            fread(keyframe.rotations, sizeof(*keyframe.rotations), keyframe.rotation_keys.num_keys, f);
+
+            read_keys(keyframe.scale_keys);
+            keyframe.scales = reinterpret_cast<decltype(keyframe.scales)>(malloc(sizeof(*keyframe.scales) * keyframe.scale_keys.num_keys));
+            fread(keyframe.scales, sizeof(*keyframe.scales), keyframe.scale_keys.num_keys, f);
         }
 
         uint64_t num_bone_id_indices;
@@ -1138,184 +1146,134 @@ bool AssetManager::loadAnimationFile(AnimatedMesh* animesh, const std::string& p
     return true;
 }
 
-static glm::vec3 interpolateBonesKeyframesPosition(AnimatedMesh::BoneKeyframes& keyframes, float time, bool looping) {
-    // @debug
-    if (keyframes.num_position_keys == 0) {
-        std::cerr << "interpolateBonesKeyframesPosition keyframes.position_keys was empty\n";
-        return glm::vec3();
+// Returns the next key index and modifies time to ensure interpolation is correct
+static void interpolateKeys(AnimatedMesh::BoneKeyframes::Keys& keys, uint32_t& prev_key_i, uint32_t& next_key_i, float& time, bool looping) {
+    if (keys.num_keys == 1) {
+        prev_key_i = 0;
+        next_key_i = 0;
+        return;
     }
 
-    if (keyframes.num_position_keys == 1)
-        return keyframes.position_keys[0].position;
-    
     // This is optimized for any time, this may be better if we assume time is 
     // mostly increasing or pass dt (noting time can be set)
-    int next_key_i = keyframes.prev_position_key;
+    next_key_i = keys.prev_key_i;
     // We are going backwards/unchanged
-    if (keyframes.position_keys[keyframes.prev_position_key].time >= time) {
-        for (int i = keyframes.prev_position_key - 1; i >= 0; --i) {
-            if (keyframes.position_keys[i].time < time) {
+    if (keys.times[keys.prev_key_i] >= time) {
+        next_key_i = 0;
+        for (int i = keys.prev_key_i - 1; i >= 0; --i) {
+            if (keys.times[i] < time) {
                 next_key_i = i + 1;
                 break;
             }
         }
     }
     else {
-        for (int i = keyframes.prev_position_key + 1; i < keyframes.num_position_keys; ++i) {
-            if (keyframes.position_keys[i].time > time) {
+        next_key_i = keys.num_keys - 1;
+        for (int i = keys.prev_key_i + 1; i < keys.num_keys; ++i) {
+            if (keys.times[i] > time) {
                 next_key_i = i;
                 break;
             }
         }
     }
 
-    int prev_key_i;
     if (looping) {
-        if (next_key_i >= keyframes.num_position_keys) {
-            time -= keyframes.position_keys[keyframes.num_position_keys].time; // Makes sure interpolation is correct
+        if (next_key_i >= keys.num_keys) {
+            time -= keys.times[keys.num_keys]; // Makes sure interpolation is correct
             next_key_i = 0;
-            prev_key_i = keyframes.num_position_keys - 1;
+            prev_key_i = keys.num_keys - 1;
         }
         else if (next_key_i == 0) {
-            prev_key_i = keyframes.num_position_keys - 1;
+            prev_key_i = keys.num_keys - 1;
         }
         else {
             prev_key_i = next_key_i - 1;
         }
     }
     else {
-        next_key_i = glm::clamp(next_key_i, 0, keyframes.num_position_keys - 1);
-        prev_key_i = glm::clamp(next_key_i - 1, 0, keyframes.num_position_keys - 1);
+        next_key_i = glm::clamp(next_key_i, (uint32_t)0, keys.num_keys - (uint32_t)1);
+        prev_key_i = glm::clamp(next_key_i - (uint32_t)1, (uint32_t)0, keys.num_keys - (uint32_t)1);
     }
-    keyframes.prev_position_key = next_key_i;
+    keys.prev_key_i = next_key_i;
+}
 
-    auto next_key = keyframes.position_keys[next_key_i];
-    auto prev_key = keyframes.position_keys[prev_key_i];
-    float lerp_factor = linearstep(prev_key.time, next_key.time, time);
-    return glm::mix(prev_key.position, next_key.position, lerp_factor);
+static glm::vec3 interpolateBonesKeyframesPosition(AnimatedMesh::BoneKeyframes& keyframes, float time, bool looping) {
+    // @debug
+    if (keyframes.position_keys.num_keys == 0) {
+        std::cerr << "interpolateBonesKeyframesPosition keyframes.positions was empty, returning default\n";
+        return glm::vec3();
+    }
+
+    uint32_t next_key_i, prev_key_i;
+    interpolateKeys(keyframes.position_keys, prev_key_i, next_key_i, time, looping);
+    
+    auto& next_time = keyframes.position_keys.times[next_key_i];
+    auto& prev_time = keyframes.position_keys.times[prev_key_i];
+    auto& next_position = keyframes.positions[next_key_i];
+    auto& prev_position = keyframes.positions[prev_key_i];
+
+    if (next_time == prev_time) {
+        return next_position;
+    }
+
+    float lerp_factor = linearstep(prev_time, next_time, time);
+    return glm::mix(prev_position, next_position, lerp_factor);
 }
 
 static glm::quat interpolateBonesKeyframesRotation(AnimatedMesh::BoneKeyframes& keyframes, float time, bool looping) {
     // @debug
-    if (keyframes.num_rotation_keys == 0) {
-        std::cerr << "interpolateBonesKeyframesRotation keyframes.rotation_keys was empty\n";
+    if (keyframes.rotation_keys.num_keys == 0) {
+        std::cerr << "interpolateBonesKeyframesRotation keyframes.rotations was empty, returning default\n";
         return glm::quat();
     }
 
-    if (keyframes.num_rotation_keys == 1)
-        return keyframes.rotation_keys[0].rotation;
+    uint32_t next_key_i, prev_key_i;
+    interpolateKeys(keyframes.rotation_keys, prev_key_i, next_key_i, time, looping);
 
-    // This is optimized for any time, this may be better if we assume time is 
-    // mostly increasing or pass dt (noting time can be set)
-    int next_key_i = keyframes.prev_rotation_key;
-    // We are going backwards/unchanged
-    if (keyframes.rotation_keys[keyframes.prev_rotation_key].time >= time) {
-        for (int i = keyframes.prev_rotation_key - 1; i >= 0; --i) {
-            if (keyframes.rotation_keys[i].time < time) {
-                next_key_i = i + 1;
-                break;
-            }
-        }
-    }
-    else {
-        for (int i = keyframes.prev_rotation_key + 1; i < keyframes.num_rotation_keys; ++i) {
-            if (keyframes.rotation_keys[i].time > time) {
-                next_key_i = i;
-                break;
-            }
-        }
+    auto& next_time = keyframes.rotation_keys.times[next_key_i];
+    auto& prev_time = keyframes.rotation_keys.times[prev_key_i];
+    auto& next_rotation = keyframes.rotations[next_key_i];
+    auto& prev_rotation = keyframes.rotations[prev_key_i];
+
+    if (next_time == prev_time) {
+        return next_rotation;
     }
 
-    int prev_key_i;
-    if (looping) {
-        if (next_key_i >= keyframes.num_rotation_keys) {
-            time -= keyframes.rotation_keys[keyframes.num_rotation_keys].time; // Makes sure interpolation is correct
-            next_key_i = 0;
-            prev_key_i = keyframes.num_rotation_keys - 1;
-        }
-        else if (next_key_i == 0) {
-            prev_key_i = keyframes.num_rotation_keys - 1;
-        }
-        else {
-            prev_key_i = next_key_i - 1;
-        }
-    }
-    else {
-        next_key_i = glm::clamp(next_key_i, 0, keyframes.num_rotation_keys - 1);
-        prev_key_i = glm::clamp(next_key_i - 1, 0, keyframes.num_rotation_keys - 1);
-    }
-    keyframes.prev_rotation_key = next_key_i;
-
-    auto next_key = keyframes.rotation_keys[next_key_i];
-    auto prev_key = keyframes.rotation_keys[prev_key_i];
-    float lerp_factor = linearstep(prev_key.time, next_key.time, time);
-    auto rot = glm::slerp(prev_key.rotation, next_key.rotation, lerp_factor);
-    return glm::normalize(rot);
+    float lerp_factor = linearstep(prev_time, next_time, time);
+    return glm::slerp(prev_rotation, next_rotation, lerp_factor);
 }
+
 
 static glm::vec3 interpolateBonesKeyframesScale(AnimatedMesh::BoneKeyframes& keyframes, float time, bool looping) {
     // @debug
-    if (keyframes.num_scale_keys == 0) {
-        std::cerr << "interpolateBonesKeyframesScale keyframes.scale_keys was empty\n";
+    if (keyframes.scale_keys.num_keys == 0) {
+        std::cerr << "interpolateBonesKeyframesScale keyframes.scales was empty, returning default\n";
         return glm::vec3(1.0f);
     }
 
-    if (keyframes.num_scale_keys == 1)
-        return keyframes.scale_keys[0].scale;
+    uint32_t next_key_i, prev_key_i;
+    interpolateKeys(keyframes.scale_keys, prev_key_i, next_key_i, time, looping);
 
-    // This is optimized for any time, this may be better if we assume time is 
-    // mostly increasing or pass dt (noting time can be set)
-    int next_key_i = keyframes.prev_scale_key;
-    // We are going backwards/unchanged
-    if (keyframes.scale_keys[keyframes.prev_scale_key].time >= time) {
-        for (int i = keyframes.prev_scale_key - 1; i >= 0; --i) {
-            if (keyframes.scale_keys[i].time < time) {
-                next_key_i = i + 1;
-                break;
-            }
-        }
-    }
-    else {
-        for (int i = keyframes.prev_scale_key + 1; i < keyframes.num_scale_keys; ++i) {
-            if (keyframes.scale_keys[i].time > time) {
-                next_key_i = i;
-                break;
-            }
-        }
+    auto& next_time = keyframes.scale_keys.times[next_key_i];
+    auto& prev_time = keyframes.scale_keys.times[prev_key_i];
+    auto& next_scale = keyframes.scales[next_key_i];
+    auto& prev_scale = keyframes.scales[prev_key_i];
+
+    if (next_time == prev_time) {
+        return next_scale;
     }
 
-    int prev_key_i;
-    if (looping) {
-        if (next_key_i >= keyframes.num_scale_keys) {
-            time -= keyframes.scale_keys[keyframes.num_scale_keys].time; // Makes sure interpolation is correct
-            next_key_i = 0;
-            prev_key_i = keyframes.num_scale_keys - 1;
-        } else if (next_key_i == 0) {
-            prev_key_i = keyframes.num_scale_keys - 1;
-        }
-        else {
-            prev_key_i = next_key_i - 1;
-        }
-    }
-    else {
-        next_key_i = glm::clamp(next_key_i    , 0, keyframes.num_scale_keys - 1);
-        prev_key_i = glm::clamp(next_key_i - 1, 0, keyframes.num_scale_keys - 1);
-    }
-    keyframes.prev_scale_key = next_key_i;
-
-    auto next_key = keyframes.scale_keys[next_key_i];
-    auto prev_key = keyframes.scale_keys[prev_key_i];
-    float lerp_factor = linearstep(prev_key.time, next_key.time, time);
-    return glm::mix(prev_key.scale, next_key.scale, lerp_factor);
+    float lerp_factor = linearstep(prev_time, next_time, time);
+    return glm::mix(prev_scale, next_scale, lerp_factor);
 }
 
-void tickBonesKeyframe(AnimatedMesh::BoneKeyframes &keyframes, float time, bool looping) {
+glm::mat4x4 tickBonesKeyframe(AnimatedMesh::BoneKeyframes &keyframes, float time, bool looping) {
     glm::vec3 position = interpolateBonesKeyframesPosition(keyframes, time, looping);
     glm::quat rotation = interpolateBonesKeyframesRotation(keyframes, time, looping);
     glm::vec3 scale    = interpolateBonesKeyframesScale   (keyframes, time, looping);
     
-    // @note all these transformations could be made into 4x3 since there is not perspective
-    keyframes.local_transformation = createModelMatrix(position, rotation, scale);
+    // @note all these transformations could be made into 4x3 since there is no perspective
+    return createModelMatrix(position, rotation, scale);
 }
 
 // @note that this function could cause you to "lose" an animated mesh if the path is 

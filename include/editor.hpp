@@ -106,6 +106,7 @@ namespace editor {
     extern bool draw_colliders;
     extern bool transform_active;
     extern bool use_level_camera, draw_level_camera;
+    extern bool debug_animations;
 
     extern ReferenceSelection selection;
     extern CopySelection copy_selection;

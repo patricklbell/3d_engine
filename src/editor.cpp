@@ -56,6 +56,7 @@ namespace editor {
     bool draw_colliders = false;
     bool transform_active = false;
     bool use_level_camera = false, draw_level_camera = false;
+    bool debug_animations = false;
 
     ReferenceSelection selection;
     CopySelection copy_selection;

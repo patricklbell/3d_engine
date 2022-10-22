@@ -35,7 +35,7 @@ extern bool draw_bloom;
 extern AssetManager global_assets;
 extern std::string GL_version, GL_vendor, GL_renderer;
 extern std::string level_path;
-extern bool playing;
+extern bool playing, global_paused;
 extern bool has_played;
 extern float global_time_warp;
 

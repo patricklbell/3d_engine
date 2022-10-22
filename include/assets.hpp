@@ -96,7 +96,7 @@ struct Mesh {
 
 #define MAX_BONE_WEIGHTS 4
 // @todo in loading you could limit loaded bone rather than in tick step
-#define MAX_BONES 1000
+#define MAX_BONES 300
 
 struct AnimatedMesh {
     std::string handle;
@@ -114,33 +114,22 @@ struct AnimatedMesh {
     struct BoneKeyframes {
         uint64_t id;
 
-        // Updated per tick
-        glm::mat4 local_transformation;
+        struct Keys {
+            int32_t num_keys = 0;
+            float* times = nullptr;
 
-        struct KeyPosition {
-            glm::fvec3 position;
-            float time;
-        };
-        struct KeyRotation {
-            glm::fquat rotation;
-            float time;
-        };
-        struct KeyScale {
-            glm::fvec3 scale;
-            float time;
+            // Speeds up finding the next keyframe, updated per tick
+            int32_t prev_key_i = 0;
         };
 
-        int32_t num_position_keys;
-        int32_t num_rotation_keys;
-        int32_t num_scale_keys;
-        KeyPosition *position_keys = nullptr;
-        KeyRotation *rotation_keys = nullptr;
-        KeyScale    *scale_keys    = nullptr;
+        Keys position_keys;
+        glm::vec3* positions = nullptr;
 
-        // Speeds up finding the next keyframe
-        int32_t prev_position_key = 0;
-        int32_t prev_rotation_key = 0;
-        int32_t prev_scale_key    = 0;
+        Keys rotation_keys;
+        glm::quat* rotations = nullptr;
+
+        Keys scale_keys;
+        glm::vec3* scales = nullptr;
     };
 
     struct BoneNode {
@@ -178,7 +167,7 @@ struct AnimatedMesh {
 };
 float getAnimationDuration(const AnimatedMesh &animesh, const std::string& name);
 
-void tickBonesKeyframe(AnimatedMesh::BoneKeyframes& keyframes, float time, bool looping);
+glm::mat4x4 tickBonesKeyframe(AnimatedMesh::BoneKeyframes& keyframes, float time, bool looping);
 
 struct Texture {
     std::string handle;

@@ -474,7 +474,7 @@ void bindDrawWaterColliderMap(const EntityManager& entity_manager, WaterEntity* 
     auto inv_water_grid = glm::inverse(createModelMatrix(water->position, glm::quat(), water_grid_scale));
     for (int i = 0; i < ENTITY_COUNT; ++i) {
         auto m_e = reinterpret_cast<MeshEntity*>(entity_manager.entities[i]);
-        if (m_e == nullptr || !(entityInherits(m_e->type, MESH_ENTITY)) || m_e->mesh == nullptr) continue;
+        if (m_e == nullptr || !entityInherits(m_e->type, MESH_ENTITY) || entityInherits(m_e->type, ANIMATED_MESH_ENTITY) || m_e->mesh == nullptr) continue;
 
         auto model = createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
         auto model_inv_water_grid = inv_water_grid * model;
@@ -1032,7 +1032,23 @@ void drawEntitiesHdr(const EntityManager& entity_manager, const Texture* irradia
             glBindBuffer(GL_UNIFORM_BUFFER, 1);
 
             // Material multipliers
-            glUniform3fv(shader::animated_unified.uniform("albedo_mult"), 1, &a_e->albedo_mult[0]);
+            // @editor
+            if (editor::debug_animations) {
+                switch (a_e->blend_state)
+                {
+                case AnimatedMeshEntity::BlendState::PREVIOUS:
+                    glUniform3f(shader::animated_unified.uniform("albedo_mult"), 0, 0, 1);
+                    break;
+                case AnimatedMeshEntity::BlendState::NEXT:
+                    glUniform3f(shader::animated_unified.uniform("albedo_mult"), 1, 0, 0);
+                    break;
+                default:
+                    glUniform3fv(shader::animated_unified.uniform("albedo_mult"), 1, &a_e->albedo_mult[0]);
+                    break;
+                }
+            } else {
+                glUniform3fv(shader::animated_unified.uniform("albedo_mult"), 1, &a_e->albedo_mult[0]);
+            }
             glUniform1f(shader::animated_unified.uniform("roughness_mult"), a_e->roughness_mult);
             glUniform1f(shader::animated_unified.uniform("metal_mult"), a_e->metal_mult);
             glUniform1f(shader::animated_unified.uniform("ao_mult"), a_e->ao_mult);
