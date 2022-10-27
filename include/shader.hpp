@@ -19,9 +19,9 @@ void initGlobalShaders();
 void updateGlobalShaders();
 
 namespace shader {
-    extern Shader animated_null, null, null_vegetation, unified, animated_unified, water, gaussian_blur,
-        plane_projection, jfa, jfa_distance, post[2], debug, depth_only, vegetation, 
-        downsample, upsample, diffuse_convolution, specular_convolution, generate_brdf_lut;
+    extern Shader animated_null, null, null_vegetation, unified, unified_ns, animated_unified, animated_unified_ns, water, water_ns, gaussian_blur,
+        plane_projection, jfa, jfa_distance, post[2], debug, depth_only, vegetation,
+        downsample, upsample, diffuse_convolution, specular_convolution, generate_brdf_lut, skybox;
 }
 
 

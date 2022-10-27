@@ -105,6 +105,17 @@ void tickAnimatedMesh(AnimatedMesh* animesh, std::array<glm::mat4, MAX_BONES> &b
 
 // Returns true if animation is playing
 bool AnimatedMeshEntity::tick(float dt) {
+    // Apply any transform that is required
+    if (apply_animation_transform) {
+        rotation *= animation_delta_rotation;
+        position += rotation * animation_delta_position;
+        apply_animation_transform = false;
+
+        if (editor::debug_animations)
+            pushInfoMessage("Applied previous animation's transform");
+    }
+
+
     bool is_default = false, is_first = false;
     AnimatedMeshEntity::AnimationEvent* event = nullptr;
     if (animation_events.size() > 0 && playing_first) {
@@ -162,7 +173,7 @@ bool AnimatedMeshEntity::tick(float dt) {
             blend = false;
         }
     }
-    if (blend_event == nullptr || blend_event->animation == nullptr) {
+    if (blend_event == nullptr || blend_event->animation == nullptr || bias <= 0.0f) {
         blend = false;
     }
 
@@ -196,7 +207,7 @@ bool AnimatedMeshEntity::tick(float dt) {
     // Update event times and state
     //
     bool erase_first = false;
-    if (blend && bias > 0.0f) {
+    if (blend) {
         if(blend_event->playing)
             blend_event->current_time += dt * blend_event->time_scale * time_scale_mult;
 
@@ -220,13 +231,14 @@ bool AnimatedMeshEntity::tick(float dt) {
                 event->current_time = event->duration;
                 event->playing = false;
 
-                // Apply transform when animation completes
+                // Apply transform when next animation starts
                 if (event->transform_entity) {
-                    rotation *= event->delta_rotation;
-                    position += rotation * event->delta_position;
+                    apply_animation_transform = true;
+                    animation_delta_rotation = event->delta_rotation;
+                    animation_delta_position = event->delta_position;
 
                     if(editor::debug_animations)
-                        pushInfoMessage("Applied animation " + event->animation->name + "'s transform");
+                        pushInfoMessage("Buffering animation " + event->animation->name + "'s transform");
                 }
 
                 if (!is_default) {

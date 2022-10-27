@@ -31,6 +31,9 @@ include_directories(
 	external/imgui/include/
 	external/assimp-5.1.5/include/
 	external/stb/
+	external/lightmapper/
+	external/indicators/
+	external/xatlas/
 	include/
 )
 
@@ -67,6 +70,7 @@ set(SOURCES
 	src/entities.cpp
 	src/level.cpp
 	src/game_behaviour.cpp
+	src/lightmapper.cpp
 
     external/imgui/imgui_draw.cpp
     external/imgui/imgui_impl_glfw.cpp
@@ -75,6 +79,7 @@ set(SOURCES
 	external/imgui/imgui_tables.cpp
     external/imgui/imgui_stdlib.cpp
     external/imgui/imgui.cpp
+	external/xatlas/xatlas.cpp
 )
 
 # YCM generate compile_commands.json

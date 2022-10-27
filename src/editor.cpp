@@ -38,6 +38,7 @@
 #include "entities.hpp"
 #include "level.hpp"
 #include "game_behaviour.hpp"
+#include "lightmapper.hpp"
 
 namespace editor {
     EditorMode editor_mode = EditorMode::ENTITY;
@@ -314,6 +315,11 @@ void initEditorGui(AssetManager &asset_manager){
     entity_type_to_string[COLLIDER_ENTITY] = "Mesh Collider";
     entity_type_to_string[VEGETATION_ENTITY] = "Vegetation";
     entity_type_to_string[ANIMATED_MESH_ENTITY] = "Animated Mesh";
+}
+
+static bool runLightmapperCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
+    runLightmapper(level_entity_manager, asset_manager, graphics::environment.skybox, graphics::environment.skybox_irradiance, graphics::environment.skybox_specular);
+    return true;
 }
 
 static bool echoCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
@@ -700,6 +706,17 @@ static bool toggleBloomCommand(std::vector<std::string>& input_tokens, std::stri
     return true;
 }
 
+static bool toggleShadowsCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
+    graphics::do_shadows = !graphics::do_shadows;
+    if (graphics::do_shadows) {
+        output += "Enabled shadows\n";
+    }
+    else {
+        output += "Disabled shadows\n";
+    }
+    return true;
+}
+
 static bool setMsaaCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
     if (input_tokens.size() >= 2) {
         int msaa_samples = std::stoi(input_tokens[1]);
@@ -728,6 +745,7 @@ const std::map
     std::function<bool(std::vector<std::string> &, std::string &output, EntityManager&, AssetManager&)>
 > command_to_func = {
     {"echo", echoCommand},
+    {"lightmap", runLightmapperCommand},
     {"help", helpCommand},
     {"list_levels", listLevelsCommand},
     {"load_level", loadLevelCommand},
@@ -745,6 +763,7 @@ const std::map
     {"convert_models_to_mesh", convertModelsToMeshCommand},
     {"add_water", addWaterCommand},
     {"toggle_bloom", toggleBloomCommand},
+    {"toggle_shadows", toggleShadowsCommand},
     {"set_msaa", setMsaaCommand},
 };
 
@@ -1525,7 +1544,7 @@ void drawEditor3DArrow(const glm::vec3 &position, const glm::vec3 &direction, co
 }
 
 void drawColliders(const EntityManager &entity_manager, const Camera &camera) {
-    glLineWidth(0.1);
+    glLineWidth(1);
 
     glUseProgram(shader::debug.program);
     glUniform4f(shader::debug.uniform("color"), 0.0, 1.0, 1.0, 0.2);
@@ -1537,7 +1556,7 @@ void drawColliders(const EntityManager &entity_manager, const Camera &camera) {
         auto c = (ColliderEntity*)entity_manager.entities[i];
         if (c == nullptr || !(entityInherits(c->type, COLLIDER_ENTITY))) continue;
     
-        auto model = glm::translate(glm::mat4x4(1.0), c->collider_position);
+        auto model = createModelMatrix(c->collider_position, c->collider_rotation, c->collider_scale);
         auto mvp = camera.projection * camera.view * model;
         glUniformMatrix4fv(shader::debug.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
         glUniformMatrix4fv(shader::debug.uniform("model"), 1, GL_FALSE, &model[0][0]);
@@ -2125,7 +2144,10 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
     ImGui::Render();
     auto &io = ImGui::GetIO();
     glViewport(0, 0, (int)io.DisplaySize.x, (int)io.DisplaySize.y);
+    // This causes a stippling patern which looks bad since imgui seems to disable alpha entirely
+    glDisable(GL_SAMPLE_ALPHA_TO_COVERAGE);
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    glEnable(GL_SAMPLE_ALPHA_TO_COVERAGE);
 }
 
 void drawGameGui(EntityManager& entity_manager, AssetManager& asset_manager) {
@@ -2142,5 +2164,8 @@ void drawGameGui(EntityManager& entity_manager, AssetManager& asset_manager) {
     ImGui::Render();
     auto& io = ImGui::GetIO();
     glViewport(0, 0, (int)io.DisplaySize.x, (int)io.DisplaySize.y);
+    // This causes a stippling patern which looks bad since imgui seems to disable alpha entirely
+    glDisable(GL_SAMPLE_ALPHA_TO_COVERAGE);
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    glEnable(GL_SAMPLE_ALPHA_TO_COVERAGE);
 }

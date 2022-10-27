@@ -126,7 +126,7 @@ ColliderEntity* pickColliderWithMouse(Camera& camera, EntityManager& entity_mana
     ColliderEntity* nearest_c = nullptr;
     for (int i = 0; i < ENTITY_COUNT; ++i) {
         auto c = (ColliderEntity*)entity_manager.entities[i];
-        if (c == nullptr || !(c->type & COLLIDER_ENTITY)) continue;
+        if (c == nullptr || !entityInherits(c->type, COLLIDER_ENTITY)) continue;
         if (only_selectable && !c->selectable) continue;
         std::cout << "testing collider entity\n";
 
@@ -299,10 +299,10 @@ void handleEditorControls(EntityManager* &entity_manager, AssetManager &asset_ma
                 c->id = entity_manager->getFreeId();
                 c->mesh = pick_c->mesh;
                 
-                c->position = pick_c->position + 2.0f * normal;
+                c->position = pick_c->position + normal;
                 c->scale    = pick_c->scale;
                 c->rotation = pick_c->rotation;
-                c->collider_position = pick_c->collider_position + 2.0f * normal;
+                c->collider_position = pick_c->collider_position + normal;
                 c->collider_scale = pick_c->collider_scale;
                 c->collider_rotation = pick_c->collider_rotation;
 
@@ -371,7 +371,7 @@ void handleEditorControls(EntityManager* &entity_manager, AssetManager &asset_ma
 
             // Scale movement such that point under mouse on plane of target (parallel to near plane) stays constant
             float ratio;
-            ratio = glm::length(camera.position - camera.target) / camera.near_plane;
+            ratio = glm::length(camera.position - camera.target);
             auto delta = ratio * (new_mouse_position_world - old_mouse_position_world);
 
             camera.position -= delta;
@@ -564,6 +564,9 @@ void handleGameControls(EntityManager* &entity_manager, AssetManager& asset_mana
     glfwGetCursorPos(window, &mouse_position.x, &mouse_position.y);
     delta_mouse_position = mouse_position - delta_mouse_position;
 
+    if (glfwGetKey(window, GLFW_KEY_GRAVE_ACCENT) && !backtick_key_prev)
+        editor::do_terminal = !editor::do_terminal;
+
     if (!io.WantCaptureKeyboard) {
         if (glfwGetKey(window, GLFW_KEY_P) && !p_key_prev) {
             pauseGame(entity_manager);
@@ -573,8 +576,6 @@ void handleGameControls(EntityManager* &entity_manager, AssetManager& asset_mana
             resetGameEntities();
             pushInfoMessage("Resetting");
         }
-        if (glfwGetKey(window, GLFW_KEY_GRAVE_ACCENT) && !backtick_key_prev)
-            editor::do_terminal = !editor::do_terminal;
         if (glfwGetKey(window, GLFW_KEY_A) && !a_key_prev && glfwGetKey(window, GLFW_KEY_LEFT_SHIFT))
             editor::debug_animations = !editor::debug_animations;
 
@@ -597,11 +598,19 @@ void handleGameControls(EntityManager* &entity_manager, AssetManager& asset_mana
             if (player != nullptr) {
                 if (glfwGetKey(window, GLFW_KEY_LEFT) && (!left_key_prev || glfwGetTime() - last_input_time > repeat_time)) {
                     last_input_time = glfwGetTime();
-                    player->turn_left();
+                    if (player->turn_left()) {
+                        if (!player->step_forward()) {
+                            player->actions.pop_back();
+                        }
+                    }
                 }
                 else if (glfwGetKey(window, GLFW_KEY_RIGHT) && (!right_key_prev || glfwGetTime() - last_input_time > repeat_time)) {
                     last_input_time = glfwGetTime();
-                    player->turn_right();
+                    if (player->turn_right()) {
+                        if (!player->step_forward()) {
+                            player->actions.pop_back();
+                        }
+                    }
                 }
                 else if (glfwGetKey(window, GLFW_KEY_UP) && (!up_key_prev || glfwGetTime() - last_input_time > repeat_time)) {
                     last_input_time = glfwGetTime();
@@ -609,8 +618,11 @@ void handleGameControls(EntityManager* &entity_manager, AssetManager& asset_mana
                 }
                 else if (glfwGetKey(window, GLFW_KEY_DOWN) && (!down_key_prev || glfwGetTime() - last_input_time > repeat_time)) {
                     last_input_time = glfwGetTime();
-                    player->turn_right();
-                    player->turn_right();
+                    if (player->turn_right()) {
+                        if (!player->turn_right()) {
+                            player->actions.pop_back();
+                        }
+                    }
                 }
             }
         }

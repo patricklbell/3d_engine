@@ -42,7 +42,24 @@ static std::string getPlayerActionAnimationName(PlayerActionType& type) {
     }
 }
 
-void updatePlayerEntity(float dt, PlayerEntity &player) {
+// @todo octree storage of colliders
+bool isPositionFree(EntityManager &entity_manager, glm::vec3 pos) {
+    bool floor = false;
+
+    for (int i = 0; i < ENTITY_COUNT; ++i) {
+        auto c = (ColliderEntity*)entity_manager.entities[i];
+        if (c == nullptr || !entityInherits(c->type, COLLIDER_ENTITY)) continue;
+
+        if (glm::round(c->collider_position) == glm::round(pos)) 
+            return false;
+
+        if (glm::round(c->collider_position) == glm::round(pos - glm::vec3(0, 1, 0)))
+            floor = true;
+    }
+    return floor;
+}
+
+void updatePlayerEntity(EntityManager& entity_manager, float dt, PlayerEntity &player) {
     // Speed up animations if there are multiple queued
     player.time_scale_mult = 1.0f + ((float)player.actions.size() / (float)MAX_ACTION_BUFFER) * MAX_ACTION_SPEEDUP;
 
@@ -55,45 +72,61 @@ void updatePlayerEntity(float dt, PlayerEntity &player) {
     if (player.actions.size() > 0) {
         auto& a = player.actions[0];
 
+        bool invalid_action = false;
         if (!a.active) {
             a.active = true;
 
-            // Play animations that accompany actions
-            std::cout << "Playing animation " << getPlayerActionAnimationName(a.type) << "\n";
-            auto event = player.play(getPlayerActionAnimationName(a.type));
-            if (event != nullptr) {
-                event->delta_position = a.delta_position;
-                event->delta_rotation = a.delta_rotation;
+            auto target_position = player.position + player.gizmo_position_offset + player.rotation * a.delta_rotation * a.delta_position;
+            if (isPositionFree(entity_manager, target_position)) {
+                // Play animations that accompany actions
+                std::cout << "Playing animation " << getPlayerActionAnimationName(a.type) << "\n";
+                auto event = player.play(getPlayerActionAnimationName(a.type));
+                if (event != nullptr) {
+                    event->delta_position = a.delta_position;
+                    event->delta_rotation = a.delta_rotation;
 
-                event->transform_entity = true;
-                event->blend = true;
-                event->time_scale = event->duration / a.duration;
+                    event->transform_entity = true;
+                    event->blend = true;
+                    event->time_scale = event->duration / a.duration;
+                }
             }
-        }
+            else {
+                player.actions.erase(player.actions.begin());
+                invalid_action = true;
+            }
 
+        }
         // Blend with next actions
         //if (player.actions.size() > 1 && a.time >= a.duration * 0.8) {
-        if (player.actions.size() > 1) {
+        if (!invalid_action && player.actions.size() > 1) {
             auto& b = player.actions[1];
             if (!b.active) {
                 b.active = true;
 
-                std::cout << "Playing preemptive animation " << getPlayerActionAnimationName(b.type) << "\n";
-                auto event = player.play(getPlayerActionAnimationName(b.type));
-                if (event != nullptr) {
-                    event->delta_position = b.delta_position;
-                    event->delta_rotation = b.delta_rotation;
+                auto target_position = player.position + player.gizmo_position_offset + player.rotation * a.delta_rotation * (a.delta_position + b.delta_rotation * b.delta_position);
+                if (isPositionFree(entity_manager, target_position)) {
+                    std::cout << "Playing preemptive animation " << getPlayerActionAnimationName(b.type) << "\n";
+                    auto event = player.play(getPlayerActionAnimationName(b.type));
+                    if (event != nullptr) {
+                        event->delta_position = b.delta_position;
+                        event->delta_rotation = b.delta_rotation;
 
-                    event->transform_entity = true;
-                    event->blend = true;
-                    event->time_scale = event->duration / b.duration;
+                        event->transform_entity = true;
+                        event->blend = true;
+                        event->time_scale = event->duration / b.duration;
+                    }
+                }
+                else {
+                    player.actions.erase(player.actions.begin()++);
                 }
             }
         }
 
-        a.time += dt * player.time_scale_mult;
-        if (a.time >= a.duration) {
-            player.actions.erase(player.actions.begin());
+        if (!invalid_action) {
+            a.time += dt * player.time_scale_mult;
+            if (a.time >= a.duration) {
+                player.actions.erase(player.actions.begin());
+            }
         }
     }
 }
@@ -131,6 +164,6 @@ void updateGameEntities(float dt, EntityManager* &entity_manager) {
     if (entity_manager->player != NULLID) {
         auto player = (PlayerEntity*)entity_manager->getEntity(entity_manager->player);
         if(player != nullptr) 
-            updatePlayerEntity(dt, *player);
+            updatePlayerEntity(*entity_manager, dt, *player);
     }
 }

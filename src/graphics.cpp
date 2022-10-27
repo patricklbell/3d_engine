@@ -49,9 +49,10 @@ namespace graphics {
     constexpr int shadow_num = 4;
     float shadow_cascade_distances[shadow_num];
     // @note make sure to change macro to shadow_num + 1
-    const std::string shadow_shader_macro = "#define CASCADE_NUM " + std::to_string(shadow_num) + "\n#define INVOCATIONS " + std::to_string(shadow_num + 1) + "\n";
+    const std::string shadow_shader_macro = "#define SHADOWS 1\n#define CASCADE_NUM " + std::to_string(shadow_num) + "\n#define INVOCATIONS " + std::to_string(shadow_num + 1) + "\n";
     glm::mat4x4 shadow_vps[shadow_num + 1];
     GLuint shadow_fbo, shadow_buffer, shadow_matrices_ubo;
+    bool do_shadows = true;
 
     //
     // WATER PLANE COLLISIONS
@@ -81,6 +82,11 @@ namespace graphics {
     //
     bool do_msaa = false;
     int MSAA_SAMPLES = 4;
+
+    //
+    // Environment
+    //
+    Environment environment;
 }
 
 using namespace graphics;
@@ -118,7 +124,7 @@ void updateCameraTarget(Camera& camera, glm::vec3 target) {
     updateShadowVP(camera);
 }
 
-inline static void drawMeshMat(Shader& s, const Mesh* mesh, const glm::mat4& g_model_rot_scl, const glm::mat4& g_model_pos, const glm::mat4& vp) {
+inline static void drawMeshMat(Shader& s, const Mesh* mesh, const glm::mat4& g_model_rot_scl, const glm::mat4& g_model_pos, const glm::mat4& vp, const Texture *ao=nullptr) {
     glBindVertexArray(mesh->vao);
     for (int j = 0; j < mesh->num_meshes; ++j) {
         // Since the mesh transforms encode scale this will mess up global translation so we apply translation after
@@ -141,7 +147,10 @@ inline static void drawMeshMat(Shader& s, const Mesh* mesh, const glm::mat4& g_m
         glBindTexture(GL_TEXTURE_2D, mat.t_roughness->id);
 
         glActiveTexture(GL_TEXTURE4);
-        glBindTexture(GL_TEXTURE_2D, mat.t_ambient->id);
+        if(ao != nullptr)
+            glBindTexture(GL_TEXTURE_2D, ao->id);
+        else
+            glBindTexture(GL_TEXTURE_2D, mat.t_ambient->id);
 
         // Bind VAO and draw
         glDrawElements(mesh->draw_mode, mesh->draw_count[j], mesh->draw_type, (GLvoid*)(sizeof(*mesh->indices) * mesh->draw_start[j]));
@@ -279,7 +288,6 @@ void initShadowFbo(){
     glBindBuffer(GL_UNIFORM_BUFFER, 0);
 }
 
-
 // Since shadow buffer wont need to be bound otherwise just combine these operations
 void bindDrawShadowMap(const EntityManager &entity_manager, const Camera &camera){
     glBindBuffer(GL_UNIFORM_BUFFER, shadow_matrices_ubo);
@@ -295,8 +303,8 @@ void bindDrawShadowMap(const EntityManager &entity_manager, const Camera &camera
     
     // Make shadow line up with object by culling front (Peter Panning)
     // @note face culling wont work with certain techniques i.e. grass
-    glEnable(GL_CULL_FACE);
-    glCullFace(GL_FRONT);
+    //glEnable(GL_CULL_FACE);
+    //glCullFace(GL_FRONT);
     glDisable(GL_CULL_FACE);
 
     glDepthMask(GL_TRUE);
@@ -361,12 +369,13 @@ void bindDrawShadowMap(const EntityManager &entity_manager, const Camera &camera
 
     if (vegetation_entities.size() > 0) {
         glDisable(GL_CULL_FACE);
+        glEnable(GL_SAMPLE_ALPHA_TO_COVERAGE);
 
         glUseProgram(shader::null_vegetation.program);
 
         auto wind_direction = glm::normalize(glm::vec2(0.5, 0.6));
         glUniform2f(shader::vegetation.uniform("wind_direction"), wind_direction.x, wind_direction.y);
-        glUniform1f(shader::vegetation.uniform("wind_strength"), 1.0);
+        glUniform1f(shader::vegetation.uniform("wind_strength"), 3.0);
         glUniform1f(shader::vegetation.uniform("time"), glfwGetTime());
 
         for (const auto& v_e : vegetation_entities) {
@@ -388,6 +397,7 @@ void bindDrawShadowMap(const EntityManager &entity_manager, const Camera &camera
         }
 
         glEnable(GL_CULL_FACE);
+        glDisable(GL_SAMPLE_ALPHA_TO_COVERAGE);
     }
 
     glCullFace(GL_BACK);
@@ -830,9 +840,9 @@ void initGraphicsPrimitives(AssetManager& asset_manager) {
 
     asset_manager.loadMeshFile(&water_grid, "data/mesh/water_grid.mesh");
     simplex_gradient = asset_manager.createTexture("data/textures/2d_simplex_gradient_seamless.png");
-    asset_manager.loadTexture(simplex_gradient, "data/textures/2d_simplex_gradient_seamless.png", GL_RGB);
+    asset_manager.loadTexture(simplex_gradient, "data/textures/2d_simplex_gradient_seamless.png", GL_RGB, true);
     simplex_value = asset_manager.createTexture("data/textures/2d_simplex_value_seamless.png");
-    asset_manager.loadTexture(simplex_value, "data/textures/2d_simplex_value_seamless.png", GL_RED);
+    asset_manager.loadTexture(simplex_value, "data/textures/2d_simplex_value_seamless.png", GL_RED, true);
 
     // Set clear color
     glClearColor(0.0, 0.0, 0.0, 1.0);
@@ -912,6 +922,7 @@ void bindHdr() {
 }
 
 void clearFramebuffer() {
+    glDepthMask(GL_TRUE);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 }
 
@@ -921,33 +932,42 @@ static void resolveMultisampleHdrBuffer() {
     glBlitFramebuffer(0, 0, window_width, window_height, 0, 0, window_width, window_height, GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT, GL_NEAREST);
 }
 
-//void drawSkybox(const Texture* skybox, const Camera &camera) {
-//    glDepthMask(GL_FALSE);
-//    glEnable(GL_DEPTH_TEST);
-//    // Since skybox shader writes maximum depth of 1.0, for skybox to always be we
-//    // need to adjust depth func
-//	glDepthFunc(GL_LEQUAL); 
-//
-//    glDisable(GL_CULL_FACE);
-//
-//    glUseProgram(shader::skybox.program);
-//    auto untranslated_view = glm::mat4(glm::mat3(camera.view));
-//    glUniformMatrix4fv(shader::skybox.uniform("view"),       1, GL_FALSE, &untranslated_view[0][0]);
-//    glUniformMatrix4fv(shader::skybox.uniform("projection"), 1, GL_FALSE, &camera.projection[0][0]);
-//    glBindTexture(GL_TEXTURE_CUBE_MAP, skybox->id);
-//
-//    drawCube();
-//
-//    // Revert state which is unexpected
-//	glDepthFunc(GL_LESS); 
-//}
+void drawSkybox(const Texture* skybox, const Camera &camera) {
+    glDepthMask(GL_TRUE);
+    glEnable(GL_DEPTH_TEST);
+    // Since skybox shader writes maximum depth of 1.0, for skybox to always be we
+    // need to adjust depth func
+	glDepthFunc(GL_LEQUAL); 
+    glDisable(GL_CULL_FACE);
 
-void drawEntitiesHdr(const EntityManager& entity_manager, const Texture* irradiance_map, const Texture* prefiltered_specular_map, const Camera& camera) {
+    glUseProgram(shader::skybox.program);
+    auto untranslated_view = glm::mat4(glm::mat3(camera.view));
+    auto vp = camera.projection * untranslated_view;
+    glUniformMatrix4fv(shader::skybox.uniform("vp"), 1, GL_FALSE, &vp[0][0]);
+
+    glActiveTexture(GL_TEXTURE3);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, skybox->id);
+
+    drawCube();
+
+    // Revert state which is unexpected
+	glDepthFunc(GL_LESS); 
+    glEnable(GL_CULL_FACE);
+}
+
+void drawEntitiesHdr(const EntityManager& entity_manager, const Texture* skybox, const Texture* irradiance_map, const Texture* prefiltered_specular_map, const Camera& camera, const bool lightmapping) {
     glDepthMask(GL_TRUE);
     glEnable(GL_DEPTH_TEST);
 
-    // @note face culling wont work with certain techniques i.e. grass
-    glEnable(GL_CULL_FACE);
+    if (lightmapping) {
+        glDisable(GL_CULL_FACE);
+    }
+    else {
+        // @note face culling wont work with certain techniques i.e. grass
+        glCullFace(GL_BACK);
+        glEnable(GL_CULL_FACE);
+    }
+
 
     // @todo in future entities should probably stored as vectors so you can traverse easily
     std::vector<AnimatedMeshEntity*> anim_mesh_entities;
@@ -955,8 +975,10 @@ void drawEntitiesHdr(const EntityManager& entity_manager, const Texture* irradia
 
     auto vp = camera.projection * camera.view;
 
-    glActiveTexture(GL_TEXTURE5);
-    glBindTexture(GL_TEXTURE_2D_ARRAY, shadow_buffer);
+    if (do_shadows) {
+        glActiveTexture(GL_TEXTURE5);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, shadow_buffer);
+    }
 
     glActiveTexture(GL_TEXTURE6);
     glBindTexture(GL_TEXTURE_CUBE_MAP, irradiance_map->id);
@@ -970,54 +992,74 @@ void drawEntitiesHdr(const EntityManager& entity_manager, const Texture* irradia
     // 
     // Draw normal static PBR mesh entities
     //
-    glUseProgram(shader::unified.program);
-    glUniform3fv(shader::unified.uniform("sun_color"), 1, &sun_color[0]);
-    glUniform3fv(shader::unified.uniform("sun_direction"), 1, &sun_direction[0]);
-    glUniform3fv(shader::unified.uniform("camera_position"), 1, &camera.position[0]);
-    glUniformMatrix4fv(shader::unified.uniform("view"), 1, GL_FALSE, &camera.view[0][0]);
+    auto unified_s = &shader::unified;
+    if (!do_shadows) {
+        unified_s = &shader::unified_ns;
+    }
 
-    glUniform1fv(shader::unified.uniform("shadow_cascade_distances[0]"), shadow_num, shadow_cascade_distances);
-    glUniform1f(shader::unified.uniform("far_plane"), camera.far_plane);
+    glUseProgram(unified_s->program);
+    glUniform3fv(unified_s->uniform("sun_color"), 1, &sun_color[0]);
+    glUniform3fv(unified_s->uniform("sun_direction"), 1, &sun_direction[0]);
+    glUniform3fv(unified_s->uniform("camera_position"), 1, &camera.position[0]);
+    if (do_shadows) {
+        glUniformMatrix4fv(unified_s->uniform("view"), 1, GL_FALSE, &camera.view[0][0]);
+        glUniform1fv(unified_s->uniform("shadow_cascade_distances[0]"), shadow_num, shadow_cascade_distances);
+        glUniform1f(unified_s->uniform("far_plane"), camera.far_plane);
+    }
+
     for (int i = 0; i < ENTITY_COUNT; ++i) {
         if (entity_manager.entities[i] == nullptr) continue;
 
         auto m_e = reinterpret_cast<MeshEntity*>(entity_manager.entities[i]);
         if (entityInherits(m_e->type, ANIMATED_MESH_ENTITY)) {
+            if (lightmapping) 
+                continue;
+
             auto a_e = (AnimatedMeshEntity*)m_e;
             if (playing || a_e->draw_animated) {
                 anim_mesh_entities.push_back(a_e);
                 continue;
             }
         }
-        if (entityInherits(m_e->type, VEGETATION_ENTITY)) {
+        if (!lightmapping && entityInherits(m_e->type, VEGETATION_ENTITY)) {
+            if (lightmapping)
+                continue;
+
             vegetation_entities.push_back((VegetationEntity*)m_e);
             continue;
         }
         if (!(entityInherits(m_e->type, MESH_ENTITY)) || m_e->mesh == nullptr) continue;
 
         // Material multipliers
-        glUniform3fv(shader::unified.uniform("albedo_mult"), 1, &m_e->albedo_mult[0]);
-        glUniform1f(shader::unified.uniform("roughness_mult"), m_e->roughness_mult);
-        glUniform1f(shader::unified.uniform("metal_mult"),     m_e->metal_mult);
-        glUniform1f(shader::unified.uniform("ao_mult"),        m_e->ao_mult);
+        glUniform3fv(unified_s->uniform("albedo_mult"), 1, &m_e->albedo_mult[0]);
+        glUniform1f(unified_s->uniform("roughness_mult"), m_e->roughness_mult);
+        glUniform1f(unified_s->uniform("metal_mult"),     m_e->metal_mult);
+        glUniform1f(unified_s->uniform("ao_mult"),        m_e->ao_mult);
 
         auto g_model_rot_scl = glm::mat4_cast(m_e->rotation) * glm::mat4x4(m_e->scale);
         auto g_model_pos     = glm::translate(glm::mat4x4(1.0), m_e->position);
-        drawMeshMat(shader::unified, m_e->mesh, g_model_rot_scl, g_model_pos, vp);
+        drawMeshMat(*unified_s, m_e->mesh, g_model_rot_scl, g_model_pos, vp, m_e->lightmap);
     }
 
     // 
     // Draw animated PBR mesh entities, same as static with some extra uniforms
     //
-    if (anim_mesh_entities.size() > 0) {
-        glUseProgram(shader::animated_unified.program);
-        glUniform3fv(shader::animated_unified.uniform("sun_color"), 1, &sun_color[0]);
-        glUniform3fv(shader::animated_unified.uniform("sun_direction"), 1, &sun_direction[0]);
-        glUniform3fv(shader::animated_unified.uniform("camera_position"), 1, &camera.position[0]);
-        glUniformMatrix4fv(shader::animated_unified.uniform("view"), 1, GL_FALSE, &camera.view[0][0]);
+    if (!lightmapping && anim_mesh_entities.size() > 0) {
+        auto animated_unified_s = &shader::animated_unified;
+        if (!do_shadows) {
+            animated_unified_s = &shader::animated_unified_ns;
+        }
+        
+        glUseProgram(animated_unified_s->program);
+        glUniform3fv(animated_unified_s->uniform("sun_color"), 1, &sun_color[0]);
+        glUniform3fv(animated_unified_s->uniform("sun_direction"), 1, &sun_direction[0]);
+        glUniform3fv(animated_unified_s->uniform("camera_position"), 1, &camera.position[0]);
+        if (do_shadows) {
+            glUniform1fv(animated_unified_s->uniform("shadow_cascade_distances[0]"), shadow_num, shadow_cascade_distances);
+            glUniform1f(animated_unified_s->uniform("far_plane"), camera.far_plane);
+            glUniformMatrix4fv(animated_unified_s->uniform("view"), 1, GL_FALSE, &camera.view[0][0]);
+        }
 
-        glUniform1fv(shader::animated_unified.uniform("shadow_cascade_distances[0]"), shadow_num, shadow_cascade_distances);
-        glUniform1f(shader::animated_unified.uniform("far_plane"), camera.far_plane);
         auto vp = camera.projection * camera.view;
         for (const auto &a_e : anim_mesh_entities) {
             if (a_e->animesh == nullptr) continue;
@@ -1037,25 +1079,25 @@ void drawEntitiesHdr(const EntityManager& entity_manager, const Texture* irradia
                 switch (a_e->blend_state)
                 {
                 case AnimatedMeshEntity::BlendState::PREVIOUS:
-                    glUniform3f(shader::animated_unified.uniform("albedo_mult"), 0, 0, 1);
+                    glUniform3f(animated_unified_s->uniform("albedo_mult"), 0, 0, 1);
                     break;
                 case AnimatedMeshEntity::BlendState::NEXT:
-                    glUniform3f(shader::animated_unified.uniform("albedo_mult"), 1, 0, 0);
+                    glUniform3f(animated_unified_s->uniform("albedo_mult"), 1, 0, 0);
                     break;
                 default:
-                    glUniform3fv(shader::animated_unified.uniform("albedo_mult"), 1, &a_e->albedo_mult[0]);
+                    glUniform3fv(animated_unified_s->uniform("albedo_mult"), 1, &a_e->albedo_mult[0]);
                     break;
                 }
             } else {
-                glUniform3fv(shader::animated_unified.uniform("albedo_mult"), 1, &a_e->albedo_mult[0]);
+                glUniform3fv(animated_unified_s->uniform("albedo_mult"), 1, &a_e->albedo_mult[0]);
             }
-            glUniform1f(shader::animated_unified.uniform("roughness_mult"), a_e->roughness_mult);
-            glUniform1f(shader::animated_unified.uniform("metal_mult"), a_e->metal_mult);
-            glUniform1f(shader::animated_unified.uniform("ao_mult"), a_e->ao_mult);
+            glUniform1f(animated_unified_s->uniform("roughness_mult"), a_e->roughness_mult);
+            glUniform1f(animated_unified_s->uniform("metal_mult"), a_e->metal_mult);
+            glUniform1f(animated_unified_s->uniform("ao_mult"), a_e->ao_mult);
 
             auto g_model_rot_scl = glm::mat4_cast(a_e->rotation) * glm::mat4x4(a_e->scale);
             auto g_model_pos = glm::translate(glm::mat4x4(1.0), a_e->position);
-            drawMeshMat(shader::unified, a_e->mesh, g_model_rot_scl, g_model_pos, vp);
+            drawMeshMat(*animated_unified_s, a_e->mesh, g_model_rot_scl, g_model_pos, vp);
         }
     }
 
@@ -1063,14 +1105,15 @@ void drawEntitiesHdr(const EntityManager& entity_manager, const Texture* irradia
     // Draw vegetation/alpha clipped quads
     // @todo instanced rendering
     //
-    if(vegetation_entities.size() > 0) {
+    if(!lightmapping && vegetation_entities.size() > 0) {
         glDisable(GL_CULL_FACE);
+        glEnable(GL_SAMPLE_ALPHA_TO_COVERAGE);
 
         glUseProgram(shader::vegetation.program);
 
         auto wind_direction = glm::normalize(glm::vec2(0.5, 0.6));
         glUniform2f(shader::vegetation.uniform("wind_direction"), wind_direction.x, wind_direction.y);
-        glUniform1f(shader::vegetation.uniform("wind_strength"), 1.0);
+        glUniform1f(shader::vegetation.uniform("wind_strength"), 3.0);
         glUniform1f(shader::vegetation.uniform("time"), glfwGetTime());
         
         // @todo shadow casting on vegetation
@@ -1097,22 +1140,30 @@ void drawEntitiesHdr(const EntityManager& entity_manager, const Texture* irradia
             }
         }
 
+        glDisable(GL_SAMPLE_ALPHA_TO_COVERAGE);
         glEnable(GL_CULL_FACE);
     }
 
-    //drawSkybox(skybox, camera);
-    if (entity_manager.water != NULLID) {
+    drawSkybox(skybox, camera);
+    if (!lightmapping && entity_manager.water != NULLID) {
         auto water = (WaterEntity*)entity_manager.getEntity(entity_manager.water);
         if (water != nullptr) {
-            glUseProgram(       shader::water.program);
-            glUniform1fv(       shader::water.uniform("shadow_cascade_distances[0]"), shadow_num, shadow_cascade_distances);
-            glUniform1f(        shader::water.uniform("far_plane"), camera.far_plane);
-            glUniform3fv(       shader::water.uniform("sun_color"), 1, &sun_color[0]);
-            glUniform3fv(       shader::water.uniform("sun_direction"), 1, &sun_direction[0]);
-            glUniform3fv(       shader::water.uniform("camera_position"), 1, &camera.position[0]);
-            glUniform2f(        shader::water.uniform("resolution"), window_width, window_height);
-            glUniform1f(        shader::water.uniform("time"), glfwGetTime());
-            glUniformMatrix4fv( shader::water.uniform("view"), 1, GL_FALSE, &camera.view[0][0]);
+            auto water_s = &shader::water;
+            if (!do_shadows) {
+                water_s = &shader::water_ns;
+            }
+
+            glUseProgram(water_s->program);
+            glUniform3fv(water_s->uniform("sun_color"), 1, &sun_color[0]);
+            glUniform3fv(water_s->uniform("sun_direction"), 1, &sun_direction[0]);
+            glUniform3fv(water_s->uniform("camera_position"), 1, &camera.position[0]);
+            glUniform2f( water_s->uniform("resolution"), window_width, window_height);
+            glUniform1f( water_s->uniform("time"), glfwGetTime());
+            if (do_shadows) {
+                glUniformMatrix4fv( water_s->uniform("view"), 1, GL_FALSE, &camera.view[0][0]);
+                glUniform1f(        water_s->uniform("far_plane"), camera.far_plane);
+                glUniform1fv(       water_s->uniform("shadow_cascade_distances[0]"), shadow_num, shadow_cascade_distances);
+            }
             // @debug the geometry shader and tesselation
             //glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
@@ -1140,11 +1191,11 @@ void drawEntitiesHdr(const EntityManager& entity_manager, const Texture* irradia
     
             auto model = createModelMatrix(water->position, glm::quat(), water->scale);
             auto mvp = vp * model;
-            glUniformMatrix4fv(shader::water.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
-            glUniformMatrix4fv(shader::water.uniform("model"), 1, GL_FALSE, &model[0][0]);
-            glUniform4fv(shader::water.uniform("shallow_color"), 1, &water->shallow_color[0]);
-            glUniform4fv(shader::water.uniform("deep_color"), 1, &water->deep_color[0]);
-            glUniform4fv(shader::water.uniform("foam_color"), 1, &water->foam_color[0]);
+            glUniformMatrix4fv(water_s->uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
+            glUniformMatrix4fv(water_s->uniform("model"), 1, GL_FALSE, &model[0][0]);
+            glUniform4fv(water_s->uniform("shallow_color"), 1, &water->shallow_color[0]);
+            glUniform4fv(water_s->uniform("deep_color"), 1, &water->deep_color[0]);
+            glUniform4fv(water_s->uniform("foam_color"), 1, &water->foam_color[0]);
 
             glBindVertexArray(water_grid.vao);
             glDrawElements(water_grid.draw_mode, water_grid.draw_count[0], water_grid.draw_type, 
@@ -1205,7 +1256,7 @@ void drawPost(Texture *skybox, const Camera &camera){
 
 // convert HDR cubemap environment map to scaled down irradiance cubemap
 // @note that out_tex should be an empty texture
-void convoluteIrradianceFromCubemap(Texture *in_tex, Texture *out_tex) {
+void convoluteIrradianceFromCubemap(Texture *in_tex, Texture *out_tex, GLint format) {
     out_tex->resolution = glm::ivec2(32, 32); // @hardcoded
 
     GLuint FBO, RBO;
@@ -1229,10 +1280,8 @@ void convoluteIrradianceFromCubemap(Texture *in_tex, Texture *out_tex) {
     // Create output cubemap
     glGenTextures(1, &out_tex->id);
     glBindTexture(GL_TEXTURE_CUBE_MAP, out_tex->id);
-    for (unsigned int i = 0; i < 6; ++i)
-    {
-        glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGB16F, out_tex->resolution.x, out_tex->resolution.y, 0,
-            GL_RGB, GL_FLOAT, nullptr);
+    for (unsigned int i = 0; i < 6; ++i) {
+        glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, format, out_tex->resolution.x, out_tex->resolution.y, 0, GL_RGB, GL_FLOAT, nullptr);
     }
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
@@ -1251,8 +1300,7 @@ void convoluteIrradianceFromCubemap(Texture *in_tex, Texture *out_tex) {
         auto vp = projection * glm::mat4(glm::mat3(views[i])); // removes translation @speed
         glUniformMatrix4fv(shader::diffuse_convolution.uniform("vp"), 1, GL_FALSE, &vp[0][0]);
         
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-            GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, out_tex->id, 0);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, out_tex->id, 0);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
         drawCube();
@@ -1266,7 +1314,7 @@ void convoluteIrradianceFromCubemap(Texture *in_tex, Texture *out_tex) {
 constexpr int MAX_SPECULAR_MIP = 5;
 // convert HDR cubemap environment map to specular pre computed map for different roughnesses
 // @note that out_tex should be an empty texture
-void convoluteSpecularFromCubemap(Texture* in_tex, Texture* out_tex) {
+void convoluteSpecularFromCubemap(Texture* in_tex, Texture* out_tex, GLint format) {
     out_tex->resolution = glm::ivec2(128, 128); // @hardcoded may be too little for large metallic surfaces
 
     GLuint FBO, RBO;
@@ -1290,10 +1338,8 @@ void convoluteSpecularFromCubemap(Texture* in_tex, Texture* out_tex) {
     // Create output cubemap
     glGenTextures(1, &out_tex->id);
     glBindTexture(GL_TEXTURE_CUBE_MAP, out_tex->id);
-    for (unsigned int i = 0; i < 6; ++i)
-    {
-        glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGB16F, out_tex->resolution.x, out_tex->resolution.y, 0,
-            GL_RGB, GL_FLOAT, nullptr);
+    for (unsigned int i = 0; i < 6; ++i) {
+        glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, format, out_tex->resolution.x, out_tex->resolution.y, 0, GL_RGB, GL_FLOAT, nullptr);
     }
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
@@ -1334,4 +1380,21 @@ void convoluteSpecularFromCubemap(Texture* in_tex, Texture* out_tex) {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     glDeleteFramebuffers(1, &FBO);
     glDeleteRenderbuffers(1, &RBO);
+}
+
+bool createEnvironmentFromCubemap(Environment& env, AssetManager &asset_manager, const std::array<std::string, FACE_NUM_FACES>& paths, GLint format) {
+    env.skybox = asset_manager.createTexture("skybox");
+    if (!asset_manager.loadCubemapTexture(env.skybox, paths, format)) {
+        std::cerr << "Error loading cubemap\n";
+        return false;
+    }
+
+
+    env.skybox_irradiance = asset_manager.createTexture("skybox_irradiance");
+    convoluteIrradianceFromCubemap(env.skybox, env.skybox_irradiance, format);
+    env.skybox_specular = asset_manager.createTexture("skybox_specular");
+    convoluteSpecularFromCubemap(env.skybox, env.skybox_specular, format);
+    initBRDFLut(asset_manager);
+
+    return true;
 }

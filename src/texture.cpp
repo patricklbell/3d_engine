@@ -45,7 +45,7 @@ bool loadImageData(ImageData *img, const std::string& imagepath, const GLint int
 	return true;
 }
 
-GLuint createGLTextureFromData(ImageData *img, const GLint internal_format) {
+GLuint createGLTextureFromData(ImageData *img, const GLint internal_format, bool tile) {
 	std::cout << "Created a gl texture.\n";
 	// @note mostly redundant
 	if (img->data == NULL) 
@@ -57,10 +57,10 @@ GLuint createGLTextureFromData(ImageData *img, const GLint internal_format) {
 	glBindTexture(GL_TEXTURE_2D, texture_id);
 	// @note not needed if image is in correct format
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-	if (internal_format == GL_RGB)				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, img->x, img->y, 0, GL_RGB,  GL_UNSIGNED_BYTE, img->data);
-	else if (internal_format == GL_RED)			glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, img->x, img->y, 0, GL_RED,  GL_UNSIGNED_BYTE,   img->data);
-	else if (internal_format == GL_RGB32F)		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB32F, img->x, img->y, 0, GL_RGB, GL_FLOAT,        img->data);
-	else										glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, img->x, img->y, 0, GL_RGBA, GL_UNSIGNED_BYTE, img->data);
+	if (internal_format == GL_RGB)				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8,		img->x, img->y, 0, GL_RGB,  GL_UNSIGNED_BYTE,	img->data);
+	else if (internal_format == GL_RED)			glTexImage2D(GL_TEXTURE_2D, 0, GL_R8,		img->x, img->y, 0, GL_RED,  GL_UNSIGNED_BYTE,   img->data);
+	else if (internal_format == GL_RGB32F)		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB32F,	img->x, img->y, 0, GL_RGB,	GL_FLOAT,			img->data);
+	else										glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8,	img->x, img->y, 0, GL_RGBA, GL_UNSIGNED_BYTE,	img->data);
 
 	stbi_image_free(img->data);
 
@@ -69,8 +69,14 @@ GLuint createGLTextureFromData(ImageData *img, const GLint internal_format) {
 	//glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST); 
 
 	// ... nice trilinear filtering ...
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	if (tile) {
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+	}
+	else {
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	}
 
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
@@ -81,7 +87,7 @@ GLuint createGLTextureFromData(ImageData *img, const GLint internal_format) {
 	return texture_id;
 }
 
-GLuint loadImage(const std::string &imagepath, glm::ivec2& resolution, const GLint internal_format) {
+GLuint loadImage(const std::string &imagepath, glm::ivec2& resolution, const GLint internal_format, bool tile) {
 	auto img = ImageData();
 	img.internal_format = internal_format;
 	if (!loadImageData(&img, imagepath, internal_format)) {
@@ -90,7 +96,7 @@ GLuint loadImage(const std::string &imagepath, glm::ivec2& resolution, const GLi
 	}
 	resolution = glm::ivec2(img.x, img.y);
 
-	return createGLTextureFromData(&img, internal_format);
+	return createGLTextureFromData(&img, internal_format, tile);
 }
 
 // std array is expected to list {front, back, up, down, right, left}?
@@ -113,10 +119,10 @@ GLuint loadCubemap(const std::array<std::string, FACE_NUM_FACES> &paths, glm::iv
         if (data) {
 			// @note not needed if image is in correct format
 			glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-			if (internal_format == GL_RGB)			glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, internal_format, x, y, 0, GL_RGB , GL_UNSIGNED_BYTE, data);
-			else if (internal_format == GL_RED)		glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, internal_format, x, y, 0, GL_RED , GL_UNSIGNED_BYTE, data);
-			else if (internal_format == GL_RGB32F)	glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, internal_format, x, y, 0, GL_RGB32F, GL_FLOAT,		 data);
-			else									glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, internal_format, x, y, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+			if (internal_format == GL_RGB)			glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGB,		x, y, 0, GL_RGB , GL_UNSIGNED_BYTE, data);
+			else if (internal_format == GL_RED)		glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_R8,		x, y, 0, GL_RED , GL_UNSIGNED_BYTE, data);
+			else if (internal_format == GL_RGB32F)	glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGB32F,	x, y, 0, GL_RGB , GL_FLOAT,		 data);
+			else									glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGBA8,	x, y, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
         } else {
 			std::cerr << "Cubemap texture failed to load.\n";
         	glDeleteTextures(1, &texture_id);

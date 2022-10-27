@@ -63,6 +63,7 @@ glm::mat4x4 createModelMatrix(const glm::vec3& pos, const glm::mat3x3& rot, cons
 glm::mat4x4 createModelMatrix(const glm::vec3& pos, const glm::quat& rot, const glm::vec3& scl);
 
 glm::mat4x4 lerpMatrix(glm::mat4& m1, glm::mat4& m2, float t);
+glm::vec3 getScaleMatrix(glm::mat4& m);
 
 void screenPosToWorldRay(glm::ivec2 mouse_position, glm::mat4 view, glm::mat4 projection, glm::vec3 &out_origin, glm::vec3 &out_direction);
 

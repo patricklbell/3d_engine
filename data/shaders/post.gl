@@ -122,8 +122,6 @@ vec4 fxaa(sampler2D tex, vec2 coord) {
 }
 #endif
 
-#define NEAR            0.1
-#define FAR             100.0
 float depthToDist(float d){
   float z = 2.0*d - 1.0;
   return 2.0*NEAR*FAR/(FAR + NEAR - z*(FAR - NEAR));
@@ -193,18 +191,21 @@ void main()
     hdr_color *= AO;
 #endif
 
-    vec4 world_position = inverse_projection_untranslated_view*vec4(position,1.0);
-    world_position.xyz /= world_position.w;
-    vec3 skybox_color = texture(skybox, world_position.xyz).xyz;
-    
     const float fog_near = FAR - 80.0;
     const float fog_far = FAR;
 
-    // Calculate fog
-    float fog_amount = 1.0 - (fog_far - dist) / (fog_far - fog_near);
-    fog_amount = clamp(fog_amount, 0.0, 1.0);
-    //float fog_amount = smoothstep(fog_near, fog_far, dist);
-    hdr_color = mix(hdr_color, skybox_color, fog_amount);
+    // Pretty cringe way to do fog but stops aliasing @optimize
+    if(dist < fog_far - NEAR) {
+        vec4 world_position = inverse_projection_untranslated_view*vec4(position,1.0);
+        world_position.xyz /= world_position.w;
+        vec3 skybox_color = texture(skybox, world_position.xyz).xyz;
+
+        // Calculate fog
+        float fog_amount = 1.0 - (fog_far - dist) / (fog_far - fog_near);
+        fog_amount = clamp(fog_amount, 0.0, 1.0);
+        //float fog_amount = smoothstep(fog_near, fog_far, dist);
+        hdr_color = mix(hdr_color, skybox_color, fog_amount);
+    }
 
     // Reinhard tone mapping
     vec3 mapped = reinhard_tonemap(hdr_color);

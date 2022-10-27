@@ -30,6 +30,12 @@ struct PointLight {
     }
 };
 
+struct Environment {
+    Texture* skybox = nullptr;
+    Texture* skybox_irradiance = nullptr;
+    Texture* skybox_specular = nullptr;
+};
+
 struct Camera {
     enum TYPE : uint8_t { 
         TRACKBALL = 0,
@@ -37,7 +43,7 @@ struct Camera {
         STATIC = 2,
     } state;
 
-    float near_plane = 1.0f, far_plane = 100.0f;
+    float near_plane = 0.01f, far_plane = 100.0f;
     float fov = glm::radians(45.0f);
     glm::vec3 up = glm::vec3(0,1,0);
     glm::vec3 forward;
@@ -73,11 +79,10 @@ void initWaterColliderFbo();
 void bindDrawWaterColliderMap(const EntityManager &entity_manager, WaterEntity *water);
 void distanceTransformWaterFbo(WaterEntity* water);
 
-//void drawSkybox(const Texture* skybox, const Camera &camera);
-
 void clearFramebuffer();
 void bindHdr();
-void drawEntitiesHdr(const EntityManager& entity_manager, const Texture* irradiance_map, const Texture* prefiltered_specular_map, const Camera& camera);
+void drawSkybox(const Texture* skybox, const Camera& camera);
+void drawEntitiesHdr(const EntityManager& entity_manager, const Texture* skybox, const Texture* irradiance_map, const Texture* prefiltered_specular_map, const Camera& camera, const bool lightmapping=false);
 
 void bindBackbuffer();
 void drawPost(Texture *skybox, const Camera& camera);
@@ -87,8 +92,9 @@ void initBloomFbo(bool resize=false);
 
 void initHdrFbo(bool resize=false);
 
-void convoluteIrradianceFromCubemap(Texture* in_tex, Texture* out_tex);
-void convoluteSpecularFromCubemap(Texture* in_tex, Texture* out_tex);
+void convoluteIrradianceFromCubemap(Texture* in_tex, Texture* out_tex, GLint format = GL_RGB);
+void convoluteSpecularFromCubemap(Texture* in_tex, Texture* out_tex, GLint format = GL_RGB);
+bool createEnvironmentFromCubemap(Environment& env, AssetManager& asset_manager, const std::array<std::string, FACE_NUM_FACES>& paths, GLint format = GL_RGB);
 
 struct BloomMipInfo {
     glm::vec2 size;
@@ -106,6 +112,7 @@ namespace graphics{
 
     extern const std::string shadow_shader_macro;
     extern GLuint shadow_buffer, shadow_fbo;
+    extern bool do_shadows;
 
     extern GLuint water_collider_fbos[2], water_collider_buffers[2];
     extern int water_collider_final_fbo;
@@ -121,6 +128,8 @@ namespace graphics{
 
     extern bool do_msaa;
     extern int MSAA_SAMPLES;
+
+    extern Environment environment;
 }
     
 #endif

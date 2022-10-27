@@ -37,9 +37,9 @@ GLuint Shader::uniform(const std::string &name) {
 }
 
 namespace shader {
-	Shader animated_null, null, null_vegetation, unified, animated_unified, water, gaussian_blur,
+	Shader animated_null, null, null_vegetation, unified, unified_ns, animated_unified, animated_unified_ns, water, water_ns, gaussian_blur,
 		plane_projection, jfa, jfa_distance, post[2], debug, depth_only, vegetation, 
-		downsample, upsample, diffuse_convolution, specular_convolution, generate_brdf_lut;
+		downsample, upsample, diffuse_convolution, specular_convolution, generate_brdf_lut, skybox;
 }
 
 using namespace shader;
@@ -117,7 +117,7 @@ static void load_shader_dependencies(char *shader_code, int num_bytes,
 
 					char * loaded_shader = read_file_contents(loadpath, loaded_num_bytes);
 					if(loaded_shader != nullptr) {
-						std::cout << "Successful #load at path " << loadpath << "\n";
+						//std::cout << "Successful #load at path " << loadpath << "\n";
 						load_shader_dependencies(loaded_shader, loaded_num_bytes, linked_shader_codes, linked_shader_codes_to_free, linked_shader_paths);
 						linked_shader_codes_to_free.push_back(loaded_shader);
 						linked_shader_codes.push_back(loaded_shader);	
@@ -125,7 +125,7 @@ static void load_shader_dependencies(char *shader_code, int num_bytes,
 						std::cout << "Failed to #load path " << loadpath << "\n";
 					}
 				} else {
-					std::cout << "Skipped duplicate #load of path " << loadpath << "\n";
+					//std::cout << "Skipped duplicate #load of path " << loadpath << "\n";
 				}
 			}
 		}
@@ -201,7 +201,7 @@ void create_shader_from_program(Shader& shader, GLuint program_id, std::string_v
 
 	GLint count;
 	glGetProgramiv(shader.program, GL_ACTIVE_UNIFORMS, &count);
-	printf("Active Uniforms: %d\n", count);
+	//printf("Active Uniforms: %d\n", count);
 
 	const GLsizei buf_size = 256; // maximum name length
 	//glGetProgramiv(shader.program, GL_ACTIVE_UNIFORM_MAX_LENGTH, &buf_size);
@@ -231,7 +231,6 @@ bool loadShader(Shader& shader, std::string_view vertex_fragment_file_path, std:
 		m_alpha.erase(std::remove_if(m_alpha.begin(), m_alpha.end(), not_alphanumeric), m_alpha.end());
 		cache_path += "." + m_alpha;
 	}
-	std::cout << "cache_path: " << cache_path << "\n";
 
 	uint64_t unix_update_time;
 	if(do_shader_caching && shader_binary_supported && std::filesystem::exists(vertex_fragment_file_path)) {
@@ -383,7 +382,6 @@ bool loadShader(Shader& shader, std::string_view vertex_fragment_file_path, std:
 	if(do_shader_caching && shader_binary_supported)
 		write_shader_cache(shader, cache_path, unix_update_time);
 	
-	printf("\n");
 	return true;
 }
 
@@ -409,8 +407,11 @@ void initGlobalShaders() {
 		{"data/shaders/null.gl",				&null,					true,  graphics::shadow_shader_macro,								empty_file_time},
 		{"data/shaders/null.gl",				&null_vegetation,		true,  graphics::shadow_shader_macro+"\n#define VEGETATION 1\n",	empty_file_time},
 		{"data/shaders/unified.gl",				&unified,				false, graphics::shadow_shader_macro,								empty_file_time},
-		{"data/shaders/unified.gl",		&animated_unified,				false, graphics::shadow_shader_macro + graphics::animation_macro,	empty_file_time},
+		{"data/shaders/unified.gl",				&unified_ns,			false, "#define SHADOWS 0\n",										empty_file_time},
+		{"data/shaders/unified.gl",				&animated_unified,		false, graphics::shadow_shader_macro+graphics::animation_macro,		empty_file_time},
+		{"data/shaders/unified.gl",				&animated_unified_ns,	false, "#define SHADOWS 0\n"+graphics::animation_macro,				empty_file_time},
 		{"data/shaders/water.gl",				&water,					false, graphics::shadow_shader_macro,								empty_file_time},
+		{"data/shaders/water.gl",				&water_ns,				false, "#define SHADOWS 0\n",										empty_file_time},
 		{"data/shaders/gaussian_blur.gl",		&gaussian_blur,			false, "",															empty_file_time},
 		{"data/shaders/plane_projection.gl",	&plane_projection,		true,  "",															empty_file_time},
 		{"data/shaders/jump_flood.gl",			&jfa,					false, "",															empty_file_time},
@@ -425,6 +426,7 @@ void initGlobalShaders() {
 		{"data/shaders/diffuse_convolution.gl",	&diffuse_convolution,	false, "",															empty_file_time},
 		{"data/shaders/specular_convolution.gl",&specular_convolution,	false, "",															empty_file_time},
 		{"data/shaders/generate_brdf_lut.gl",   &generate_brdf_lut,	    false, "",															empty_file_time},
+		{"data/shaders/skybox.gl",				&skybox,				false, "",															empty_file_time},
 	};
 	// Fill in with correct file time and actually load
 	for (auto& sd : shader_list) {

@@ -89,7 +89,7 @@ vec3 importanceSampleGGX(vec2 Xi, vec3 normal, vec3 tangent, vec3 bitangent, flo
 const float MAX_REFLECTION_LOD = 4.0;
 
 // @note Radiance scaled color
-vec3 brdfSchlickGGX(vec3 position, vec3 normal, vec3 albedo, float metallic, float roughness, vec3 light_dir, vec3 light_col, vec3 camera_position, float ao) {
+vec3 brdfSchlickGGX(vec3 position, vec3 normal, vec3 albedo, float metallic, float roughness, vec3 light_dir, vec3 light_col, vec3 camera_position, float ao, vec3 GI) {
     vec3 view_dir = normalize(camera_position - position);
     vec3 halfway_dir = normalize(view_dir + light_dir);
     vec3 radiance    = light_col; 
@@ -128,11 +128,11 @@ vec3 brdfSchlickGGX(vec3 position, vec3 normal, vec3 albedo, float metallic, flo
     vec3 env_specular = prefiltered_color * (env_F * env_brdf.x + env_brdf.y);
 
     vec3 irradiance = texture(irradiance_map, normal).rgb;
-    vec3 env_diffuse    = irradiance * albedo;
-    vec3 ambient = (kD * env_diffuse + env_specular) * ao; 
+    vec3 env_diffuse    = irradiance * albedo * GI;
+    vec3 ambient = kD * env_diffuse + env_specular; 
 #else
-    vec3 ambient = (ao + 0.04)*albedo;
+    vec3 ambient = albedo * GI;
 #endif
     
-    return ambient + lo;
+    return ao*(ambient + lo);
 }

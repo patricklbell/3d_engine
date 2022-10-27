@@ -151,6 +151,16 @@ glm::mat4x4 lerpMatrix(glm::mat4& m1, glm::mat4& m2, float t) {
     return createModelMatrix(translation, rotation, scale);
 }
 
+glm::vec3 getScaleMatrix(glm::mat4& m) {
+    glm::vec3 scale;
+    glm::quat rotation;
+    glm::vec3 translation;
+    glm::vec3 skew;
+    glm::vec4 perspective;
+    glm::decompose(m, scale, rotation, translation, skew, perspective);
+    return scale;
+}
+
 // https://cadxfem.org/inf/Fast%20MinimumStorage%20RayTriangle%20Intersection.pdf
 // Cornell university paper describing ray intersection algorithms
 static const double epsilon = 0.000001;

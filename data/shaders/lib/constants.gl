@@ -1,5 +1,5 @@
 #define PI 3.14159265358979323846 
-#define NEAR            0.1
+#define NEAR            0.01
 #define FAR             100.0
 #define FLT_MAX 3.402823466e+38
 #define FLT_MIN 1.175494351e-38

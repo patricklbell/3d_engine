@@ -1,4 +1,4 @@
-#define SHADOWS 1
+#if SHADOWS
 
 layout(binding = 5) uniform sampler2DArray shadow_map;
 layout(std140, binding=0) uniform ShadowVP 
@@ -92,3 +92,4 @@ float shadowness(float NdotL, vec3 position){
     return 1.0 - shadow;
 }
 
+#endif

@@ -38,6 +38,7 @@ GLFWwindow* window;
 #include "entities.hpp"
 #include "level.hpp"
 #include "game_behaviour.hpp"
+#include "lightmapper.hpp"
 
 // Defined in globals.hpp
 std::string glsl_version;
@@ -124,7 +125,6 @@ int main() {
 
     // Configure gl global state
     glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);  
-    glEnable(GL_SAMPLE_ALPHA_TO_COVERAGE);
 
     GL_version = std::string((char*)glGetString(GL_VERSION));
     GL_vendor = std::string((char*)glGetString(GL_VENDOR));
@@ -149,11 +149,12 @@ int main() {
     initShadowFbo();
     initAnimationUbo();
     initWaterColliderFbo();
+
     initEditorGui(global_assets);
     initEditorControls();
 
     // @note camera instanciation uses sun direction to create shadow view
-    sun_direction = glm::vec3(-0.7071067811865475, -0.7071067811865475, 0);
+    sun_direction = glm::normalize(glm::vec3(-1, -1, -0.25));
     sun_color = 5.0f*glm::vec3(0.941, 0.933, 0.849);
 
     createDefaultCamera(editor_camera);
@@ -166,23 +167,34 @@ int main() {
     //
     initGlobalShaders();
 
+    createEnvironmentFromCubemap(graphics::environment, global_assets,
+        { "data/textures/simple_skybox/0006.png", "data/textures/simple_skybox/0002.png",
+          "data/textures/simple_skybox/0005.png", "data/textures/simple_skybox/0004.png",
+          "data/textures/simple_skybox/0003.png", "data/textures/simple_skybox/0001.png" });
+    //createEnvironmentFromCubemap(graphics::environment, global_assets,
+    //    { "data/textures/circus_backstage/px.hdr", "data/textures/circus_backstage/nx.hdr",
+    //      "data/textures/circus_backstage/py.hdr", "data/textures/circus_backstage/ny.hdr",
+    //      "data/textures/circus_backstage/pz.hdr", "data/textures/circus_backstage/nz.hdr" }, GL_RGB32F);
+
     AssetManager asset_manager;
     EntityManager *entity_manager = &level_entity_manager;
 
     // Load background sample
-    auto bg_music = asset_manager.createAudio("data/audio/time.wav");
-    if (bg_music->wav_stream.load(bg_music->handle.c_str()) != SoLoud::SO_NO_ERROR)
-        std::cout << "Error loading wav\n";
-    bg_music->wav_stream.setLooping(1);                          // Tell SoLoud to loop the sound
-    int handle1 = soloud.play(bg_music->wav_stream);             // Play it
-    soloud.setVolume(handle1, 0.5f);            // Set volume; 1.0f is "normal"
-    soloud.setPan(handle1, -0.2f);              // Set pan; -1 is left, 1 is right
-    soloud.setRelativePlaySpeed(handle1, 1.0f); // Play a bit slower; 1.0f is normal
+    //auto bg_music = asset_manager.createAudio("data/audio/time.wav");
+    //if (bg_music->wav_stream.load(bg_music->handle.c_str()) != SoLoud::SO_NO_ERROR)
+    //    std::cout << "Error loading wav\n";
+    //bg_music->wav_stream.setLooping(1);                          // Tell SoLoud to loop the sound
+    //int handle1 = soloud.play(bg_music->wav_stream);             // Play it
+    //soloud.setVolume(handle1, 0.5f);            // Set volume; 1.0f is "normal"
+    //soloud.setPan(handle1, -0.2f);              // Set pan; -1 is left, 1 is right
+    //soloud.setRelativePlaySpeed(handle1, 1.0f); // Play a bit slower; 1.0f is normal
 
-     level_path = "data/levels/player_test.level";
+     level_path = "data/levels/lightmap_test.level";
      loadLevel(*entity_manager, asset_manager, level_path, level_camera);
      editor_camera = level_camera;
 
+     //runLightmapper(*entity_manager, asset_manager, graphics::environment.skybox, graphics::environment.skybox_irradiance, graphics::environment.skybox_specular);
+        
     /*{
         auto player = (PlayerEntity*)entity_manager->createEntity(PLAYER_ENTITY);
         entity_manager->player = player->id;
@@ -191,20 +203,6 @@ int main() {
         asset_manager.loadMeshFile(player->mesh, player->mesh->handle);
         asset_manager.loadAnimationFile(player->animesh, player->animesh->handle);
     }*/
-
-    std::array<std::string, 6> skybox_paths = { "data/textures/simple_skybox/0006.png", "data/textures/simple_skybox/0002.png",
-                                                "data/textures/simple_skybox/0005.png", "data/textures/simple_skybox/0004.png",
-                                                "data/textures/simple_skybox/0003.png", "data/textures/simple_skybox/0001.png" };
-    auto skybox = global_assets.createTexture("skybox");
-    if (!global_assets.loadCubemapTexture(skybox, skybox_paths, GL_RGB))
-        std::cerr << "Error loading cubemap\n";
-
-
-    auto skybox_irradiance = global_assets.createTexture("skybox_irradiance");
-    convoluteIrradianceFromCubemap(skybox, skybox_irradiance);
-    auto skybox_specular = global_assets.createTexture("skybox_specular");
-    convoluteSpecularFromCubemap(skybox, skybox_specular);
-    initBRDFLut(global_assets);
 
 
 #ifndef NDEBUG 
@@ -257,16 +255,18 @@ int main() {
         if(playing)
             updateGameEntities(true_dt, entity_manager);
 
-        bindDrawShadowMap(*entity_manager, camera);
+        if (graphics::do_shadows)
+            bindDrawShadowMap(*entity_manager, camera);
+
         bindHdr();
         clearFramebuffer();
-        drawEntitiesHdr(*entity_manager, skybox_irradiance, skybox_specular, camera);
+        drawEntitiesHdr(*entity_manager, graphics::environment.skybox, graphics::environment.skybox_irradiance, graphics::environment.skybox_specular, camera);
 
         if (graphics::do_bloom) {
             blurBloomFbo();
         }
         bindBackbuffer();
-        drawPost(skybox, camera);
+        drawPost(graphics::environment.skybox, camera);
 
         if (playing) {
             handleGameControls(entity_manager, asset_manager, true_dt);
@@ -274,6 +274,7 @@ int main() {
         else {
             handleEditorControls(entity_manager, asset_manager, true_dt);
         }
+
         if (!playing) {
             drawEditorGui(*entity_manager, asset_manager);
         }

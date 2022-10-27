@@ -59,6 +59,7 @@ struct MeshEntity : Entity {
     float ao_mult = 1.0;
 
     uint8_t casts_shadow = true;
+    Texture* lightmap = nullptr;
 
     MeshEntity(Id _id = NULLID) : Entity(_id) {
         type = EntityType::MESH_ENTITY;
@@ -84,6 +85,13 @@ struct AnimatedMeshEntity : MeshEntity {
     // If there are multiple events we need to keep the previous one buffered for
     // blending, this flag determines wheter event 0 is playing
     bool playing_first = true; 
+
+    // We need to apply any transforms at the start of the next animation,
+    // @todo make this better/extensible for when transforms are applied continuously/keyframes
+    bool apply_animation_transform = false;
+    glm::vec3 animation_delta_position = glm::vec3(0.0);
+    glm::quat animation_delta_rotation = glm::quat();
+
     //@debug
     enum class BlendState {
         NONE = 0,
@@ -150,12 +158,13 @@ struct WaterEntity : Entity {
 struct ColliderEntity : MeshEntity {
     glm::vec3 collider_position  = glm::vec3(0.0);
     glm::quat collider_rotation  = glm::quat(0.0, 0.0, 0.0, 1.0);
-    glm::mat3 collider_scale     = glm::mat3(1.0);
+    glm::mat3 collider_scale     = glm::mat3(0.5);
 
     uint8_t selectable = false;
 
     ColliderEntity(Id _id = NULLID) : MeshEntity(_id) {
         type = EntityType::COLLIDER_ENTITY;
+        scale = glm::mat3(0.5);
     }
 };
 

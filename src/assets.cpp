@@ -20,6 +20,9 @@
 #include <assimp/scene.h>           // Output data structure
 #include <assimp/postprocess.h>     // Post processing flags
 
+#include <indicators.hpp>
+#include <xatlas.h>
+
 #include "assimp/material.h"
 #include "assimp/types.h"
 #include "texture.hpp"
@@ -444,6 +447,196 @@ void collapseAssimpMeshScene(aiNode* node, const aiScene* scene, std::vector<aiM
     }
 };
 
+// May be called from any thread
+static bool xatlasCallback(xatlas::ProgressCategory category, int progress, void* userData) {
+    static std::mutex progressMutex;
+    std::unique_lock<std::mutex> lock(progressMutex);
+
+    auto bar = (indicators::ProgressBar*)userData;
+    bar->set_option(indicators::option::PostfixText{ xatlas::StringForEnum(category) });
+    bar->set_progress(progress);
+
+    return true;
+}
+
+// Based on: https://gamedev.stackexchange.com/questions/68612/how-to-compute-tangent-and-bitangent-vectors
+// by Mohammad Ghabboun (concept3D)
+// @note probably better to just copy this from assimp
+void calculateTangentArray(const uint64_t num_vertices, const glm::vec3* vertices, const glm::vec3* normals,
+    const glm::vec2* texcoords, const uint64_t num_indices, const unsigned int* indices, glm::vec3* tangents) {
+    // @note relies on all 0 bits representing floating point 0.0
+    memset(tangents, 0, sizeof(*tangents) * num_vertices);
+
+    for (uint64_t a = 0; a < num_indices / 3; a++) {
+        const auto& i1 = indices[3*a + 0];
+        const auto& i2 = indices[3*a + 1];
+        const auto& i3 = indices[3*a + 2];
+
+        const auto& v1 = vertices[i1];
+        const auto& v2 = vertices[i2];
+        const auto& v3 = vertices[i3];
+
+        const auto& w1 = texcoords[i1];
+        const auto& w2 = texcoords[i2];
+        const auto& w3 = texcoords[i3];
+
+        float x1 = v2.x - v1.x;
+        float x2 = v3.x - v1.x;
+        float y1 = v2.y - v1.y;
+        float y2 = v3.y - v1.y;
+        float z1 = v2.z - v1.z;
+        float z2 = v3.z - v1.z;
+
+        float s1 = w2.x - w1.x;
+        float s2 = w3.x - w1.x;
+        float t1 = w2.y - w1.y;
+        float t2 = w3.y - w1.y;
+
+        float r = 1.0F / (s1 * t2 - s2 * t1);
+        glm::vec3 sdir((t2 * x1 - t1 * x2) * r, (t2 * y1 - t1 * y2) * r, (t2 * z1 - t1 * z2) * r);
+
+        tangents[i1] += sdir;
+        tangents[i2] += sdir;
+        tangents[i3] += sdir;
+    }
+
+    for (uint64_t a = 0; a < num_vertices; a++)
+    {
+        const auto& n = normals[a];
+        const auto& t = tangents[a];
+
+        // Gram-Schmidt orthogonalize
+        tangents[a] = glm::normalize((t - n * glm::dot(n, t)));
+    }
+}
+
+bool parameterizeAndPackMesh(Mesh* mesh) {
+    // Subdivide and generate UVs with xatlas for lightmapping
+    // Create atlas.
+    xatlas::Atlas* atlas = xatlas::Create();
+
+    indicators::ProgressBar bar{ indicators::option::BarWidth{50}, indicators::option::Start{"["}, indicators::option::Fill{"="}, indicators::option::Lead{">"}, indicators::option::Remainder{" "}, indicators::option::End{" ]"}, indicators::option::PostfixText{""}, indicators::option::ForegroundColor{indicators::Color::white}, indicators::option::FontStyles{std::vector<indicators::FontStyle>{indicators::FontStyle::bold}} };
+    bar.set_option(indicators::option::ShowPercentage{ true });
+
+    // Set progress callback.
+    xatlas::SetProgressCallback(atlas, xatlasCallback, &bar);
+
+    // Add meshes to atlas.
+    {
+        xatlas::MeshDecl meshDecl;
+        meshDecl.vertexCount = mesh->num_vertices;
+        meshDecl.vertexPositionData = mesh->vertices;
+        meshDecl.vertexPositionStride = sizeof(*mesh->vertices);
+
+        if (mesh->attributes & MESH_ATTRIBUTES_NORMALS) {
+            meshDecl.vertexNormalData = mesh->normals;
+            meshDecl.vertexNormalStride = sizeof(*mesh->normals);
+        }
+        if (mesh->attributes & MESH_ATTRIBUTES_UVS) {
+            meshDecl.vertexUvData = mesh->uvs;
+            meshDecl.vertexUvStride = sizeof(*mesh->uvs);
+        }
+
+        meshDecl.indexCount = mesh->num_indices;
+        meshDecl.indexData = mesh->indices;
+        meshDecl.indexFormat = xatlas::IndexFormat::UInt32;
+
+        xatlas::AddMeshError error = xatlas::AddMesh(atlas, meshDecl, 1);
+        if (error != xatlas::AddMeshError::Success) {
+            xatlas::Destroy(atlas);
+            std::cerr << "Error adding mesh to xatlas: " << xatlas::StringForEnum(error) << "\n";
+            return false;
+        }
+    }
+    xatlas::ComputeCharts(atlas);
+    xatlas::PackCharts(atlas);
+
+    // 
+    // Convert xatlas mesh back into our mesh
+    //
+    auto& xmesh = atlas->meshes[0];
+    int num_vertices = xmesh.vertexCount;
+    assert(xmesh.indexCount == mesh->num_indices);
+
+    // @note this is very wasteful but this seems to be the only way to work with xatlas
+    glm::vec2* uvs = nullptr;
+    glm::vec3* vertices = nullptr, * normals = nullptr, * tangents = nullptr;
+    glm::vec4* colors = nullptr;
+
+    bool mallocs_failed = false;
+    vertices = reinterpret_cast<decltype(vertices)>(malloc(sizeof(*vertices) * num_vertices));
+    mallocs_failed |= vertices == NULL;
+    uvs = reinterpret_cast<decltype(uvs)>(malloc(sizeof(*uvs) * num_vertices));
+    mallocs_failed |= uvs == NULL;
+
+    if (mesh->attributes & MESH_ATTRIBUTES_NORMALS) {
+        normals = reinterpret_cast<decltype(normals)>(malloc(sizeof(*normals) * num_vertices));
+        mallocs_failed |= normals == NULL;
+
+        // We can't calculate tangents without normals
+        tangents = reinterpret_cast<decltype(tangents)>(malloc(sizeof(*tangents) * num_vertices));
+        mallocs_failed |= tangents == NULL;
+    }
+    if (mesh->attributes & MESH_ATTRIBUTES_COLORS) {
+        colors = reinterpret_cast<decltype(colors)>(malloc(sizeof(*colors) * num_vertices));
+        mallocs_failed |= mesh->colors == NULL;
+    }
+
+    if (mallocs_failed) {
+        std::cerr << "Mallocs failed in xatlas generation, freeing xatlas buffers\n";
+        free(vertices);
+        free(normals);
+        free(tangents);
+        free(uvs);
+        free(colors);
+        return false;
+    }
+
+    const int uv_w = atlas->width, uv_h = atlas->height;
+
+    for (int v = 0; v < xmesh.vertexCount; v++) {
+        const xatlas::Vertex& vertex = xmesh.vertexArray[v];
+
+        uvs[v] = glm::vec2(vertex.uv[0] / uv_w, vertex.uv[1] / uv_h);
+
+        vertices[v] = mesh->vertices[vertex.xref];
+        if (mesh->attributes & MESH_ATTRIBUTES_NORMALS) {
+            normals[v] = mesh->normals[vertex.xref];
+        }
+        if (mesh->attributes & MESH_ATTRIBUTES_COLORS) {
+            colors[v] = mesh->colors[vertex.xref];
+        }
+    }
+
+    memcpy(mesh->indices, xmesh.indexArray, mesh->num_indices * sizeof(*mesh->indices));
+
+    if (mesh->attributes & MESH_ATTRIBUTES_NORMALS) {
+        // Recalculate tangents @todo assimp load flags
+        calculateTangentArray(num_vertices, vertices, normals, uvs, mesh->num_indices, mesh->indices, tangents);
+        mesh->attributes = (MeshAttributes)(mesh->attributes | MESH_ATTRIBUTES_TANGENTS);
+    }
+
+    mesh->attributes = (MeshAttributes)(mesh->attributes | MESH_ATTRIBUTES_UVS);
+    mesh->num_vertices = num_vertices;
+
+    // Copy from temporary buffer to actual mesh
+    free(mesh->vertices);
+    free(mesh->normals);
+    free(mesh->tangents);
+    free(mesh->uvs);
+    free(mesh->colors);
+    mesh->vertices = vertices;
+    mesh->normals = normals;
+    mesh->tangents = tangents;
+    mesh->uvs = uvs;
+    mesh->colors = colors;
+
+    // Cleanup.
+    xatlas::Destroy(atlas);
+
+    return true;
+}
+
 bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, const aiScene* scene, 
                                        const std::vector<aiMesh*> &ai_meshes, const std::vector<aiMatrix4x4>& ai_meshes_global_transforms) {
 
@@ -562,16 +755,16 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
         mesh->transforms[i] = aiMat4x4ToGlm(ai_meshes_global_transforms[i]);
 
         // If every mesh has attribute then it is valid
-        if (ai_mesh->mNormals == NULL) {
+        if (mesh->attributes & MESH_ATTRIBUTES_NORMALS && ai_mesh->mNormals == NULL) {
             mesh->attributes = (MeshAttributes)(mesh->attributes ^ MESH_ATTRIBUTES_NORMALS);
         }
-        if (ai_mesh->mTangents == NULL) {
+        if (mesh->attributes & MESH_ATTRIBUTES_TANGENTS && ai_mesh->mTangents == NULL) {
             mesh->attributes = (MeshAttributes)(mesh->attributes ^ MESH_ATTRIBUTES_TANGENTS);
         }
-        if (ai_mesh->mTextureCoords[0] == NULL) {
+        if (mesh->attributes & MESH_ATTRIBUTES_UVS && ai_mesh->mTextureCoords[0] == NULL) {
             mesh->attributes = (MeshAttributes)(mesh->attributes ^ MESH_ATTRIBUTES_UVS);
         }
-        if (ai_mesh->mColors[0] == NULL) {
+        if (mesh->attributes & MESH_ATTRIBUTES_COLORS && ai_mesh->mColors[0] == NULL) {
             mesh->attributes = (MeshAttributes)(mesh->attributes ^ MESH_ATTRIBUTES_COLORS);
         }
 	}
@@ -672,6 +865,9 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
         indices_offset += ai_mesh->mNumFaces*3;
     }
 
+    if(mesh->tangents == NULL)
+        return parameterizeAndPackMesh(mesh);
+
     return true;
 }
 
@@ -679,7 +875,6 @@ static constexpr auto ai_import_flags = aiProcess_JoinIdenticalVertices |
 aiProcess_Triangulate |
 aiProcess_GenNormals |
 aiProcess_CalcTangentSpace |
-aiProcess_GenUVCoords |
 aiProcess_FlipUVs |
 //aiProcess_RemoveComponent (remove colors) |
 aiProcess_ImproveCacheLocality |
@@ -1350,8 +1545,8 @@ bool AssetManager::loadTextureFromAssimp(Texture *&tex, aiMaterial *mat, const a
 	return false;
 }
 
-bool AssetManager::loadTexture(Texture *tex, const std::string &path, GLint internal_format) {
-    auto texture_id = loadImage(path, tex->resolution, internal_format);
+bool AssetManager::loadTexture(Texture *tex, const std::string &path, GLint internal_format, const bool tile) {
+    auto texture_id = loadImage(path, tex->resolution, internal_format, tile);
     if(texture_id == GL_FALSE) return false;
 
     tex->id = texture_id;
