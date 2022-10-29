@@ -234,6 +234,7 @@ int main() {
         Camera& camera = *camera_ptr;
 
         if (window_resized){
+            glViewport(0, 0, window_width, window_height);
             updateCameraProjection(level_camera);
             updateCameraProjection(game_camera);
             updateCameraProjection(editor_camera);

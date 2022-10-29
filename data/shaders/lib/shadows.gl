@@ -35,22 +35,61 @@ float random(vec3 seed, int i){
 	return fract(sin(dot_product) * 43758.5453);
 }
 
-// https://learnopengl.com/Guest-Articles/2021/CSM
-// @note calling multiple times recalculates
-float shadowness(float NdotL, vec3 position){
-    // Select shadow correct projection for csm
-    float frag_dist = abs((view * vec4(position, 1.0)).z);
+// Nvidia PCF techinque, requires jitter map
+// https://developer.nvidia.com/gpugems/gpugems2/part-ii-shading-lighting-and-shadows/chapter-17-efficient-soft-edged-shadows-using
+//#define SAMPLES_COUNT 64
+//#define SAMPLES_COUNT_DIV_2 32
+//#define INV_SAMPLES_COUNT (1.0f / SAMPLES_COUNT)    
+//uniform sampler2D decal;   // decal texture  
+//uniform sampler3D jitter;  // jitter map    
+//uniform sampler2D spot;    // projected spotlight image  
+//uniform sampler2DShadow shadowMap;  // shadow map    
+//uniform float fwidth;  
+//uniform vec2 jxyscale;      // these are passed down from vertex shader  
+//varying vec4 shadowMapPos;  
+//varying vec3 normal;  
+//varying vec2 texCoord;  
+//varying vec3 lightVec;  
+//varying vec3 view;      
+//void main(void)  {
+//    float shadow = 0;
+//    float fsize = shadowMapPos.w * fwidth;
+//    vec3 jcoord = vec3(gl_FragCoord.xy * jxyscale, 0);
+//    vec4 smCoord = shadowMapPos;      // take cheap "test" samples first
+//    for (int i = 0; i<4; i++) {
+//        vec4 offset = texture3D(jitter, jcoord);
+//        jcoord.z += 1.0f / SAMPLES_COUNT_DIV_2;
+//        smCoord.xy = offset.xy * fsize + shadowMapPos;
+//        shadow += texture2DProj(shadowMap, smCoord) / 8;
+//        smCoord.xy = offset.zw * fsize + shadowMapPos;
+//        shadow += texture2DProj(shadowMap, smCoord) / 8;
+//    }    
+//    vec3 N = normalize(normal);
+//    vec3 L = normalize(lightVec);
+//    vec3 V = normalize(view);
+//    vec3 R = reflect(-V, N);      // calculate diffuse dot product  
+//    float NdotL = max(dot(N, L), 0);    // if all the test samples are either zeroes or ones, or diffuse dot  
+//    // product is zero, we skip expensive shadow-map filtering  
+//    if ((shadow - 1) * shadow * NdotL != 0) {    // most likely, we are in the penumbra      
+//        shadow *= 1.0f / 8; // adjust running total      
+//        // refine our shadow estimate    
+//        for (int i = 0; i<SAMPLES_COUNT_DIV_2 - 4; i++) {
+//            vec4 offset = texture3D(jitter, jcoord);
+//            jcoord.z += 1.0f / SAMPLES_COUNT_DIV_2;
+//            smCoord.xy = offset.xy * fsize + shadowMapPos;
+//            shadow += texture2DProj(shadowMap, smCoord)* INV_SAMPLES_COUNT;
+//            smCoord.xy = offset.zw * fsize + shadowMapPos;
+//            shadow += texture2DProj(shadowMap, smCoord)* INV_SAMPLES_COUNT;
+//        }  
+//    }
+//    // all done Ð modulate lighting with the computed shadow value  
+//    vec3 color = texture2D(decal, texCoord).xyz;    
+//    gl_FragColor.xyz = (color * NdotL + pow(max(dot(R, L), 0), 64)) * shadow * texture2DProj(spot, shadowMapPos) + color * 0.1;
+//} 
 
-    int layer = CASCADE_NUM;
-    for (int i = 0; i < CASCADE_NUM; ++i)
-    {
-        if (frag_dist < shadow_cascade_distances[i])
-        {
-            layer = i;
-            break;
-        }
-    }
-        
+#define CSM_BLEND_BAND 0.1
+
+float calculatePcfShadowness(float NdotL, vec3 position, int layer) {
     vec4 shadow_pos = shadow_vps[layer] * vec4(position, 1.0);
     // perform perspective divide
     vec3 shadow_coord = shadow_pos.xyz / shadow_pos.w;
@@ -60,7 +99,7 @@ float shadowness(float NdotL, vec3 position){
     // get depth of current fragment from light's perspective
     float shadow_depth = shadow_coord.z;
 
-    // keep the shadow at 0.0 when outside the far_plane region of the light's frustum.
+    // return unshadowed result when point is beyond closer than near_plane of the light's frustum.
     if (shadow_depth > 1.0)
     {
         return 1.0;
@@ -77,19 +116,49 @@ float shadowness(float NdotL, vec3 position){
         bias *= 1 / (shadow_cascade_distances[layer] * 0.5f);
     }
     // PCF
-    float shadow = 0.0;
     vec2 texel_size = 1.0 / vec2(textureSize(shadow_map, 0));
+
+    float shadow = 0.0f;
     for(int x = -1; x <= 1; ++x)
     {
         for(int y = -1; y <= 1; ++y)
         {
             float pcf_depth = texture(shadow_map, vec3(shadow_coord.xy + vec2(x, y) * texel_size, layer)).r; 
-            shadow += (shadow_depth - bias) > pcf_depth ? 1.0 : 0.0;        
+            shadow += (shadow_depth - bias) > pcf_depth ? 0.0 : 1.0;
         }    
     }
-    shadow /= 9.0;
-            
-    return 1.0 - shadow;
+    shadow /= 9.0f;
+
+    return shadow;
+}
+
+// https://learnopengl.com/Guest-Articles/2021/CSM
+// @note calling multiple times recalculates
+float shadowness(float NdotL, vec3 position){
+    // Select shadow correct projection for csm
+    float frag_dist = abs((view * vec4(position, 1.0)).z);
+
+    int layer = CASCADE_NUM;
+    for (int i = 0; i < CASCADE_NUM; ++i)
+    {
+        if (frag_dist < shadow_cascade_distances[i])
+        {
+            layer = i;
+            break;
+        }
+    }
+
+    float shadowness = calculatePcfShadowness(NdotL, position, layer);
+
+    // Blend between shadow maps as suggested by, seems a bit expensive:
+    // https://learn.microsoft.com/en-us/windows/win32/dxtecharts/cascaded-shadow-maps
+    float delta = abs(shadow_cascade_distances[layer] - frag_dist);
+    if(abs(delta) < CSM_BLEND_BAND) { // Do blending
+        float blend = smoothstep(0.0, CSM_BLEND_BAND, abs(delta));
+        shadowness = mix(calculatePcfShadowness(NdotL, position, layer + 1), shadowness, blend);
+    }
+
+    return shadowness;
 }
 
 #endif

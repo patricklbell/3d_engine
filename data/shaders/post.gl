@@ -191,21 +191,22 @@ void main()
     hdr_color *= AO;
 #endif
 
-    const float fog_near = FAR - 80.0;
-    const float fog_far = FAR;
-
-    // Pretty cringe way to do fog but stops aliasing @optimize
-    if(dist < fog_far - NEAR) {
-        vec4 world_position = inverse_projection_untranslated_view*vec4(position,1.0);
-        world_position.xyz /= world_position.w;
-        vec3 skybox_color = texture(skybox, world_position.xyz).xyz;
-
-        // Calculate fog
-        float fog_amount = 1.0 - (fog_far - dist) / (fog_far - fog_near);
-        fog_amount = clamp(fog_amount, 0.0, 1.0);
-        //float fog_amount = smoothstep(fog_near, fog_far, dist);
-        hdr_color = mix(hdr_color, skybox_color, fog_amount);
-    }
+// @todo volumetric lighting, traditional, raymarched, cm raymarches 
+//    const float fog_near = FAR/2.0f - 80.0f;
+//    const float fog_far = FAR/2.0f - 10.0*NEAR;
+//
+//    // Pretty cringe way to do fog but stops aliasing @optimize
+//    if(dist < fog_far) {
+//        vec4 world_position = inverse_projection_untranslated_view*vec4(position,1.0);
+//        world_position.xyz /= world_position.w;
+//        vec3 skybox_color = texture(skybox, world_position.xyz).xyz;
+//
+//        // Calculate fog
+//        float fog_amount = 1.0 - (fog_far - dist) / (fog_far - fog_near);
+//        fog_amount = clamp(fog_amount, 0.0, 1.0);
+//        //float fog_amount = smoothstep(fog_near, fog_far, dist);
+//        hdr_color = mix(hdr_color, skybox_color, fog_amount);
+//    }
 
     // Reinhard tone mapping
     vec3 mapped = reinhard_tonemap(hdr_color);

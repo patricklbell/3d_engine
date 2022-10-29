@@ -1241,15 +1241,14 @@ void drawPost(Texture *skybox, const Camera &camera){
     if (do_msaa) glBindTexture(GL_TEXTURE_2D, hdr_depth_copy);
     else         glBindTexture(GL_TEXTURE_2D, hdr_depth);
 
-    // @note view uniform badly named as it is only for the skybox so must be untranslated
-    auto untranslated_view = glm::mat4(glm::mat3(camera.view));
-    auto inverse_projection_untranslated_view = glm::inverse(camera.projection * untranslated_view);
-    glUniformMatrix4fv(post.uniform("inverse_projection_untranslated_view"), 1, GL_FALSE, &inverse_projection_untranslated_view[0][0]);
+    // @note skybox is seperated out instead to work better with msaa and fxaa @todo volumetric lighting to blend
+    //auto untranslated_view = glm::mat4(glm::mat3(camera.view));
+    //auto inverse_projection_untranslated_view = glm::inverse(camera.projection * untranslated_view);
+    //glUniformMatrix4fv(post.uniform("inverse_projection_untranslated_view"), 1, GL_FALSE, &inverse_projection_untranslated_view[0][0]);
     //glUniformMatrix4fv(post.uniform("projection"), 1, GL_FALSE, & camera.projection[0][0]);
     //glUniform1f(post.uniform("tan_half_fov"), glm::tan(camera.fov / 2.0f));
-
-    glActiveTexture(GL_TEXTURE3);
-    glBindTexture(GL_TEXTURE_CUBE_MAP, skybox->id);
+    //glActiveTexture(GL_TEXTURE3);
+    //glBindTexture(GL_TEXTURE_CUBE_MAP, skybox->id);
 
     drawQuad();
 }
