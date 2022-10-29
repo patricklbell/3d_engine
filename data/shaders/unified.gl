@@ -83,7 +83,6 @@ layout(binding = 0) uniform sampler2D albedo_map;
 layout(binding = 1) uniform sampler2D normal_map;
 uniform vec3 albedo_mult;
 
-
 #ifdef PBR
 layout(binding = 2) uniform sampler2D metallic_map;
 uniform float metal_mult;

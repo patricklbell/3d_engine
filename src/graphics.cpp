@@ -53,6 +53,8 @@ namespace graphics {
     glm::mat4x4 shadow_vps[shadow_num + 1];
     GLuint shadow_fbo, shadow_buffer, shadow_matrices_ubo;
     bool do_shadows = true;
+    constexpr int JITTER_SIZE = 16;
+    Texture* jitter_texture;
 
     //
     // WATER PLANE COLLISIONS
@@ -844,6 +846,10 @@ void initGraphicsPrimitives(AssetManager& asset_manager) {
     simplex_value = asset_manager.createTexture("data/textures/2d_simplex_value_seamless.png");
     asset_manager.loadTexture(simplex_value, "data/textures/2d_simplex_value_seamless.png", GL_RED, true);
 
+    // Create per-pixel jitter lookup textures
+    //createJitter3DTexture(jitter_lookup_64, JITTER_SIZE, 8, 8);	// 8 'estimation' samples, 64 total samples
+    jitter_texture = createJitter3DTexture(asset_manager, JITTER_SIZE, 4, 8);	// 4 'estimation' samples, 32 total samples
+
     // Set clear color
     glClearColor(0.0, 0.0, 0.0, 1.0);
 }
@@ -978,15 +984,18 @@ void drawEntitiesHdr(const EntityManager& entity_manager, const Texture* skybox,
     if (do_shadows) {
         glActiveTexture(GL_TEXTURE5);
         glBindTexture(GL_TEXTURE_2D_ARRAY, shadow_buffer);
+
+        glActiveTexture(GL_TEXTURE6);
+        glBindTexture(GL_TEXTURE_3D, jitter_texture->id);
     }
 
-    glActiveTexture(GL_TEXTURE6);
+    glActiveTexture(GL_TEXTURE7);
     glBindTexture(GL_TEXTURE_CUBE_MAP, irradiance_map->id);
 
-    glActiveTexture(GL_TEXTURE7);
+    glActiveTexture(GL_TEXTURE8);
     glBindTexture(GL_TEXTURE_CUBE_MAP, prefiltered_specular_map->id);
 
-    glActiveTexture(GL_TEXTURE8);
+    glActiveTexture(GL_TEXTURE9);
     glBindTexture(GL_TEXTURE_2D, brdf_lut->id);
 
     // 
@@ -1396,4 +1405,65 @@ bool createEnvironmentFromCubemap(Environment& env, AssetManager &asset_manager,
     initBRDFLut(asset_manager);
 
     return true;
+}
+
+// Copied from Nvidia's GPU gems 2 for use with PCF
+// https://developer.nvidia.com/gpugems/gpugems2/part-ii-shading-lighting-and-shadows/chapter-17-efficient-soft-edged-shadows-using
+// Create 3D texture for per-pixel jittered offset lookup
+Texture *createJitter3DTexture(AssetManager &asset_manager, int size, int samples_u, int samples_v) {
+    auto tex = asset_manager.createTexture("jitter");
+
+    glGenTextures(1, &tex->id);
+    glBindTexture(GL_TEXTURE_3D, tex->id);
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_REPEAT);
+
+    signed char* data = new signed char[size * size * samples_u * samples_v * 4 / 2];
+
+    for (int i = 0; i < size; i++) {
+        for (int j = 0; j < size; j++) {
+            float rot_offset = ((float)rand() / RAND_MAX - 1) * 2 * 3.1415926f;
+            for (int k = 0; k < samples_u * samples_v / 2; k++) {
+
+                int x, y;
+                glm::vec4 v;
+
+                x = k % (samples_u / 2);
+                y = (samples_v - 1) - k / (samples_u / 2);
+
+                // generate points on a regular samples_u x samples_v rectangular grid
+                v[0] = (float)(x * 2 + 0.5f) / samples_u;
+                v[1] = (float)(y + 0.5f) / samples_v;
+                v[2] = (float)(x * 2 + 1 + 0.5f) / samples_u;
+                v[3] = v[1];
+
+                // jitter position
+                v[0] += ((float)rand() * 2 / RAND_MAX - 1) * (0.5f / samples_u);
+                v[1] += ((float)rand() * 2 / RAND_MAX - 1) * (0.5f / samples_v);
+                v[2] += ((float)rand() * 2 / RAND_MAX - 1) * (0.5f / samples_u);
+                v[3] += ((float)rand() * 2 / RAND_MAX - 1) * (0.5f / samples_v);
+
+                // warp to disk
+                glm::vec4 d;
+                d[0] = sqrtf(v[1]) * cosf(2 * 3.1415926f * v[0]);
+                d[1] = sqrtf(v[1]) * sinf(2 * 3.1415926f * v[0]);
+                d[2] = sqrtf(v[3]) * cosf(2 * 3.1415926f * v[2]);
+                d[3] = sqrtf(v[3]) * sinf(2 * 3.1415926f * v[2]);
+
+                data[(k * size * size + j * size + i) * 4 + 0] = (signed char)(d[0] * 127);
+                data[(k * size * size + j * size + i) * 4 + 1] = (signed char)(d[1] * 127);
+                data[(k * size * size + j * size + i) * 4 + 2] = (signed char)(d[2] * 127);
+                data[(k * size * size + j * size + i) * 4 + 3] = (signed char)(d[3] * 127);
+            }
+        }
+    }
+
+    glTexImage3D(GL_TEXTURE_3D, 0, GL_SIGNED_RGBA_NV, size, size, samples_u * samples_v / 2, 0, GL_RGBA, GL_BYTE, data);
+
+    delete[] data;
+
+    return tex;
 }

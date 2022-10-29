@@ -95,6 +95,7 @@ void initHdrFbo(bool resize=false);
 void convoluteIrradianceFromCubemap(Texture* in_tex, Texture* out_tex, GLint format = GL_RGB);
 void convoluteSpecularFromCubemap(Texture* in_tex, Texture* out_tex, GLint format = GL_RGB);
 bool createEnvironmentFromCubemap(Environment& env, AssetManager& asset_manager, const std::array<std::string, FACE_NUM_FACES>& paths, GLint format = GL_RGB);
+Texture* createJitter3DTexture(AssetManager& asset_manager, int size, int samples_u, int samples_v);
 
 struct BloomMipInfo {
     glm::vec2 size;

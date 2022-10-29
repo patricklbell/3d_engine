@@ -214,7 +214,7 @@ void create_shader_from_program(Shader& shader, GLuint program_id, std::string_v
 		glGetActiveUniform(shader.program, (GLuint)i, buf_size, &length, &size, &type, name);
 		shader.uniforms[name] = glGetUniformLocation(shader.program, name);
 
-		printf("Uniform #%d Type: %u Name: %s\n", i, type, name);
+		// printf("Uniform #%d Type: %u Name: %s\n", i, type, name);
 	}
 }
 
@@ -283,11 +283,13 @@ bool loadShader(Shader& shader, std::string_view vertex_fragment_file_path, std:
 	}
 
 	std::vector<char *> linked_shader_codes = {(char*)glsl_version.c_str(), (char*)macros.data()};
+	const int shader_type_index = linked_shader_codes.size();
+	linked_shader_codes.push_back((char*)vertex_macro); // Dependencies need access to shader type as well
+
 	std::unordered_set<std::string> linked_shader_paths;
 	std::vector<char *> linked_shader_codes_to_free = { shader_code }; // Pretty cringe way @todo
 	load_shader_dependencies(shader_code, num_bytes, linked_shader_codes, linked_shader_codes_to_free, linked_shader_paths);
 
-	linked_shader_codes.push_back((char*)vertex_macro);
 	linked_shader_codes.push_back((char*)shader_code);
 	glShaderSource(vertex_shader_id, linked_shader_codes.size(), &linked_shader_codes[0], NULL);
 	glCompileShader(vertex_shader_id);
@@ -307,7 +309,7 @@ bool loadShader(Shader& shader, std::string_view vertex_fragment_file_path, std:
 		return false;
 	}
 
-	linked_shader_codes[linked_shader_codes.size() - 2] = (char*)fragment_macro;
+	linked_shader_codes[shader_type_index] = (char*)fragment_macro;
 	glShaderSource(fragment_shader_id, linked_shader_codes.size(), &linked_shader_codes[0], NULL);
 	glCompileShader(fragment_shader_id);
 
@@ -330,7 +332,7 @@ bool loadShader(Shader& shader, std::string_view vertex_fragment_file_path, std:
 		const char* geometry_macro = "#define COMPILING_GS 1\n";
 
 		geometry_shader_id = glCreateShader(GL_GEOMETRY_SHADER);
-		linked_shader_codes[linked_shader_codes.size() - 2] = (char*)geometry_macro;
+		linked_shader_codes[shader_type_index] = (char*)geometry_macro;
 		glShaderSource(geometry_shader_id, linked_shader_codes.size(), &linked_shader_codes[0], NULL);
 		glCompileShader(geometry_shader_id);
 

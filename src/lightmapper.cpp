@@ -150,15 +150,15 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 					);
 
 					// Used for debugging the hemicube's rendering
-					using namespace std::this_thread; // sleep_for, sleep_until
-					using namespace std::chrono; // nanoseconds, system_clock, seconds
-					bindBackbuffer();
-					if(vp[0] == 0 && vp[1] == 0)
-						clearFramebuffer();
-					glViewport(vp[0], vp[1], vp[2], vp[3]);
-					drawEntitiesHdr(entity_manager, skybox, skybox_irradiance, skybox_specular, camera, true);
-					glfwSwapBuffers(window);
-					sleep_for(milliseconds(10));
+					//using namespace std::this_thread; // sleep_for, sleep_until
+					//using namespace std::chrono; // nanoseconds, system_clock, seconds
+					//bindBackbuffer();
+					//if(vp[0] == 0 && vp[1] == 0)
+					//	clearFramebuffer();
+					//glViewport(vp[0], vp[1], vp[2], vp[3]);
+					//drawEntitiesHdr(entity_manager, skybox, skybox_irradiance, skybox_specular, camera, true);
+					//glfwSwapBuffers(window);
+					//sleep_for(milliseconds(10));
 
 					glViewport(vp[0], vp[1], vp[2], vp[3]);
 					drawEntitiesHdr(entity_manager, skybox, skybox_irradiance, skybox_specular, camera, true);
