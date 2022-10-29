@@ -86,7 +86,7 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 		auto m_e = reinterpret_cast<MeshEntity*>(entity_manager.entities[i]);
 		if (entity_manager.entities[i] == nullptr || !entityInherits(m_e->type, MESH_ENTITY) || m_e->mesh == nullptr || entityInherits(m_e->type, ANIMATED_MESH_ENTITY)) continue;
 
-		m_e->lightmap = asset_manager.getColorTexture(glm::vec3(0, 0, 0), GL_RGBA);
+		m_e->lightmap = asset_manager.getColorTexture(glm::vec3(0, 0, 0), GL_RGB);
 		m_e->lightmap->handle = level_path + "." + std::to_string(i) + ".tga";
 	}
 
@@ -98,13 +98,14 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 			!entityInherits(m_e->type, MESH_ENTITY) || m_e->mesh == nullptr ||
 			entityInherits(m_e->type, ANIMATED_MESH_ENTITY) || entityInherits(m_e->type, VEGETATION_ENTITY))
 			continue;
-		mesh_entities.push_back(m_e);
-		float* img = (float*)calloc((size_t)w * h * c, sizeof(float));
+
+		float* img = (float*)malloc((size_t)w * h * c * sizeof(float));
 		assert(img != NULL);
 		lightmaps.push_back(img);
+		mesh_entities.push_back(m_e);
 	}
 
-	constexpr int bounces = 3;
+	constexpr int bounces = 1;
 	for (int b = 0; b < bounces; b++) {
 		std::cout << "Bounce " << b << " / " << bounces - 1 << "\n";
 
@@ -114,7 +115,7 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 			const auto& img = lightmaps[i];
 			const auto& m_e = mesh_entities[i];
 
-			// @note relies on all 0 representing 0.0 float which is true for almost all standards
+			// @note relies on 0 bits representing 0.0 in floating format which is true for almost all standards
 			memset(img, 0, sizeof(float) * w * h * c); // clear lightmap to black
 			lmSetTargetLightmap(ctx, img, w, h, c);
 
@@ -129,7 +130,7 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 				auto model = g_model_pos * mesh->transforms[j] * g_model_rot_scl;
 
 				assert(mesh->uvs != nullptr); // Mesh should be parameterized and packed
-				lmSetGeometry(ctx, (float*)&model[0],
+				lmSetGeometry(ctx, (float*)&model[0][0],
 					LM_FLOAT, mesh->vertices,	sizeof(*mesh->vertices),
 					LM_FLOAT, mesh->normals,	sizeof(*mesh->normals),
 					LM_FLOAT, mesh->uvs,		sizeof(*mesh->uvs),
@@ -149,15 +150,15 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 					);
 
 					// Used for debugging the hemicube's rendering
-					//using namespace std::this_thread; // sleep_for, sleep_until
-					//using namespace std::chrono; // nanoseconds, system_clock, seconds
-					//bindBackbuffer();
-					//if(vp[0] == 0 && vp[1] == 0)
-					//	clearFramebuffer();
-					//glViewport(vp[0], vp[1], vp[2], vp[3]);
-					//drawEntitiesHdr(entity_manager, skybox, skybox_irradiance, skybox_specular, camera, true);
-					//glfwSwapBuffers(window);
-					//sleep_for(milliseconds(10));
+					using namespace std::this_thread; // sleep_for, sleep_until
+					using namespace std::chrono; // nanoseconds, system_clock, seconds
+					bindBackbuffer();
+					if(vp[0] == 0 && vp[1] == 0)
+						clearFramebuffer();
+					glViewport(vp[0], vp[1], vp[2], vp[3]);
+					drawEntitiesHdr(entity_manager, skybox, skybox_irradiance, skybox_specular, camera, true);
+					glfwSwapBuffers(window);
+					sleep_for(milliseconds(10));
 
 					glViewport(vp[0], vp[1], vp[2], vp[3]);
 					drawEntitiesHdr(entity_manager, skybox, skybox_irradiance, skybox_specular, camera, true);
@@ -203,7 +204,7 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 			m_e->lightmap->resolution = glm::ivec2(w, h);
 
 			glBindTexture(GL_TEXTURE_2D, m_e->lightmap->id);
-			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, w, h, 0, GL_RGBA, GL_FLOAT, img);
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, w, h, 0, GL_RGBA, GL_FLOAT, img);
 
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);

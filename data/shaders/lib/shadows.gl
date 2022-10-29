@@ -87,7 +87,7 @@ float random(vec3 seed, int i){
 //    gl_FragColor.xyz = (color * NdotL + pow(max(dot(R, L), 0), 64)) * shadow * texture2DProj(spot, shadowMapPos) + color * 0.1;
 //} 
 
-#define CSM_BLEND_BAND 0.1
+#define CSM_BLEND_BAND 0.5
 
 float calculatePcfShadowness(float NdotL, vec3 position, int layer) {
     vec4 shadow_pos = shadow_vps[layer] * vec4(position, 1.0);
@@ -102,7 +102,7 @@ float calculatePcfShadowness(float NdotL, vec3 position, int layer) {
     // return unshadowed result when point is beyond closer than near_plane of the light's frustum.
     if (shadow_depth > 1.0)
     {
-        return 1.0;
+        return 0.0;
     }
 
     // calculate bias (based on depth map resolution and slope)
@@ -124,7 +124,7 @@ float calculatePcfShadowness(float NdotL, vec3 position, int layer) {
         for(int y = -1; y <= 1; ++y)
         {
             float pcf_depth = texture(shadow_map, vec3(shadow_coord.xy + vec2(x, y) * texel_size, layer)).r; 
-            shadow += (shadow_depth - bias) > pcf_depth ? 0.0 : 1.0;
+            shadow += (shadow_depth - bias) > pcf_depth ? 1.0 : 0.0;
         }    
     }
     shadow /= 9.0f;
@@ -152,10 +152,12 @@ float shadowness(float NdotL, vec3 position){
 
     // Blend between shadow maps as suggested by, seems a bit expensive:
     // https://learn.microsoft.com/en-us/windows/win32/dxtecharts/cascaded-shadow-maps
-    float delta = abs(shadow_cascade_distances[layer] - frag_dist);
-    if(abs(delta) < CSM_BLEND_BAND) { // Do blending
-        float blend = smoothstep(0.0, CSM_BLEND_BAND, abs(delta));
-        shadowness = mix(calculatePcfShadowness(NdotL, position, layer + 1), shadowness, blend);
+    if(layer > 0) {
+        float delta = shadow_cascade_distances[layer - 1] - frag_dist;
+        if(delta <= CSM_BLEND_BAND) { // Do blending
+            float blend = smoothstep(0.0, CSM_BLEND_BAND, delta);
+            shadowness = mix(shadowness, calculatePcfShadowness(NdotL, position, layer - 1), blend);
+        }
     }
 
     return shadowness;

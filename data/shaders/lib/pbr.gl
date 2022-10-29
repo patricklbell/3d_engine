@@ -116,7 +116,7 @@ vec3 brdfSchlickGGX(vec3 position, vec3 normal, vec3 albedo, float metallic, flo
 
     vec3 lo = (kD * albedo / PI + specular) * radiance * NdotL;
 #if SHADOWS
-    lo *=  shadowness(NdotL, position);
+    lo *=  1.0 - shadowness(NdotL, position);
 #endif
 
 #if IBL
