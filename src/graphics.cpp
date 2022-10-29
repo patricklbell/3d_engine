@@ -1047,7 +1047,7 @@ void drawEntitiesHdr(const EntityManager& entity_manager, const Texture* skybox,
 
         auto g_model_rot_scl = glm::mat4_cast(m_e->rotation) * glm::mat4x4(m_e->scale);
         auto g_model_pos     = glm::translate(glm::mat4x4(1.0), m_e->position);
-        drawMeshMat(*unified_s, m_e->mesh, g_model_rot_scl, g_model_pos, vp, m_e->lightmap);
+        drawMeshMat(*unified_s, m_e->mesh, g_model_rot_scl, g_model_pos, vp, m_e->do_lightmap ? m_e->lightmap: nullptr);
     }
 
     // 
@@ -1461,7 +1461,7 @@ Texture *createJitter3DTexture(AssetManager &asset_manager, int size, int sample
         }
     }
 
-    glTexImage3D(GL_TEXTURE_3D, 0, GL_SIGNED_RGBA_NV, size, size, samples_u * samples_v / 2, 0, GL_RGBA, GL_BYTE, data);
+    glTexImage3D(GL_TEXTURE_3D, 0, GL_RGBA, size, size, samples_u * samples_v / 2, 0, GL_RGBA, GL_BYTE, data);
 
     delete[] data;
 

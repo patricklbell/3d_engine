@@ -875,7 +875,6 @@ static constexpr auto ai_import_flags = aiProcess_JoinIdenticalVertices |
 aiProcess_Triangulate |
 aiProcess_GenNormals |
 aiProcess_CalcTangentSpace |
-aiProcess_FlipUVs |
 //aiProcess_RemoveComponent (remove colors) |
 aiProcess_ImproveCacheLocality |
 aiProcess_RemoveRedundantMaterials |

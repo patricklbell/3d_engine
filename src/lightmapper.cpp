@@ -53,12 +53,13 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 		return false;
 	}
 
+	// @todo dynamic lightmap resolution / editor
 	constexpr int w = 654; //image height
 	constexpr int h = 654; //image height
 	constexpr int c = 4;
 
 	// Buffer used during post processing
-	float* temp = (float*)calloc((size_t)w * h * c, sizeof(float));
+	float* temp = (float*)malloc(w * h * c * sizeof(float));
 
 	auto old_window_width = window_width;
 	auto old_window_height = window_height;
@@ -74,38 +75,37 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 	initHdrFbo();
 
 	Camera camera;
-	camera.near_plane = 0.001f;
+	camera.near_plane = 0.01f;
 	camera.far_plane = 100.0f;
 
 	std::cout << "====================================================================================\n"
 				 "\tBaking " << level_path << "'s Lightmap\n"
 				 "====================================================================================\n";
 
-	// Set all ambient occlusion to 0 intially
-	for (int i = 0; i < ENTITY_COUNT; ++i) {
-		auto m_e = reinterpret_cast<MeshEntity*>(entity_manager.entities[i]);
-		if (entity_manager.entities[i] == nullptr || !entityInherits(m_e->type, MESH_ENTITY) || m_e->mesh == nullptr || entityInherits(m_e->type, ANIMATED_MESH_ENTITY)) continue;
-
-		m_e->lightmap = asset_manager.getColorTexture(glm::vec3(0, 0, 0), GL_RGB);
-		m_e->lightmap->handle = level_path + "." + std::to_string(i) + ".tga";
-	}
-
 	std::vector<float*> lightmaps;
 	std::vector<MeshEntity*> mesh_entities;
 	for (int i = 0; i < ENTITY_COUNT; ++i) {
 		auto m_e = reinterpret_cast<MeshEntity*>(entity_manager.entities[i]);
-		if (entity_manager.entities[i] == nullptr ||
-			!entityInherits(m_e->type, MESH_ENTITY) || m_e->mesh == nullptr ||
+		if (m_e == nullptr ||
+			!entityInherits(m_e->type, MESH_ENTITY) || m_e->mesh == nullptr || !m_e->do_lightmap ||
 			entityInherits(m_e->type, ANIMATED_MESH_ENTITY) || entityInherits(m_e->type, VEGETATION_ENTITY))
 			continue;
 
-		float* img = (float*)malloc((size_t)w * h * c * sizeof(float));
+		float* img = (float*)malloc(w * h * c * sizeof(float));
 		assert(img != NULL);
 		lightmaps.push_back(img);
 		mesh_entities.push_back(m_e);
 	}
 
-	constexpr int bounces = 1;
+	// Set all ambient occlusion to white and 0 intially
+	for (int i = 0; i < lightmaps.size(); ++i) {
+		const auto& m_e = mesh_entities[i];
+
+		m_e->lightmap = asset_manager.getColorTexture(glm::vec3(1, 1, 1), GL_RGB);
+		m_e->ao_mult = 0.0; // @todo not lose ao_mult
+	}
+
+	constexpr int bounces = 2;
 	for (int b = 0; b < bounces; b++) {
 		std::cout << "Bounce " << b << " / " << bounces - 1 << "\n";
 
@@ -194,13 +194,13 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 			//	lmImagePower(img, w, h, c, 0.8); // Add some brightness to final result
 			//}
 
-			if (m_e->lightmap == nullptr) {
+			// Generate a new texture seperate from the color texture (which is still stored by asset manager)
+			if (b == 0) {
+				m_e->ao_mult = 1.0;
 				m_e->lightmap = asset_manager.createTexture(level_path + "." + std::to_string(i) + ".tga");
-			}
-			if (m_e->lightmap->id == GL_FALSE) {
 				glGenTextures(1, &m_e->lightmap->id);
 			}
-			m_e->lightmap->format = GL_RGBA;
+			m_e->lightmap->format = GL_RGB16F;
 			m_e->lightmap->resolution = glm::ivec2(w, h);
 
 			glBindTexture(GL_TEXTURE_2D, m_e->lightmap->id);
@@ -232,7 +232,7 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 		const auto& img = lightmaps[i];
 		const auto& m_e = mesh_entities[i];
 
-		lmImageSaveTGAf(m_e->lightmap->handle.c_str(), img, w, h, c);
+		lmImageSaveTGAf(m_e->lightmap->handle.c_str(), img, w, h, c, 1.0);
 
 		bar.set_progress((float)(count) / (float)lightmaps.size());
 		bar.set_option(indicators::option::PostfixText{ "Writing TGA " + std::to_string(count) + " / " + std::to_string(lightmaps.size()) });

@@ -31,6 +31,15 @@ static void writeMeshEntity(MeshEntity* e, std::unordered_map<uint64_t, uint64_t
     fwrite(&e->ao_mult       , sizeof(e->ao_mult       ), 1, f);
 
     fwrite(&e->casts_shadow, sizeof(e->casts_shadow), 1, f);
+
+    fwrite(&e->do_lightmap, sizeof(e->do_lightmap), 1, f);
+    uint8_t lightmap_calculated = e->lightmap != nullptr;
+    fwrite(&lightmap_calculated, sizeof(lightmap_calculated), 1, f);
+
+    if (lightmap_calculated) {
+        lookup = asset_lookup[reinterpret_cast<uint64_t>(e->lightmap)];
+        fwrite(&lookup, sizeof(lookup), 1, f);
+    }
 }
 static void readMeshEntity(MeshEntity* e, const std::unordered_map<uint64_t, void*> index_to_asset, FILE *f) {
     fread(&e->position, sizeof(e->position), 1, f);
@@ -54,6 +63,21 @@ static void readMeshEntity(MeshEntity* e, const std::unordered_map<uint64_t, voi
     fread(&e->ao_mult       , sizeof(e->ao_mult       ), 1, f);
 
     fread(&e->casts_shadow, sizeof(e->casts_shadow), 1, f);
+
+    fread(&e->do_lightmap, sizeof(e->do_lightmap), 1, f);
+    uint8_t lightmap_calculated;
+    fread(&lightmap_calculated, sizeof(lightmap_calculated), 1, f);
+
+    if (lightmap_calculated) {
+        uint64_t lookup;
+        fread(&lookup, sizeof(lookup), 1, f);
+        auto lu = index_to_asset.find(lookup);
+        if (lu != index_to_asset.end()) {
+            e->lightmap = (Texture*)lu->second;
+        } else {
+            std::cerr << "Unknown lightmap texture index " << lookup << " when reading mesh entity\n";
+        }
+    }
 }
 
 static void writeAnimatedMeshEntity(AnimatedMeshEntity* e, std::unordered_map<uint64_t, uint64_t> asset_lookup, FILE *f) {
@@ -192,8 +216,10 @@ void saveLevel(EntityManager & entity_manager, const std::string & level_path, c
 
         if(entityInherits(e->type, MESH_ENTITY)) {
             auto me = (MeshEntity*)e;
-            if(me->mesh != nullptr) 
+            if (me->mesh != nullptr)
                 used_meshes.emplace(me->mesh);
+            if(me->lightmap != nullptr)
+                used_textures.emplace(me->lightmap);
         }
         if(entityInherits(e->type, ANIMATED_MESH_ENTITY)) {
             auto ae = (AnimatedMeshEntity*)e;

@@ -1682,7 +1682,8 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
             static const std::vector<std::string> image_file_extensions = { ".jpg", ".png", ".bmp", ".tiff", ".tga" };
             static bool editing_gizmo_position_offset = false;
 
-            auto button_size = ImVec2(ImGui::GetWindowWidth() / 2.0f - pad, 2.0f * pad);
+            auto button_size = ImVec2(ImGui::GetWindowWidth() - 2.0f * pad, 2.0f * pad);
+            auto h_button_size = ImVec2(ImGui::GetWindowWidth() / 2.0f - pad, 2.0f * pad);
             if (entityInherits(selection.type, MESH_ENTITY)) {
                 auto m_e = (MeshEntity*)fe;
 
@@ -1820,6 +1821,25 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
                         if (metal_chng) e->metal_mult = metal;
                     }
                 }
+
+                if (selection.ids.size() == 1 && ImGui::CollapsingHeader("Lightmapping")) {
+                    auto m_e = (MeshEntity*)fe;
+
+                    bool do_lightmap = m_e->do_lightmap;
+                    if(ImGui::Checkbox("Do Lightmap", &do_lightmap)) {
+                        m_e->do_lightmap = do_lightmap;
+                    }
+
+                    if (m_e->lightmap != nullptr) {
+                        void* tex = (void*)(intptr_t)m_e->lightmap->id;
+                        ImGui::Image(tex, ImVec2(sidebar_w, sidebar_w));
+
+                        if (ImGui::Button("Clear", button_size)) {
+                            m_e->lightmap = nullptr;
+                        }
+                    }
+                }
+
             }
             if (entityInherits(selection.type, WATER_ENTITY) && selection.ids.size() == 1) {
                 auto w_e = (WaterEntity*)fe;
@@ -1906,8 +1926,9 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
             }
 
             ImGui::SetCursorPosY(ImGui::GetCursorPosY() + ImGui::GetTextLineHeight());
+            bool half = false;
             if(!(entityInherits(selection.type, WATER_ENTITY))){
-                if (ImGui::Button("Duplicate", button_size)) {
+                if (ImGui::Button("Duplicate", h_button_size)) {
                     if (camera.state == Camera::TYPE::TRACKBALL && entityInherits(selection.type, MESH_ENTITY)) {
                         auto m_e = (MeshEntity*)fe;
                         camera.target = m_e->position + translation_snap.x;
@@ -1924,8 +1945,9 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
                     }
                 }
                 ImGui::SameLine();
+                half = true;
             }
-            if(ImGui::Button("Delete", button_size)){
+            if(ImGui::Button("Delete", half ? h_button_size : button_size)){
                 for (auto& id : selection.ids) {
                     entity_manager.deleteEntity(id);
                     if (id == entity_manager.water) {
@@ -1934,7 +1956,6 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
                 }
                 selection.clear();
             }
-            button_size.x *= 2.0;
             if (entityInherits(selection.type, MESH_ENTITY)) {
                 if (ImGui::Button("Change Mesh", button_size)) {
                     im_file_dialog.SetPwd(exepath + "/data/mesh");
@@ -1951,118 +1972,7 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
         }
     }
 
-    // Information shared with file browser
-    //static Mesh* s_mesh = nullptr;
-    //{
-    //    constexpr int true_win_width = 250;
-    //    int win_width = true_win_width - pad;
-    //    auto button_size = ImVec2(win_width, 2*pad);
-    //    auto half_button_size = ImVec2(win_width / 2.f, 2*pad);
-
-    //    ImGui::SetNextWindowPos(ImVec2(0,0));
-    //    ImGui::SetNextWindowSize(ImVec2(true_win_width, window_height));
-    //    ImGui::SetNextWindowSizeConstraints(ImVec2(true_win_width, window_height), ImVec2(window_width/2.f, window_height));
-
-    //    ImGui::Begin("Global Properties", NULL, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse);
-    //    //if (ImGui::CollapsingHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen)) {
-    //    //    float distance = glm::length(camera.position - camera.target);
-    //    //    if (ImGui::SliderFloat("Distance", &distance, 1.f, 100.f)) {
-    //    //        camera.position = camera.target + glm::normalize(camera.position - camera.target)*distance;
-    //    //        updateCameraView(camera);
-    //    //    }
-    //    //}
-
-    //    if (ImGui::CollapsingHeader("Levels")){
-    //        static char level_name[256] = "";
-    //        if (ImGui::Button("Save Level", half_button_size)){
-    //            im_file_dialog_type = "saveLevel";
-    //            im_file_dialog.SetPwd(exepath+"/data/levels");
-    //            im_file_dialog.SetCurrentTypeFilterIndex(4);
-    //            im_file_dialog.SetTypeFilters({".level"});
-    //            im_file_dialog.Open();
-    //        }
-    //        ImGui::SameLine();
-    //        if (ImGui::Button("Load Level", half_button_size)){
-    //            im_file_dialog_type = "loadLevel";
-    //            im_file_dialog.SetPwd(exepath+"/data/levels");
-    //            im_file_dialog.SetCurrentTypeFilterIndex(4);
-    //            im_file_dialog.SetTypeFilters({ ".level" });
-    //            im_file_dialog.Open();
-    //        }
-    //        if (ImGui::Button("Clear Level", button_size)) {
-    //            entity_manager.clear();
-    //            asset_manager.clear();
-    //        }
-    //    }
-    //    if (ImGui::CollapsingHeader("Meshes", ImGuiTreeNodeFlags_DefaultOpen)){
-    //        auto &mmap = asset_manager.handle_mesh_map;
-    //        if (mmap.size() > 0){
-    //            if(s_mesh == nullptr) s_mesh = &mmap.begin()->second;
-
-    //            ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - pad);
-    //            if (ImGui::BeginCombo("##asset-combo", s_mesh->handle.c_str())){
-    //                for(auto &a : mmap){
-    //                    bool is_selected = (s_mesh == &a.second); 
-    //                    if (ImGui::Selectable(a.first.c_str(), is_selected))
-    //                        s_mesh = &a.second;
-    //                    if (is_selected)
-    //                        ImGui::SetItemDefaultFocus(); 
-    //                }
-    //                ImGui::EndCombo();
-    //            }
-
-    //            if(s_mesh != nullptr) {
-    //                if(ImGui::Button("Add Instance", button_size)){
-    //                    auto e = new MeshEntity();
-    //                    e->mesh = s_mesh;
-    //                    entity_manager.setEntity(entity_manager.getFreeId().i, e);
-    //                }
-    //                if(ImGui::Button("Export Mesh", button_size)){
-    //                    im_file_dialog_type = "exportMesh";
-    //                    im_file_dialog.SetPwd(exepath+"/data/models");
-    //                    im_file_dialog.SetCurrentTypeFilterIndex(1);
-    //                    im_file_dialog.SetTypeFilters({ ".mesh" });
-    //                    im_file_dialog.Open();
-    //                }
-    //            }
-    //        }
-    //        if(ImGui::Button("Load Mesh", button_size)){
-    //            im_file_dialog_type = "loadMesh";
-    //            im_file_dialog.SetPwd(exepath+"/data/models");
-    //            im_file_dialog.SetCurrentTypeFilterIndex(1);
-    //            im_file_dialog.SetTypeFilters({ ".mesh" });
-    //            im_file_dialog.Open();
-    //        }
-    //        if(ImGui::Button("Load Model (Assimp)", button_size)){
-    //            im_file_dialog_type = "loadModelAssimp";
-    //            im_file_dialog.SetPwd(exepath+"/data/models");
-    //            im_file_dialog.SetCurrentTypeFilterIndex(3);
-    //            im_file_dialog.SetTypeFilters({ ".obj", ".fbx" });
-    //            im_file_dialog.Open();
-    //        }
-    //    }
-    //    if (ImGui::CollapsingHeader("Graphics", ImGuiTreeNodeFlags_DefaultOpen)){
-    //        if (ImGui::Checkbox("Bloom", &graphics::do_bloom)){
-    //            initHdrFbo();
-    //            initBloomFbo();
-    //        }
-
-    //        ImGui::Text("Sun Color:");
-    //        ImGui::SetNextItemWidth(win_width);
-    //        ImGui::ColorEdit3("", (float*)&sun_color); // Edit 3 floats representing a color
-    //        ImGui::Text("Sun Direction:");
-    //        ImGui::SetNextItemWidth(win_width);
-    //        if(ImGui::InputFloat3("", (float*)&sun_direction)){
-    //            sun_direction = glm::normalize(sun_direction);
-    //            // Casts shadows from sun direction
-    //            updateShadowVP(camera);
-    //        }
-    //    }
-    //    ImGui::End();
-    //}
-
     drawInfoTextGui();
-
     ImTerminal(entity_manager, asset_manager, do_terminal);
 
     // Handle imfile dialog browser

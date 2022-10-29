@@ -59,6 +59,7 @@ struct MeshEntity : Entity {
     float ao_mult = 1.0;
 
     uint8_t casts_shadow = true;
+    uint8_t do_lightmap = true;
     Texture* lightmap = nullptr;
 
     MeshEntity(Id _id = NULLID) : Entity(_id) {

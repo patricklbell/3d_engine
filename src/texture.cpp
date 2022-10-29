@@ -31,6 +31,7 @@ GLuint create1x1TextureFloat(const glm::fvec3 &color, const GLint internal_forma
 }
 
 bool loadImageData(ImageData *img, const std::string& imagepath, const GLint internal_format) {
+	stbi_set_flip_vertically_on_load(true); // Opengl expects image to be flipped vertically
 	if (internal_format == GL_RGB)			img->data = stbi_load(imagepath.c_str(), &img->x, &img->y, &img->n, STBI_rgb);
 	else if (internal_format == GL_RED)		img->data = stbi_load(imagepath.c_str(), &img->x, &img->y, &img->n, STBI_grey);
 	else if (internal_format == GL_RGB32F)	img->data = (unsigned char*)stbi_loadf(imagepath.c_str(), &img->x, &img->y, &img->n, STBI_rgb);
@@ -101,6 +102,8 @@ GLuint loadImage(const std::string &imagepath, glm::ivec2& resolution, const GLi
 
 // std array is expected to list {front, back, up, down, right, left}?
 GLuint loadCubemap(const std::array<std::string, FACE_NUM_FACES> &paths, glm::ivec2& resolution, const GLint internal_format) {
+	stbi_set_flip_vertically_on_load(false); // @note I don't know why cubemap is not flipped but it isn't
+
 	GLuint texture_id;
 
     glGenTextures(1, &texture_id);
@@ -121,7 +124,7 @@ GLuint loadCubemap(const std::array<std::string, FACE_NUM_FACES> &paths, glm::iv
 			glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 			if (internal_format == GL_RGB)			glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGB,		x, y, 0, GL_RGB , GL_UNSIGNED_BYTE, data);
 			else if (internal_format == GL_RED)		glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_R8,		x, y, 0, GL_RED , GL_UNSIGNED_BYTE, data);
-			else if (internal_format == GL_RGB32F)	glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGB32F,	x, y, 0, GL_RGB , GL_FLOAT,		 data);
+			else if (internal_format == GL_RGB32F)	glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGB32F,	x, y, 0, GL_RGB , GL_FLOAT,			data);
 			else									glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGBA8,	x, y, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
         } else {
 			std::cerr << "Cubemap texture failed to load.\n";

@@ -41,7 +41,7 @@ uniform mat4 view;
 #define SAMPLES_COUNT 16
 #define SAMPLES_COUNT_DIV_2 8
 #define INV_SAMPLES_COUNT (1.0f / SAMPLES_COUNT)    
-#define SHADOW_FILTER_SIZE 100.0
+#define SHADOW_FILTER_SIZE 200.0
 
 float calculatePcfShadowness(float NdotL, vec3 position, int layer) {
     vec4 shadow_pos = shadow_vps[layer] * vec4(position, 1.0);

@@ -303,7 +303,7 @@ void main(){
     vec3 albedo = col.xyz;
 
     // Maybe full brdf is unnecessary? test performance
-    vec3 hdr_color = brdfSchlickGGX(vs_in.position, normal, albedo, 0.1, 0.1f, -sun_direction, sun_color, camera_position, 0.8, vec3(1.0f));
+    vec3 hdr_color = brdfSchlickGGX(vs_in.position, normal, albedo, 0.0f, 0.0f, -sun_direction, sun_color, camera_position, 1.0);
     
     //hdr_color = mix(deep_color.rgb, hdr_color, 1.0 - smoothstep(15.0, 25.0, scene_z));
 
