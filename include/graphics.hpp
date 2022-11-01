@@ -1,9 +1,11 @@
-#ifndef GRAPHIC_HPP
-#define GRAPHIC_HPP
+#ifndef GRAPHICS_HPP
+#define GRAPHICS_HPP
 
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
+
+#include <Camera/core.hpp>
 
 #include "assets.hpp"
 
@@ -35,32 +37,6 @@ struct Environment {
     Texture* skybox_irradiance = nullptr;
     Texture* skybox_specular = nullptr;
 };
-
-struct Camera {
-    enum TYPE : uint8_t { 
-        TRACKBALL = 0,
-        SHOOTER = 1,
-        STATIC = 2,
-    } state;
-
-    float near_plane = 0.01f, far_plane = 100.0f;
-    float fov = glm::radians(45.0f);
-    glm::vec3 up = glm::vec3(0,1,0);
-    glm::vec3 forward;
-    glm::vec3 right;
-    glm::vec3 position;
-    glm::vec3 target;
-    glm::mat4 view;
-    glm::mat4 projection;
-};
-extern Camera editor_camera;
-extern Camera level_camera;
-extern Camera game_camera;
-
-void createDefaultCamera(Camera &camera);
-void updateCameraView(Camera &camera);
-void updateCameraProjection(Camera &camera);
-void updateCameraTarget(Camera& camera, glm::vec3 target);
 
 void initGraphicsPrimitives(AssetManager &asset_manager);
 void drawQuad();
@@ -133,4 +109,4 @@ namespace graphics{
     extern Environment environment;
 }
     
-#endif
+#endif // GRAPHICS_HPP

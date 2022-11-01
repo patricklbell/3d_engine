@@ -38,7 +38,7 @@ uniform mat4 inverse_projection_untranslated_view;
 
 layout(binding = 0) uniform sampler2D screen_map;
 #ifdef BLOOM
-const float BLOOM_STRENGTH = 0.04f;
+const float BLOOM_STRENGTH = 0.02f;
 layout(binding = 1) uniform sampler2D bloom_map;
 #endif
 layout(binding = 2) uniform sampler2D depth_map;
@@ -213,7 +213,7 @@ void main()
     //vec3 mapped = uncharted2_tonemap(hdr_color);
 
     // gamma correction 
-    const float gamma = 1.6;
+    const float gamma = 1.9;
     mapped = pow(mapped, vec3(1.0 / gamma));
 
     out_color = vec4(mapped, 1.0);

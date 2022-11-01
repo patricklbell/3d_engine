@@ -29,6 +29,7 @@ enum class TransformType : uint64_t {
 };
 
 struct InfoMessage {
+    std::string id = ""; // Replaces messages with the same id if not ""
     float time;
     std::string contents;
     float duration = 1.0;
@@ -37,7 +38,7 @@ struct InfoMessage {
     } urgency;
 };
 
-void pushInfoMessage(std::string contents, InfoMessage::Urgency urgency = InfoMessage::Urgency::NORMAL, float duration = 1.0);
+void pushInfoMessage(std::string contents, InfoMessage::Urgency urgency = InfoMessage::Urgency::NORMAL, float duration = 1.0, std::string id = "");
 
 void initEditorGui(AssetManager &asset_manager);
 

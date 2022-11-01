@@ -27,12 +27,16 @@ GLFWwindow* window;
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+#include <controls/behaviour.hpp>
+#include <controls/globals.hpp>
+
+#include <camera/globals.hpp>
+
 #include "globals.hpp"
+#include "graphics.hpp"
 #include "utilities.hpp"
 #include "shader.hpp"
 #include "texture.hpp"
-#include "graphics.hpp"
-#include "controls.hpp"
 #include "editor.hpp"
 #include "assets.hpp"
 #include "entities.hpp"
@@ -115,7 +119,6 @@ int main() {
     // Ensure we can capture the escape key being pressed below
     //glfwSetInputMode(window, GLFW_STICKY_KEYS, GL_TRUE);
 
-    glfwSetScrollCallback(window, windowScrollCallback);
     glfwGetWindowSize(window, &window_width, &window_height);
     glfwSetWindowSizeCallback(window, windowSizeCallback);
 
@@ -144,42 +147,51 @@ int main() {
     global_thread_pool = &thread_pool;
 #endif
 
+    // 
+    // Load key binding
+    //
+    Controls::registerCallbacks();
+    Controls::editor.loadFromFile("data/editor_controls.txt");
+    Controls::game.loadFromFile("data/game_controls.txt");
+
     initDefaultMaterial(global_assets);
     initGraphicsPrimitives(global_assets);
     initShadowFbo();
     initAnimationUbo();
     initWaterColliderFbo();
-
     initEditorGui(global_assets);
-    initEditorControls();
 
     // @note camera instanciation uses sun direction to create shadow view
     sun_direction = glm::normalize(glm::vec3(-1, -1, -0.25));
     sun_color = 5.0f*glm::vec3(0.941, 0.933, 0.849);
 
-    createDefaultCamera(editor_camera);
-    createDefaultCamera(level_camera);
-    level_camera.state = Camera::TYPE::STATIC;
-    updateShadowVP(editor_camera);
+    {
+        Camera::Frustrum frustrum;
+        frustrum.aspect_ratio = (float)window_width / (float)window_height;
+
+        Cameras::editor_camera.set_frustrum(frustrum);
+        Cameras::level_camera.set_frustrum(frustrum);
+        Cameras::level_camera.state = Camera::TYPE::STATIC;
+    }
 
     // 
     // Load shaders
     //
     initGlobalShaders();
 
-    createEnvironmentFromCubemap(graphics::environment, global_assets,
+    /*createEnvironmentFromCubemap(graphics::environment, global_assets,
         { "data/textures/simple_skybox/0006.png", "data/textures/simple_skybox/0002.png",
           "data/textures/simple_skybox/0005.png", "data/textures/simple_skybox/0004.png",
-          "data/textures/simple_skybox/0003.png", "data/textures/simple_skybox/0001.png" });
-    //createEnvironmentFromCubemap(graphics::environment, global_assets,
-    //    { "data/textures/circus_backstage/px.hdr", "data/textures/circus_backstage/nx.hdr",
-    //      "data/textures/circus_backstage/py.hdr", "data/textures/circus_backstage/ny.hdr",
-    //      "data/textures/circus_backstage/pz.hdr", "data/textures/circus_backstage/nz.hdr" }, GL_RGB32F);
+          "data/textures/simple_skybox/0003.png", "data/textures/simple_skybox/0001.png" });*/
+    createEnvironmentFromCubemap(graphics::environment, global_assets,
+        { "data/textures/stonewall_skybox/px.hdr", "data/textures/stonewall_skybox/nx.hdr",
+          "data/textures/stonewall_skybox/py.hdr", "data/textures/stonewall_skybox/ny.hdr",
+          "data/textures/stonewall_skybox/pz.hdr", "data/textures/stonewall_skybox/nz.hdr" }, GL_RGB32F);
 
     AssetManager asset_manager;
     EntityManager *entity_manager = &level_entity_manager;
 
-    // Load background sample
+    // Load background music
     //auto bg_music = asset_manager.createAudio("data/audio/time.wav");
     //if (bg_music->wav_stream.load(bg_music->handle.c_str()) != SoLoud::SO_NO_ERROR)
     //    std::cout << "Error loading wav\n";
@@ -190,20 +202,8 @@ int main() {
     //soloud.setRelativePlaySpeed(handle1, 1.0f); // Play a bit slower; 1.0f is normal
 
      level_path = "data/levels/lightmap_test.level";
-     loadLevel(*entity_manager, asset_manager, level_path, level_camera);
-     editor_camera = level_camera;
-
-     //runLightmapper(*entity_manager, asset_manager, graphics::environment.skybox, graphics::environment.skybox_irradiance, graphics::environment.skybox_specular);
-        
-    /*{
-        auto player = (PlayerEntity*)entity_manager->createEntity(PLAYER_ENTITY);
-        entity_manager->player = player->id;
-        player->mesh = asset_manager.createMesh("data/mesh/character.mesh");
-        player->animesh = asset_manager.createAnimatedMesh("data/anim/character.anim");
-        asset_manager.loadMeshFile(player->mesh, player->mesh->handle);
-        asset_manager.loadAnimationFile(player->animesh, player->animesh->handle);
-    }*/
-
+     loadLevel(*entity_manager, asset_manager, level_path, Cameras::level_camera);
+     Cameras::editor_camera = Cameras::level_camera;
 
 #ifndef NDEBUG 
     checkGLError("Pre-loop");
@@ -214,6 +214,7 @@ int main() {
     uint64_t frame_num = 0;
     window_resized = true;
 
+    Camera *camera_ptr = nullptr; // The currently active camera
     do {
         double current_time = glfwGetTime();
         float true_dt = (current_time - last_time) * global_time_warp;
@@ -224,21 +225,19 @@ int main() {
             dt = 0.0f;
         }
 
-        // @todo
-        Camera* camera_ptr = &editor_camera;
-        if (playing) {
-            camera_ptr = &game_camera;
-        } else if (editor::use_level_camera) {
-            camera_ptr = &level_camera;
+        // Hotswap shader files every second
+        if (current_time - last_filesystem_hotswap_check >= 1.0) {
+            last_filesystem_hotswap_check = current_time;
+            updateGlobalShaders();
         }
-        Camera& camera = *camera_ptr;
-
+        
         if (window_resized){
             glViewport(0, 0, window_width, window_height);
-            updateCameraProjection(level_camera);
-            updateCameraProjection(game_camera);
-            updateCameraProjection(editor_camera);
-            
+            float r = (float)window_width / (float)window_height;
+            Cameras::level_camera.set_aspect_ratio(r);
+            Cameras::game_camera.set_aspect_ratio(r);
+            Cameras::editor_camera.set_aspect_ratio(r);
+
             initHdrFbo(true);
 
             if(graphics::do_bloom){
@@ -246,16 +245,37 @@ int main() {
             }
         }
 
-        // Hotswap shader files
-        if(current_time - last_filesystem_hotswap_check >= 1.0){
-            last_filesystem_hotswap_check = current_time;
-            updateGlobalShaders();
+        auto old_camera_ptr = camera_ptr;
+        camera_ptr = &Cameras::editor_camera;
+        if (playing) {
+            camera_ptr = &Cameras::game_camera;
+        }
+        else if (editor::use_level_camera) {
+            camera_ptr = &Cameras::level_camera;
+        }
+        Camera& camera = *camera_ptr;
+
+        // Handle controls and inputs
+        if (playing) {
+            handleGameControls(entity_manager, asset_manager, true_dt);
+        }
+        else {
+            handleEditorControls(entity_manager, asset_manager, true_dt);
         }
 
+        // Update entity states and animations
         entity_manager->tickAnimatedMeshes(true_dt);
         if(playing)
             updateGameEntities(true_dt, entity_manager);
 
+        // Update camera and shadow projections if either the camera changes or it needs updating
+        if (camera.update() || old_camera_ptr != camera_ptr) {
+            updateShadowVP(camera);
+        }
+
+        // 
+        // Draw entities
+        //
         if (graphics::do_shadows)
             bindDrawShadowMap(*entity_manager, camera);
 
@@ -269,24 +289,30 @@ int main() {
         bindBackbuffer();
         drawPost(graphics::environment.skybox, camera);
 
-        if (playing) {
-            handleGameControls(entity_manager, asset_manager, true_dt);
-        }
-        else {
-            handleEditorControls(entity_manager, asset_manager, true_dt);
-        }
-
+        // 
+        // Draw guis
+        //
         if (!playing) {
             drawEditorGui(*entity_manager, asset_manager);
         }
         else {
             drawGameGui(*entity_manager, asset_manager);
         }
+
         // Swap backbuffer with front buffer
         glfwSwapBuffers(window);
+
+        // 
+        // Poll events
+        //
         window_resized = false;
+        // glfw doesnt send mouse event when mouse/wheel isn't moving @todo
+        Controls::delta_mouse_position = glm::dvec2(0); 
+        Controls::scroll_offset = glm::dvec2(0);
         glfwPollEvents();
 
+        Controls::editor.update(current_time);
+        Controls::game.update(current_time);
         entity_manager->propogateChanges();
 
 #ifndef NDEBUG
@@ -302,7 +328,7 @@ int main() {
         frame_num++;
 #endif
     } // Check if the ESC key was pressed or the window was closed
-    while( glfwGetKey(window, GLFW_KEY_ESCAPE ) != GLFW_PRESS && glfwWindowShouldClose(window) == 0 );
+    while(!Controls::editor.isAction("exit") && glfwWindowShouldClose(window) == 0);
 
     // Clean up SoLoud
     soloud.deinit();

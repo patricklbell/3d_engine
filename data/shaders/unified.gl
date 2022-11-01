@@ -127,7 +127,18 @@ void main() {
 //        
 //    const vec3 colors[] = {vec3(1.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0), vec3(0.0, 0.0, 1.0), vec3(1.0, 1.0, 0.0), vec3(1.0, 0.0, 1.0)};
 //    float NdotL = dot(normal, -sun_direction);
-//    out_color = vec4(vec3((1.0-0.8*shadowness(NdotL, position))*colors[layer]), 1.0);
+//
+//    // show blending
+//    vec3 color = colors[layer];
+//    if(layer > 0) {
+//        float delta = frag_dist - shadow_cascade_distances[layer - 1];
+//        if(delta <= CSM_BLEND_BAND) { // Do blending
+//            float blend = smoothstep(CSM_BLEND_BAND, 0.0, delta);
+//            color = mix(color, colors[layer - 1], blend);
+//        }
+//    }
+//
+//    out_color = vec4((1.0-0.8*shadowness(NdotL, position))*color, 1.0);
 //#else
 //    out_color = vec4(1.0);
 //#endif
@@ -143,9 +154,7 @@ void main() {
 
     vec3 GI = texture(ao_map, texcoord).rgb;
     float ao = ao_mult*length(GI);
-    if (ao > 0.0f) {
-        albedo *= normalize(GI);
-    }
+    albedo *= normalize(GI);
 
     vec3 hdr_color = brdfSchlickGGX(position, normal, albedo, metallic, roughness, -sun_direction, sun_color, camera_position, ao);
 #endif

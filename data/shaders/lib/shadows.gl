@@ -37,11 +37,11 @@ uniform mat4 view;
 //	return fract(sin(dot_product) * 43758.5453);
 //}
 
-#define SMOOTH_SHADOWS 1
-#define SAMPLES_COUNT 16
-#define SAMPLES_COUNT_DIV_2 8
+#define SMOOTH_SHADOWS 0
+#define SAMPLES_COUNT 32
+#define SAMPLES_COUNT_DIV_2 16
 #define INV_SAMPLES_COUNT (1.0f / SAMPLES_COUNT)    
-#define SHADOW_FILTER_SIZE 200.0
+#define SHADOW_FILTER_SIZE 0.1
 
 float calculatePcfShadowness(float NdotL, vec3 position, int layer) {
     vec4 shadow_pos = shadow_vps[layer] * vec4(position, 1.0);
@@ -81,10 +81,10 @@ float calculatePcfShadowness(float NdotL, vec3 position, int layer) {
     const float jscale = 0.5;
 #if COMPILING_FS
     vec3 jcoord = vec3(gl_FragCoord.xy * jscale, 0); // Take screen space position to vary result
-    vec2 fsize = far_plane * bias * SHADOW_FILTER_SIZE * texel_size; // Size of pcf filter, adjusting for csm (further away -> lower resolution)
+    vec2 fsize = far_plane * (1.0 / bias) * SHADOW_FILTER_SIZE * texel_size; // Size of pcf filter, adjusting for csm (further away -> lower resolution)
 #else // This obvious this won't work but need a fake value to compile
     vec3 jcoord = vec3(0);
-    vec2 fsize = SHADOW_FILTER_SIZE * texel_size; // Size of pcf filter
+    vec2 fsize = SHADOW_FILTER_SIZE * texel_size;
 #endif
     
     shadow_depth -= bias;
@@ -118,10 +118,9 @@ float calculatePcfShadowness(float NdotL, vec3 position, int layer) {
             shadow += shadow_depth > pcf_depth ? INV_SAMPLES_COUNT : 0.0;
         }
     }
-#else
-
-//    Microsoft method from:
-//    https://learn.microsoft.com/en-us/windows/win32/dxtecharts/cascaded-shadow-maps
+#else // !SMOOTH_SHADOWS
+    //    Microsoft method from:
+    //    https://learn.microsoft.com/en-us/windows/win32/dxtecharts/cascaded-shadow-maps
     for(int x = -1; x <= 1; ++x)
     {
         for(int y = -1; y <= 1; ++y)
@@ -131,12 +130,12 @@ float calculatePcfShadowness(float NdotL, vec3 position, int layer) {
         }    
     }
     shadow /= 9.0f;
-#endif
+#endif // SMOOTH_SHADOWS
 
     return shadow;
 }
 
-#define CSM_BLEND_BAND 0.1
+#define CSM_BLEND_BAND 0.3
 
 // https://learnopengl.com/Guest-Articles/2021/CSM
 // @note calling multiple times recalculates
@@ -159,9 +158,9 @@ float shadowness(float NdotL, vec3 position){
     // Blend between shadow maps as suggested by, seems a bit expensive:
     // https://learn.microsoft.com/en-us/windows/win32/dxtecharts/cascaded-shadow-maps
     if(layer > 0) {
-        float delta = shadow_cascade_distances[layer - 1] - frag_dist;
+        float delta = frag_dist - shadow_cascade_distances[layer - 1];
         if(delta <= CSM_BLEND_BAND) { // Do blending
-            float blend = smoothstep(0.0, CSM_BLEND_BAND, delta);
+            float blend = smoothstep(CSM_BLEND_BAND, 0.0, delta);
             shadowness = mix(shadowness, calculatePcfShadowness(NdotL, position, layer - 1), blend);
         }
     }

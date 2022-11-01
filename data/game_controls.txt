@@ -1,0 +1,15 @@
+// Format: $action_name $is_continuous $trigger $modifier 1, 2, 3...
+reset 0 r
+toggle_animation_state_visibility 0 a left_shift
+slow_time 0 t 
+fast_time 0 t left_shift
+pause 0 space
+// @todo repeat rate
+move_left 0 a
+move_left 0 left
+move_right 0 d
+move_right 0 right
+move_forward 0 w
+move_forward 0 up
+turn_around 0 s
+turn_around 0 down

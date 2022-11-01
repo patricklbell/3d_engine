@@ -28,13 +28,16 @@
 #include <glm/gtx/euler_angles.hpp>
 #include <string>
 
+#include <controls/globals.hpp>
+
+#include <camera/globals.hpp>
+
 #include "editor.hpp"
 #include "utilities.hpp"
 #include "graphics.hpp"
 #include "shader.hpp"
 #include "texture.hpp"
 #include "assets.hpp"
-#include "controls.hpp"
 #include "entities.hpp"
 #include "level.hpp"
 #include "game_behaviour.hpp"
@@ -67,12 +70,26 @@ namespace editor {
 }
 using namespace editor;
 
-void pushInfoMessage(std::string contents, InfoMessage::Urgency urgency, float duration) {
-    InfoMessage &m = info_message_queue.emplace_back();;
-    m.contents = contents;
-    m.urgency = urgency;
-    m.duration = duration;
-    m.time = glfwGetTime();
+void pushInfoMessage(std::string contents, InfoMessage::Urgency urgency, float duration, std::string id) {
+    InfoMessage *m = nullptr;
+    if (id != "") {
+        for (auto& existing_m : info_message_queue) {
+            if (existing_m.id == id) {
+                m = &existing_m;
+                break;
+            }
+        }
+    }
+
+    if (m == nullptr) {
+        m = &info_message_queue.emplace_back();;
+    }
+
+    m->contents = contents;
+    m->urgency = urgency;
+    m->duration = duration;
+    m->id = id;
+    m->time = glfwGetTime();
 }
 
 void ReferenceSelection::addEntity(Entity* e) {
@@ -355,14 +372,14 @@ static bool listMeshCommand(std::vector<std::string>& input_tokens, std::string&
 static bool loadLevelCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
     if (input_tokens.size() >= 2) {
         auto filename = "data/levels/" + input_tokens[1] + ".level";
-        if (loadLevel(level_entity_manager, asset_manager, filename, level_camera)) {
+        if (loadLevel(level_entity_manager, asset_manager, filename, Cameras::level_camera)) {
             if(playing) {
                 resetGameEntities();
             }
             level_path = filename;
             output += "Loaded level at path " + filename;
             selection.clear();
-            editor_camera = level_camera;
+            Cameras::editor_camera = Cameras::level_camera;
             return true;
         }
 
@@ -371,8 +388,8 @@ static bool loadLevelCommand(std::vector<std::string>& input_tokens, std::string
     }
 
     // @note
-    editor_camera = level_camera;
-    editor_camera.state = Camera::TYPE::STATIC;
+    Cameras::editor_camera = Cameras::level_camera;
+    Cameras::editor_camera.state = Camera::TYPE::STATIC;
     
     output += "Please provide a level name, see list_levels";
     return false;
@@ -399,7 +416,7 @@ static bool saveLevelCommand(std::vector<std::string>& input_tokens, std::string
     else if (input_tokens.size() >= 2) {
         filename = "data/levels/" + input_tokens[1] + ".level";
     }
-    saveLevel(level_entity_manager, filename, level_camera);
+    saveLevel(level_entity_manager, filename, Cameras::level_camera);
     level_path = filename;
 
     output += "Saved current level at path " + filename;
@@ -420,7 +437,7 @@ static bool newLevelCommand(std::vector<std::string>& input_tokens, std::string&
     }
     level_path = filename;
 
-    saveLevel(level_entity_manager, filename, level_camera);
+    saveLevel(level_entity_manager, filename, Cameras::level_camera);
     output += "Created new level at path " + filename;
     return true;
 }
@@ -979,14 +996,13 @@ void ImTerminal(EntityManager &entity_manager, AssetManager &asset_manager, bool
 
         // Extra scrolling is happening in editor 
         // @fix?
-        controls::scroll_offset = glm::vec2(0);
+        Controls::scroll_offset = glm::vec2(0);
     }
 
     prev_is_active = is_active;
 }
 
 TransformType editTransform(Camera &camera, glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, TransformType type=TransformType::ALL){
-    static bool key_t = false, key_r = false, key_s = false, key_n = false;
     static bool use_trans_snap = true, use_rot_snap = true, use_scl_snap = false;
     static glm::vec3 scale_snap = glm::vec3(1.0);
     static float rotation_snap = 90;
@@ -998,11 +1014,11 @@ TransformType editTransform(Camera &camera, glm::vec3 &pos, glm::quat &rot, glm:
 
     ImGuiIO& io = ImGui::GetIO();
     if (!io.WantCaptureKeyboard && camera.state != Camera::TYPE::SHOOTER) {
-        if (glfwGetKey(window, GLFW_KEY_T) && !key_t && do_p)
+        if (Controls::editor.isAction("toggle_translate") && do_p)
             gizmo_mode = gizmo_mode == GizmoMode::TRANSLATE ? GizmoMode::NONE : GizmoMode::TRANSLATE;
-        if (glfwGetKey(window, GLFW_KEY_R) && !key_r && do_r)
+        if (Controls::editor.isAction("toggle_rotate") && do_r)
             gizmo_mode = gizmo_mode == GizmoMode::ROTATE ? GizmoMode::NONE : GizmoMode::ROTATE;
-        if (glfwGetKey(window, GLFW_KEY_S) && !key_s && do_s)
+        if (Controls::editor.isAction("toggle_scale") && do_s)
             gizmo_mode = gizmo_mode == GizmoMode::SCALE ? GizmoMode::NONE : GizmoMode::SCALE;
     }
 
@@ -1047,7 +1063,7 @@ TransformType editTransform(Camera &camera, glm::vec3 &pos, glm::quat &rot, glm:
     switch (gizmo_mode)
     {
     case GizmoMode::TRANSLATE:
-        if (!io.WantCaptureKeyboard && glfwGetKey(window, GLFW_KEY_N) && !key_n)
+        if (!io.WantCaptureKeyboard && Controls::editor.isAction("toggle_snap"))
             use_trans_snap = !use_trans_snap;
         ImGui::Checkbox("", &use_trans_snap);
         ImGui::SameLine();
@@ -1056,7 +1072,7 @@ TransformType editTransform(Camera &camera, glm::vec3 &pos, glm::quat &rot, glm:
             change_type = (TransformType)((uint64_t)change_type | (uint64_t)TransformType::POS);
         break;
     case GizmoMode::ROTATE:
-        if (!io.WantCaptureKeyboard && glfwGetKey(window, GLFW_KEY_N) && !key_n)
+        if (!io.WantCaptureKeyboard && Controls::editor.isAction("toggle_snap"))
             use_rot_snap = !use_rot_snap;
         ImGui::Checkbox("", &use_rot_snap);
         ImGui::SameLine();
@@ -1065,7 +1081,7 @@ TransformType editTransform(Camera &camera, glm::vec3 &pos, glm::quat &rot, glm:
             change_type = (TransformType)((uint64_t)change_type | (uint64_t)TransformType::ROT);
         break;
     case GizmoMode::SCALE:
-        if (!io.WantCaptureKeyboard && glfwGetKey(window, GLFW_KEY_N) && !key_n)
+        if (!io.WantCaptureKeyboard && Controls::editor.isAction("toggle_snap"))
             use_scl_snap = !use_scl_snap;
         ImGui::Checkbox("", &use_scl_snap);
         ImGui::SameLine();
@@ -1077,10 +1093,6 @@ TransformType editTransform(Camera &camera, glm::vec3 &pos, glm::quat &rot, glm:
         break;
     }
 
-    key_t = glfwGetKey(window, GLFW_KEY_T);
-    key_r = glfwGetKey(window, GLFW_KEY_R);
-    key_s = glfwGetKey(window, GLFW_KEY_S);
-    key_n = glfwGetKey(window, GLFW_KEY_N);
     return change_type;
 }
 
@@ -1091,7 +1103,7 @@ bool editorRotationGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, const C
     
     glm::vec3 out_origin;
     glm::vec3 out_direction;
-    screenPosToWorldRay(controls::mouse_position, camera.view, camera.projection, out_origin, out_direction);
+    screenPosToWorldRay(Controls::mouse_position, camera.view, camera.projection, out_origin, out_direction);
 
     glm::vec3 axis[3] = {
         rot*glm::vec3(1,0,0), 
@@ -1100,8 +1112,10 @@ bool editorRotationGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, const C
     };
   
     const float distance = glm::length(pos - camera.position);
-    if(glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_RELEASE) selected_ring = -1;
-    else if(controls::left_mouse_click_press){
+    if (Controls::editor.left_mouse.state == Controls::RELEASE) {
+        selected_ring = -1;
+    }
+    else if(Controls::editor.left_mouse.state == Controls::PRESS) {
         float depth = std::numeric_limits<float>::max();
         for (int i = 0; i < 3; ++i) {
             const glm::fvec3 direction = axis[i];
@@ -1200,7 +1214,7 @@ bool editorTranslationGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, Came
     
     glm::vec3 out_origin;
     glm::vec3 out_direction;
-    screenPosToWorldRay(controls::mouse_position, camera.view, camera.projection, out_origin, out_direction);
+    screenPosToWorldRay(Controls::mouse_position, camera.view, camera.projection, out_origin, out_direction);
     
     glm::vec3 axis[3] = {
         rot*glm::vec3(1,0,0), 
@@ -1209,14 +1223,14 @@ bool editorTranslationGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, Came
     };
 
     const float distance = glm::length(camera.position - pos);
-    if(glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_RELEASE){
+    
+    if (Controls::editor.left_mouse.state == Controls::RELEASE) {
         if(camera.state == Camera::TYPE::TRACKBALL){
-            camera.target = pos;
-            updateCameraView(camera);
+            camera.set_target(pos);
         }
         selected_arrow = -1;
     }
-    else if(controls::left_mouse_click_press){
+    else if(Controls::editor.left_mouse.state == Controls::PRESS){
         float depth = std::numeric_limits<float>::max();
         for (int i = 0; i < 3; ++i) {
             auto direction = axis[i];
@@ -1284,7 +1298,7 @@ bool editorScalingGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, Camera &
     
     glm::vec3 out_origin;
     glm::vec3 out_direction;
-    screenPosToWorldRay(controls::mouse_position, camera.view, camera.projection, out_origin, out_direction);
+    screenPosToWorldRay(Controls::mouse_position, camera.view, camera.projection, out_origin, out_direction);
     
     glm::vec3 axis[3] = {
         rot*glm::vec3(1,0,0), 
@@ -1293,10 +1307,10 @@ bool editorScalingGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, Camera &
     };
 
     const float distance = glm::length(camera.position - pos);
-    if(glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_RELEASE)
+    if (Controls::editor.left_mouse.state == Controls::RELEASED)
         selected_arrow = -1;
     
-    else if(controls::left_mouse_click_press){
+    else if(Controls::editor.left_mouse.state == Controls::PRESS){
         float depth = std::numeric_limits<float>::max();
         for (int i = 0; i < 3; ++i) {
             auto direction = axis[i];
@@ -1335,7 +1349,7 @@ bool editorScalingGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, Camera &
         closestDistanceBetweenLines(out_origin, out_direction, pos + selection_offset, direction, camera_t, direction_t);
         
         glm::fvec3 unrotated_axis(selected_arrow==0, selected_arrow==1, selected_arrow==2);
-        if(controls::left_mouse_click_press)
+        if(Controls::editor.left_mouse.state == Controls::PRESS)
             direction_offset = -scl[selected_arrow][selected_arrow]-direction_t;
         auto scale = -(direction_t + direction_offset + scl[selected_arrow][selected_arrow])*unrotated_axis;
         if(do_snap){
@@ -1419,7 +1433,7 @@ void drawMeshCube(const glm::vec3 &pos, const glm::quat &rot, const glm::mat3x3 
 void drawFrustrum(Camera &drawn_camera, const Camera& camera) {
     glUseProgram(shader::debug.program);
     // Transform into drawn camera's view space, then into world space
-    auto projection = glm::perspective(drawn_camera.fov, (float)window_width / (float)window_height, drawn_camera.near_plane, 3.0f*drawn_camera.near_plane);
+    auto projection = glm::perspective(drawn_camera.frustrum.fov, drawn_camera.frustrum.aspect_ratio, drawn_camera.frustrum.near_plane, 2.0f);
     auto model = glm::inverse(projection*drawn_camera.view);
     auto mvp = camera.projection * camera.view * model;
     glUniformMatrix4fv(shader::debug.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
@@ -1436,8 +1450,6 @@ void drawFrustrum(Camera &drawn_camera, const Camera& camera) {
 void drawMeshWireframe(const Mesh &mesh, const glm::mat4& g_model_rot_scl, const glm::mat4& g_model_pos, const Camera &camera, bool flash = false){
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     glEnable(GL_LINE_SMOOTH);
-    // Displays in renderdoc texture view but not in application?
-    //glLineWidth(200.0);
 
     glUseProgram(shader::debug.program);
     glUniform4f(shader::debug.uniform("color"), 1.0, 1.0, 1.0, 1.0);
@@ -1605,11 +1617,12 @@ static void drawInfoTextGui() {
 
 void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
     if (!use_level_camera && draw_level_camera) {
-        drawFrustrum(level_camera, editor_camera);
+        Cameras::level_camera.update();
+        drawFrustrum(Cameras::level_camera, Cameras::editor_camera);
     }
-    Camera *camera_ptr = &editor_camera;
+    Camera *camera_ptr = &Cameras::editor_camera;
     if (use_level_camera) {
-        camera_ptr = &level_camera;
+        camera_ptr = &Cameras::level_camera;
     }
     Camera& camera = *camera_ptr;
     
@@ -1656,13 +1669,8 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
             auto mix_t = glm::smoothstep(0.0f, sidebar_open_len, (float)glfwGetTime() - sidebar_open_time);
             sidebar_pos_right = glm::mix(sidebar_pos_right, sidebar_w, mix_t);
 
-            if(window_resized || sidebar_pos_right != sidebar_w){
-                ImGui::SetNextWindowPos(ImVec2(window_width-sidebar_pos_right,0));
-                ImGui::SetNextWindowSize(ImVec2(sidebar_w,window_height));
-            } else {
-                ImGui::SetNextWindowPos(ImVec2(window_width-sidebar_pos_right,0), ImGuiCond_Appearing);
-                ImGui::SetNextWindowSize(ImVec2(sidebar_w,window_height), ImGuiCond_Appearing);
-            }
+            ImGui::SetNextWindowPos(ImVec2(window_width-sidebar_pos_right,0));
+            ImGui::SetNextWindowSize(ImVec2(sidebar_w,window_height));
             ImGui::SetNextWindowSizeConstraints(ImVec2(sidebar_w, window_height), ImVec2(window_width / 2.0, window_height));
 
             ImGui::Begin("###entity", NULL, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoTitleBar);
@@ -1931,8 +1939,8 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
                 if (ImGui::Button("Duplicate", h_button_size)) {
                     if (camera.state == Camera::TYPE::TRACKBALL && entityInherits(selection.type, MESH_ENTITY)) {
                         auto m_e = (MeshEntity*)fe;
-                        camera.target = m_e->position + translation_snap.x;
-                        updateCameraView(camera);
+                        selection.avg_position += translation_snap.x;
+                        camera.set_target(selection.avg_position);
                     }
 
                     for (auto& id : selection.ids) {
@@ -1985,12 +1993,14 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
             std::cout << "Selected filename at path " << p << ".\n";
             if(im_file_dialog_type == "loadLevel"){
                 // @note accumulates assets
-                if(loadLevel(entity_manager, asset_manager, p, level_camera)){
-                    editor_camera = level_camera;
+                if(loadLevel(entity_manager, asset_manager, p, Cameras::level_camera)){
+                    Cameras::editor_camera = Cameras::level_camera;
+                    Cameras::editor_camera.state = Camera::TYPE::TRACKBALL;
+                    Cameras::editor_camera.set_target(glm::vec3(0.0));
                     selection.clear();
                 }
             } else if(im_file_dialog_type == "saveLevel"){
-                saveLevel(entity_manager, p, level_camera);
+                saveLevel(entity_manager, p, Cameras::level_camera);
             /*} else if(im_file_dialog_type == "exportMesh"){
                 asset_manager.writeMeshFile(s_mesh, p);
             } else if(im_file_dialog_type == "loadMesh"){

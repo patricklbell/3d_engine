@@ -9,7 +9,6 @@
 
 // Include GLEW
 #include <GL/glew.h>
-
 // Include GLFW
 #include <GLFW/glfw3.h>
 
@@ -18,8 +17,6 @@
 
 #include <assimp/scene.h> 
 
-#include "texture.hpp"
-
 #ifdef _WINDOWS
 #define NOMINMAX 
 #endif
@@ -27,6 +24,8 @@
 #include <soloud_thread.h>
 #include <soloud_wav.h>
 #include <soloud_wavstream.h>
+
+#include <texture.hpp>
 
 enum AssetType : char {
     MESH_ASSET = 0,

@@ -59,13 +59,19 @@ add_definitions(
 
 
 set(SOURCES 
+	src/controls/core.cpp
+	src/controls/behaviour.cpp
+	src/controls/globals.cpp
+
+	src/camera/core.cpp
+	src/camera/globals.cpp
+
 	src/utilities.cpp
+	src/graphics.cpp
 	src/main.cpp
 	src/shader.cpp
 	src/texture.cpp
-	src/controls.cpp
 	src/editor.cpp
-	src/graphics.cpp
 	src/assets.cpp
 	src/entities.cpp
 	src/level.cpp

@@ -74,9 +74,11 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 	window_height = h;
 	initHdrFbo();
 
-	Camera camera;
-	camera.near_plane = 0.01f;
-	camera.far_plane = 100.0f;
+	// Not a real camera, just so shader uniforms are correct
+	Camera::Frustrum frustrum;
+	frustrum.near_plane = 0.01f;
+	frustrum.far_plane = 100.0f;
+	Camera camera(frustrum);
 
 	std::cout << "====================================================================================\n"
 				 "\tBaking " << level_path << "'s Lightmap\n"
@@ -188,7 +190,7 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 			lmImageSmooth(img, temp, w, h, c);
 			lmImageDilate(temp, img, w, h, c);
 			// @hardcoded gamma
-			lmImagePower(img, w, h, c, 1.0f / 1.6f, 0x7); // gamma correct color channels
+			lmImagePower(img, w, h, c, 1.0f / 1.9f, 0x7); // gamma correct color channels
 
 			//if (b == bounces - 1) {
 			//	lmImagePower(img, w, h, c, 0.8); // Add some brightness to final result

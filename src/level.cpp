@@ -1,6 +1,8 @@
 #include <set>
 #include <iostream>
 
+#include <camera/core.hpp>
+
 #include "level.hpp"
 #include "entities.hpp"
 #include "utilities.hpp"
@@ -198,8 +200,7 @@ static void readCamera(Camera &camera, FILE *f) {
     fread(&camera.position, sizeof(camera.position), 1, f);
     fread(&camera.target  , sizeof(camera.target  ), 1, f);
 
-    updateCameraProjection(camera);
-    updateCameraView(camera);
+    camera.view_updated = true;
 }
 
 constexpr uint16_t LEVEL_FILE_VERSION = 1U;

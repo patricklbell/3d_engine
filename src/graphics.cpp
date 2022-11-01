@@ -8,8 +8,10 @@
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/detail/type_mat.hpp>
 
-#include "glm/detail/type_mat.hpp"
+#include <camera/core.hpp>
+
 #include "graphics.hpp"
 #include "assets.hpp"
 #include "utilities.hpp"
@@ -21,9 +23,6 @@
 int    window_width;
 int    window_height;
 bool   window_resized;
-Camera editor_camera;
-Camera level_camera;
-Camera game_camera;
 
 namespace graphics {
     bool do_bloom = true;
@@ -93,7 +92,6 @@ namespace graphics {
 
 using namespace graphics;
 
-
 void windowSizeCallback(GLFWwindow* window, int width, int height){
     if(width != window_width || height != window_height) window_resized = true;
 
@@ -101,30 +99,6 @@ void windowSizeCallback(GLFWwindow* window, int width, int height){
     window_height = height;
 }
 void framebufferSizeCallback(GLFWwindow *window, int width, int height){}
-
-void createDefaultCamera(Camera &camera){
-    camera.state = Camera::TYPE::TRACKBALL;
-    camera.position = glm::vec3(3,3,3);
-    camera.target = glm::vec3(0,0,0);
-    updateCameraView(camera);
-    updateCameraProjection(camera);
-}
-
-void updateCameraView(Camera &camera){
-    camera.view = glm::lookAt(camera.position, camera.target, camera.up);
-    camera.right = glm::vec3(glm::transpose(camera.view)[0]);
-    camera.forward = glm::normalize(camera.position - camera.target);
-}
-
-void updateCameraProjection(Camera &camera){
-    camera.projection = glm::perspective(camera.fov, (float)window_width/(float)window_height, camera.near_plane, camera.far_plane);
-}
-
-void updateCameraTarget(Camera& camera, glm::vec3 target) {
-    camera.target = target;
-    updateCameraView(camera);
-    updateShadowVP(camera);
-}
 
 inline static void drawMeshMat(Shader& s, const Mesh* mesh, const glm::mat4& g_model_rot_scl, const glm::mat4& g_model_pos, const glm::mat4& vp, const Texture *ao=nullptr) {
     glBindVertexArray(mesh->vao);
@@ -174,7 +148,7 @@ inline static void drawMeshShadow(Shader& s, const Mesh* mesh, const glm::mat4& 
 glm::mat4x4 getShadowMatrixFromFrustrum(const Camera &camera, float near_plane, float far_plane){
     // Make shadow's view target the center of the camera frustrum by averaging frustrum corners
     // maybe you can just calculate from view direction and near and far
-    const auto camera_projection_alt = glm::perspective(glm::radians(45.0f), (float)window_width/(float)window_height, near_plane, far_plane);
+    const auto camera_projection_alt = glm::perspective(camera.frustrum.fov, camera.frustrum.aspect_ratio, near_plane, far_plane);
     const auto inv_VP = glm::inverse(camera_projection_alt * camera.view);
 
     std::vector<glm::vec4> frustrum;
@@ -231,22 +205,22 @@ glm::mat4x4 getShadowMatrixFromFrustrum(const Camera &camera, float near_plane, 
     //max_z = glm::floor(max_z / max_world_units_per_texel) * max_world_units_per_texel;
 
     const auto shadow_projection = glm::ortho(min_x, max_x, min_y, max_y, min_z, max_z);
-    //const auto shadow_projection = glm::ortho(50.0f, -50.0f, 50.0f, -50.0f, camera.near_plane, camera.far_plane);
+    //const auto shadow_projection = glm::ortho(50.0f, -50.0f, 50.0f, -50.0f, camera.near_plane, camera.frustrum.far_plane);
     return shadow_projection * shadow_view;
 }
 
 void updateShadowVP(const Camera &camera){
-    shadow_cascade_distances[0] = camera.far_plane / 50.0f;
-    shadow_cascade_distances[1] = camera.far_plane / 25.0f;
-    shadow_cascade_distances[2] = camera.far_plane / 10.0f;
-    shadow_cascade_distances[3] = camera.far_plane / 2.0f;
-    float np = camera.near_plane, fp;
+    shadow_cascade_distances[0] = camera.frustrum.far_plane / 50.0f;
+    shadow_cascade_distances[1] = camera.frustrum.far_plane / 25.0f;
+    shadow_cascade_distances[2] = camera.frustrum.far_plane / 10.0f;
+    shadow_cascade_distances[3] = camera.frustrum.far_plane / 2.0f;
+    float np = camera.frustrum.near_plane, fp;
     for(int i = 0; i < shadow_num; i++){
         fp = shadow_cascade_distances[i];
         shadow_vps[i] = getShadowMatrixFromFrustrum(camera, np, fp);
         np = fp;
     }
-    shadow_vps[shadow_num] = getShadowMatrixFromFrustrum(camera, np, camera.far_plane);
+    shadow_vps[shadow_num] = getShadowMatrixFromFrustrum(camera, np, camera.frustrum.far_plane);
 
     // @note if something else binds another ubo to 0 then this will be overwritten
     glBindBuffer(GL_UNIFORM_BUFFER, shadow_matrices_ubo);
@@ -1013,7 +987,7 @@ void drawEntitiesHdr(const EntityManager& entity_manager, const Texture* skybox,
     if (do_shadows) {
         glUniformMatrix4fv(unified_s->uniform("view"), 1, GL_FALSE, &camera.view[0][0]);
         glUniform1fv(unified_s->uniform("shadow_cascade_distances[0]"), shadow_num, shadow_cascade_distances);
-        glUniform1f(unified_s->uniform("far_plane"), camera.far_plane);
+        glUniform1f(unified_s->uniform("far_plane"), camera.frustrum.far_plane);
     }
 
     for (int i = 0; i < ENTITY_COUNT; ++i) {
@@ -1065,7 +1039,7 @@ void drawEntitiesHdr(const EntityManager& entity_manager, const Texture* skybox,
         glUniform3fv(animated_unified_s->uniform("camera_position"), 1, &camera.position[0]);
         if (do_shadows) {
             glUniform1fv(animated_unified_s->uniform("shadow_cascade_distances[0]"), shadow_num, shadow_cascade_distances);
-            glUniform1f(animated_unified_s->uniform("far_plane"), camera.far_plane);
+            glUniform1f(animated_unified_s->uniform("far_plane"), camera.frustrum.far_plane);
             glUniformMatrix4fv(animated_unified_s->uniform("view"), 1, GL_FALSE, &camera.view[0][0]);
         }
 
@@ -1129,7 +1103,7 @@ void drawEntitiesHdr(const EntityManager& entity_manager, const Texture* skybox,
         // glActiveTexture(GL_TEXTURE5);
         // glBindTexture(GL_TEXTURE_2D_ARRAY, shadow_buffer);
         // glUniform1fv(shader::unified.uniform("shader")::unified_bloom].shadow_cascade_distances, shadow_num, shadow_cascade_distances);
-        // glUniform1f(shader::unified.uniform("shader")::unified_bloom].far_plane, camera.far_plane);
+        // glUniform1f(shader::unified.uniform("shader")::unified_bloom].far_plane, camera.frustrum.far_plane);
 
         for (const auto &v_e : vegetation_entities) {
             if(v_e->texture == nullptr) continue;
@@ -1170,7 +1144,7 @@ void drawEntitiesHdr(const EntityManager& entity_manager, const Texture* skybox,
             glUniform1f( water_s->uniform("time"), glfwGetTime());
             if (do_shadows) {
                 glUniformMatrix4fv( water_s->uniform("view"), 1, GL_FALSE, &camera.view[0][0]);
-                glUniform1f(        water_s->uniform("far_plane"), camera.far_plane);
+                glUniform1f(        water_s->uniform("far_plane"), camera.frustrum.far_plane);
                 glUniform1fv(       water_s->uniform("shadow_cascade_distances[0]"), shadow_num, shadow_cascade_distances);
             }
             // @debug the geometry shader and tesselation

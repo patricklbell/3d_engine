@@ -1,0 +1,27 @@
+// Format: $action_name $is_continuous $trigger $modifier 1, 2, 3...
+toggle_terminal 0 `
+delete_selection 0 delete
+switch_camera_mode 0 c left_shift
+switch_cameras 0 c
+switch_editor_mode 0 b
+toggle_collider_visibility 0 b left_shift
+toggle_debug_visibility 0 d left_shift
+copy 0 c left_control
+paste 0 v left_control
+toggle_playing 0 p
+toggle_level_camera_visibility 0 f
+fly_left 1 a
+fly_left 1 left
+fly_right 1 d
+fly_right 1 right
+fly_forward 1 w
+fly_forward 1 up
+fly_backwards 1 s
+fly_backwards 1 down
+fly_up 1 space
+fly_down 1 space left_control
+exit 0 escape
+toggle_translate 0 t
+toggle_scale 0 s
+toggle_rotate 0 r
+toggle_snap 0 n

@@ -65,7 +65,7 @@ void initDefaultMaterial(AssetManager &asset_manager){
     default_material->t_normal    = asset_manager.getColorTexture(glm::vec3(0.5,0.5,1), GL_RGB);
     default_material->t_metallic  = asset_manager.getColorTexture(glm::vec3(1), GL_RED);
     default_material->t_roughness = asset_manager.getColorTexture(glm::vec3(1), GL_RED);
-    default_material->t_ambient   = asset_manager.getColorTexture(glm::vec3(1), GL_RED);
+    default_material->t_ambient   = asset_manager.getColorTexture(glm::vec3(1), GL_RGB);
 
     default_material->t_albedo->handle    = "DEFAULT:albedo";
     default_material->t_normal->handle    = "DEFAULT:normal";

@@ -1,9 +1,12 @@
-#include "entities.hpp"
-#include "graphics.hpp"
-#include "utilities.hpp"
 #include <iostream>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <camera/globals.hpp>
+
+#include "entities.hpp"
+#include "utilities.hpp"
+
+// @todo move to camera class, in future with multiple control points, etc.
 glm::vec3 camera_move_target, camera_move_origin;
 float camera_move_time, camera_move_duration;
 bool do_camera_move = false;
@@ -21,8 +24,7 @@ void updateCameraMove(float dt) {
         camera_move_time += dt;
         float t = glm::smoothstep(0.0f, camera_move_duration, camera_move_time);
         t = sqrt(t);
-        game_camera.position = glm::mix(camera_move_origin, camera_move_target, t);
-        updateCameraView(game_camera);
+        Cameras::game_camera.set_position(glm::mix(camera_move_origin, camera_move_target, t));
 
         do_camera_move = camera_move_time <= camera_move_duration;
     }
@@ -142,9 +144,9 @@ void resetGameEntities() {
     game_entity_manager = level_entity_manager;
     level_entity_manager.copyEntities(game_entity_manager.entities);
 
-    game_camera = level_camera;
-    auto look_dir = glm::normalize(game_camera.target - game_camera.position);
-    initCameraMove(game_camera.position - look_dir * 4.0f, game_camera.position, 1.5f);
+    Cameras::game_camera = Cameras::level_camera;
+    auto look_dir = glm::normalize(Cameras::game_camera.target - Cameras::game_camera.position);
+    initCameraMove(Cameras::game_camera.position - look_dir * 4.0f, Cameras::game_camera.position, 1.5f);
 }
 
 void playGame(EntityManager* &entity_manager) {
