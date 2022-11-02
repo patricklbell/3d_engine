@@ -26,6 +26,7 @@ void main() {
 
 #define FXAA 1
 #define SSAO 0
+#define DOF  0
 
 in vec3 position;
 in vec2 view_ray;
@@ -207,6 +208,13 @@ void main()
 //        //float fog_amount = smoothstep(fog_near, fog_far, dist);
 //        hdr_color = mix(hdr_color, skybox_color, fog_amount);
 //    }
+
+#if DOF && BLOOM
+    vec3 focus_point = vec3(0.0, 0.0, depthToDist(texture(depth_map, vec2(0.5, 0.5)).r)); // Make center of scene the focus
+    float min_distance = 1.0, max_distance = 4.0 * focus_point.z;
+    float blur = smoothstep(min_distance, max_distance, length(fragment_position - focus_point));
+    hdr_color = mix(hdr_color, bloom_color, 0.5*blur);
+#endif
 
     // Reinhard tone mapping
     vec3 mapped = reinhard_tonemap(hdr_color);
