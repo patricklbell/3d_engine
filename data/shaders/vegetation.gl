@@ -26,7 +26,6 @@ void main()
 
     gl_Position = mvp * vec4(vertex, 1.0);
 	vs_out.texcoord = in_texcoord;
-    vs_out.texcoord.y = 1.0 - vs_out.texcoord.y;
     vs_out.color = in_color;
 }
 #endif

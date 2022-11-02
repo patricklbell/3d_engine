@@ -61,11 +61,11 @@ Material *default_material;
 void initDefaultMaterial(AssetManager &asset_manager){
     default_material = new Material;
    
-    default_material->t_albedo    = asset_manager.getColorTexture(glm::vec3(1,0,1), GL_RGB);
-    default_material->t_normal    = asset_manager.getColorTexture(glm::vec3(0.5,0.5,1), GL_RGB);
-    default_material->t_metallic  = asset_manager.getColorTexture(glm::vec3(1), GL_RED);
-    default_material->t_roughness = asset_manager.getColorTexture(glm::vec3(1), GL_RED);
-    default_material->t_ambient   = asset_manager.getColorTexture(glm::vec3(1), GL_RGB);
+    default_material->t_albedo    = asset_manager.getColorTexture(glm::vec4(1,0,1,1), GL_RGB);
+    default_material->t_normal    = asset_manager.getColorTexture(glm::vec4(0.5,0.5,1,1), GL_RGB);
+    default_material->t_metallic  = asset_manager.getColorTexture(glm::vec4(1), GL_RED);
+    default_material->t_roughness = asset_manager.getColorTexture(glm::vec4(1), GL_RED);
+    default_material->t_ambient   = asset_manager.getColorTexture(glm::vec4(1), GL_RGB);
 
     default_material->t_albedo->handle    = "DEFAULT:albedo";
     default_material->t_normal->handle    = "DEFAULT:normal";
@@ -128,7 +128,7 @@ Mesh::~Mesh(){
     free(draw_count);
 }
 
-constexpr uint16_t MESH_FILE_VERSION = 3U;
+constexpr uint16_t MESH_FILE_VERSION = 4U;
 constexpr uint16_t MESH_FILE_MAGIC   = 7543U;
 // For now dont worry about size of types on different platforms
 bool AssetManager::writeMeshFile(const Mesh *mesh, const std::string &path){
@@ -176,9 +176,12 @@ bool AssetManager::writeMeshFile(const Mesh *mesh, const std::string &path){
             fwrite(&tex->color, sizeof(tex->color), 1, f);
         }
         else {
+            if (tex->handle.size() > (uint8_t)-1) {
+                std::cerr << "Handle " << tex->handle << " is too long\n";
+            }
             uint8_t len = tex->handle.size();
             fwrite(&len, sizeof(len), 1, f);
-            fwrite(tex->handle.data(), len, 1, f);
+            fwrite(tex->handle.c_str(), len, 1, f);
         }
     };
     for(int i = 0; i < mesh->num_materials; i++){
@@ -261,6 +264,8 @@ static void createMeshVao(Mesh *mesh){
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, mesh->num_indices * sizeof(*mesh->indices), &mesh->indices[0], GL_STATIC_DRAW);
    
 	glBindVertexArray(0); // Unbind the VAO @perf
+
+    mesh->complete = true;
 }
 
 bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
@@ -338,38 +343,32 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
 #if DO_MULTITHREAD
         &texture_imagedata_default_list, 
 #endif
-        this](Texture* &tex, Texture *default_tex, GLint internal_format) {
+        this](Texture* &tex, Texture *default_tex, GLenum format) {
         char is_color;
         fread(&is_color, sizeof(is_color), 1, f);
         if (is_color) {
-            glm::vec3 color;
+            glm::vec4 color;
             fread(&color, sizeof(color), 1, f);
-            if (color.x > 1 || color.y > 1 || color.z > 1) {
-                tex = this->getColorTexture(color, internal_format);
-            }
-            else {
-                // @note this writes the color fields again
-                tex = this->getColorTexture(color);
-            }
+            tex = this->getColorTexture(color, format);
         }
         else {
             uint8_t len;
             fread(&len, sizeof(len), 1, f);
             std::string path;
             path.resize(len);
-            fread(&path[0], sizeof(char), len, f);
+            fread(&path[0], sizeof(char)*len, 1, f);
 
             if (path == default_tex->handle) {
                 tex = default_tex;
             }
             else {
                 tex = createTexture(path);
+                tex->format = format;
 #if DO_MULTITHREAD 
                 auto img_data = new ImageData();
-                img_data->internal_format = internal_format;
                 auto& tpl = texture_imagedata_default_list.emplace_back(tpl_t{ &tex, img_data, default_tex });
 #else
-                if (!this->loadTexture(tex, path, internal_format))
+                if (!this->loadTexture(tex, path, format))
                     tex = default_tex;
 #endif
             }
@@ -389,9 +388,10 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
 
 #if DO_MULTITHREAD 
     for (auto& tpl : texture_imagedata_default_list) {
-        ImageData* img_ptr = std::get<1>(tpl);
-        std::string path = (*std::get<0>(tpl))->handle;
-        global_thread_pool->queueJob(std::bind(loadImageData, img_ptr, path, img_ptr->internal_format));
+        auto& tex = *std::get<0>(tpl);
+        auto& img = std::get<1>(tpl);
+
+        global_thread_pool->queueJob(std::bind(loadImageData, img, tex->handle, getChannelsForFormat(tex->format), false, true));
     }
 
     // Block main thread until texture loading is finished
@@ -399,13 +399,14 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
 
     // Now transfer loaded data into actual textures
     for (auto& tpl : texture_imagedata_default_list) {
-        auto& tex     = std::get<0>(tpl);
+        auto& tex     = *std::get<0>(tpl);
         auto& img     = std::get<1>(tpl);
         auto& def_tex = std::get<2>(tpl);
 
-        (*tex)->id = createGLTextureFromData(img, img->internal_format);
-        if ((*tex)->id == GL_FALSE) {
-            (*tex) = def_tex;
+        tex->id = createGLTextureFromData(img, tex->format, GL_REPEAT);
+        tex->resolution = glm::vec2(img->x, img->y);
+        if (tex->id == GL_FALSE) {
+            tex = def_tex;
         }
         free(img);
     }
@@ -432,8 +433,8 @@ void collapseAssimpMeshScene(aiNode* node, const aiScene* scene, std::vector<aiM
     // process all the node's meshes (if any)
     for (int i = 0; i < node->mNumMeshes; i++) {
         auto ai_mesh = scene->mMeshes[node->mMeshes[i]];
-        std::cout << "Primitive type: " << ai_mesh->mPrimitiveTypes << "\n";
-        if (ai_mesh->mPrimitiveTypes != aiPrimitiveType_TRIANGLE) continue;
+        if (ai_mesh->mPrimitiveTypes != aiPrimitiveType_TRIANGLE) 
+            continue;
 
         // @perf duplicates transform, could use indices/preserve scene graph
         ai_global_transforms.push_back(ai_nodes_global_transform);
@@ -678,9 +679,9 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
                             color *= ec;
                         }
                     }
-                    mat.t_albedo = getColorTexture(color, GL_RGB);
+                    mat.t_albedo = getColorTexture(glm::vec4(color, 1.0), GL_RGB);
                     mat.t_albedo->is_color = true;
-                    mat.t_albedo->color = color;
+                    mat.t_albedo->color = glm::vec4(color, 1.0);
                 }
             }
         }
@@ -695,9 +696,9 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
                     else {
                         shininess = glm::clamp(shininess, 0.0f, 1.0f);
                         auto color = glm::vec3(shininess);
-                        mat.t_metallic = getColorTexture(color, GL_RED);
+                        mat.t_metallic = getColorTexture(glm::vec4(color, 1.0), GL_RED);
                         mat.t_metallic->is_color = true;
-                        mat.t_metallic->color = color;
+                        mat.t_metallic->color = glm::vec4(color, 1.0);
                     }
                 }
             }
@@ -712,16 +713,16 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
                 else {
                     roughness = glm::clamp(roughness, 0.0f, 1.0f);
                     auto color = glm::vec3(roughness);
-                    mat.t_roughness = getColorTexture(color, GL_RED);
+                    mat.t_roughness = getColorTexture(glm::vec4(color, 1.0), GL_RED);
                     mat.t_roughness->is_color = true;
-                    mat.t_roughness->color = color;
+                    mat.t_roughness->color = glm::vec4(color, 1.0);
                 }
             }
         }
 
         // @note Since mtl files specify normals as bump maps assume all bump maps are really normals
-        if (!loadTextureFromAssimp(mat.t_normal, ai_mat, scene, aiTextureType_NORMALS, GL_RGB16F)) {
-            if (!loadTextureFromAssimp(mat.t_normal, ai_mat, scene, aiTextureType_HEIGHT, GL_RGB16F)) {
+        if (!loadTextureFromAssimp(mat.t_normal, ai_mat, scene, aiTextureType_NORMALS, GL_RGB, true)) {
+            if (!loadTextureFromAssimp(mat.t_normal, ai_mat, scene, aiTextureType_HEIGHT, GL_RGB, true)) {
                 mat.t_normal = default_material->t_normal;
             }
         }
@@ -1502,7 +1503,7 @@ Texture* AssetManager::createTexture(const std::string &handle) {
     return tex;
 }
 
-bool AssetManager::loadTextureFromAssimp(Texture *&tex, aiMaterial *mat, const aiScene *scene, aiTextureType texture_type, GLint internal_format){
+bool AssetManager::loadTextureFromAssimp(Texture *&tex, aiMaterial *mat, const aiScene *scene, aiTextureType texture_type, GLint format, bool floating){
 	// @note assimp specification wants us to combines a stack texture stack with operations per layer
 	// this function instead just takes the first available texture
 	aiString path;
@@ -1524,18 +1525,19 @@ bool AssetManager::loadTextureFromAssimp(Texture *&tex, aiMaterial *mat, const a
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, (ai_tex->achFormatHint[0] & 0x01) ? GL_REPEAT : GL_CLAMP);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, (ai_tex->achFormatHint[0] & 0x01) ? GL_REPEAT : GL_CLAMP);
 			// Texture specification
-			glTexImage2D(GL_TEXTURE_2D, 0, internal_format, ai_tex->mWidth, ai_tex->mHeight, 0, GL_BGRA, GL_UNSIGNED_BYTE, ai_tex->pcData);
+			glTexImage2D(GL_TEXTURE_2D, 0, format, ai_tex->mWidth, ai_tex->mHeight, 0, GL_BGRA, GL_UNSIGNED_BYTE, ai_tex->pcData);
 
             return true;
         } else {
+            // @todo relative path and possibly copying to texture dump
 	        auto p = "data/textures/" + std::string(path.data, path.length);
 
             glm::ivec2 resolution;
-            auto tex_id = loadImage(p, resolution, internal_format);
+            auto tex_id = loadImage(p, resolution, format, GL_REPEAT, floating);
             if (tex_id == GL_FALSE) return false;
 
             tex = createTexture(p);
-            tex->format = internal_format;
+            tex->format = format;
             tex->resolution = resolution;
             tex->id = tex_id;
             return true;
@@ -1544,21 +1546,21 @@ bool AssetManager::loadTextureFromAssimp(Texture *&tex, aiMaterial *mat, const a
 	return false;
 }
 
-bool AssetManager::loadTexture(Texture *tex, const std::string &path, GLint internal_format, const bool tile) {
-    auto texture_id = loadImage(path, tex->resolution, internal_format, tile);
-    if(texture_id == GL_FALSE) return false;
-
+bool AssetManager::loadTexture(Texture *tex, const std::string &path, GLenum format, const GLint wrap, bool floating, bool trilinear) {
+    auto texture_id = loadImage(path, tex->resolution, format, wrap, floating, trilinear);
     tex->id = texture_id;
-    tex->format = internal_format;
+    tex->format = format;
+
+    if(texture_id == GL_FALSE) return false;
     return true;
 }
 
-bool AssetManager::loadCubemapTexture(Texture *tex, const std::array<std::string,FACE_NUM_FACES> &paths, GLint internal_format) {
-    auto texture_id = loadCubemap(paths, tex->resolution, internal_format);
+bool AssetManager::loadCubemapTexture(Texture *tex, const std::array<std::string,FACE_NUM_FACES> &paths, GLenum format, const GLint wrap, bool floating, bool trilinear) {
+    auto texture_id = loadCubemap(paths, tex->resolution, format, wrap, floating, trilinear);
     if(texture_id == GL_FALSE) return false;
 
     tex->id = texture_id;
-    tex->format = internal_format;
+    tex->format = format;
     return true;
 }
 
@@ -1599,11 +1601,11 @@ Texture* AssetManager::getTexture(const std::string &path) {
     else                             return &lu->second;
 }
 
-Texture* AssetManager::getColorTexture(const glm::vec3 &col, GLint internal_format) {
+Texture* AssetManager::getColorTexture(const glm::vec4& col, GLint format) {
     auto lu = color_texture_map.find(col);
     if (lu == color_texture_map.end()) {
         auto tex = &color_texture_map.try_emplace(col).first->second;
-        tex->id = create1x1TextureFloat(col, internal_format);
+        tex->id = create1x1TextureFloat(col, format);
         tex->is_color = true;
         tex->color = col;
         return tex;

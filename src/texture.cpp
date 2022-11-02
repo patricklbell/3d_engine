@@ -14,28 +14,57 @@
 
 #include "texture.hpp"
 
-GLuint create1x1Texture(const unsigned char color[3], const GLint internal_format){
+// Determine how many channels we need to load from the file to fit the format required
+ImageChannels getChannelsForFormat(GLenum format) {
+	GLint param;
+
+	int channels = 0;
+
+	glGetInternalformativ(GL_TEXTURE_2D, format, GL_INTERNALFORMAT_RED_SIZE, 1, &param);
+	channels += param > 0;
+	glGetInternalformativ(GL_TEXTURE_2D, format, GL_INTERNALFORMAT_GREEN_SIZE, 1, &param);
+	channels += param > 0;
+	glGetInternalformativ(GL_TEXTURE_2D, format, GL_INTERNALFORMAT_BLUE_SIZE, 1, &param);
+	channels += param > 0;
+	glGetInternalformativ(GL_TEXTURE_2D, format, GL_INTERNALFORMAT_ALPHA_SIZE, 1, &param);
+	channels += param > 0;
+
+	return ImageChannels(channels);
+}
+
+// Returns a format that can matches the number of channels
+GLenum getFormatForChannels(ImageChannels channels) {
+	static const GLenum formats[] = { GL_RED, GL_RG, GL_RGB, GL_RGBA }; 
+	return formats[(int)channels - 1]; // Intentionally throws an exception if channels is invalid
+}
+
+GLuint create1x1Texture(const unsigned char color[4], const GLenum format){
 	GLuint texture_id;
 	glGenTextures(1, &texture_id);
 	glBindTexture(GL_TEXTURE_2D, texture_id);
-	glTexImage2D(GL_TEXTURE_2D, 0, internal_format, 1, 1, 0, GL_RGB, GL_UNSIGNED_BYTE, &color[0]);
+	glTexImage2D(GL_TEXTURE_2D, 0, format, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, &color[0]);
 	return texture_id;
 }
 
-GLuint create1x1TextureFloat(const glm::fvec3 &color, const GLint internal_format) {
+GLuint create1x1TextureFloat(const glm::fvec4 &color, const GLenum format) {
 	GLuint texture_id;
 	glGenTextures(1, &texture_id);
 	glBindTexture(GL_TEXTURE_2D, texture_id);
-	glTexImage2D(GL_TEXTURE_2D, 0, internal_format, 1, 1, 0, GL_RGB, GL_FLOAT, &color[0]);
+	glTexImage2D(GL_TEXTURE_2D, 0, format, 1, 1, 0, GL_RGBA, GL_FLOAT, &color[0]);
 	return texture_id;
 }
 
-bool loadImageData(ImageData *img, const std::string& imagepath, const GLint internal_format) {
-	stbi_set_flip_vertically_on_load(true); // Opengl expects image to be flipped vertically
-	if (internal_format == GL_RGB)			img->data = stbi_load(imagepath.c_str(), &img->x, &img->y, &img->n, STBI_rgb);
-	else if (internal_format == GL_RED)		img->data = stbi_load(imagepath.c_str(), &img->x, &img->y, &img->n, STBI_grey);
-	else if (internal_format == GL_RGB32F)	img->data = (unsigned char*)stbi_loadf(imagepath.c_str(), &img->x, &img->y, &img->n, STBI_rgb);
-	else									img->data = stbi_load(imagepath.c_str(), &img->x, &img->y, &img->n, STBI_rgb_alpha);
+bool loadImageData(ImageData *img, std::string_view imagepath, ImageChannels channels, bool floating, bool flip) {
+	stbi_set_flip_vertically_on_load(flip); // Opengl expects image to be flipped vertically
+	if (floating) {
+		img->data = (unsigned char*)stbi_loadf(imagepath.data(), &img->x, &img->y, (int*)&img->n, (int)channels);
+	}
+	else {
+		img->data = stbi_load(imagepath.data(), &img->x, &img->y, (int*)&img->n, (int)channels);
+	}
+	// @todo determine image format from channels and floating point nature
+	img->n = channels;
+	img->floating = floating;
 
 	if (img->data == NULL) {
 		std::cerr << "Failed to load image at path " << imagepath << "\n";
@@ -46,7 +75,7 @@ bool loadImageData(ImageData *img, const std::string& imagepath, const GLint int
 	return true;
 }
 
-GLuint createGLTextureFromData(ImageData *img, const GLint internal_format, bool tile) {
+GLuint createGLTextureFromData(ImageData* img, const GLenum format, const GLint wrap, bool trilinear) {
 	std::cout << "Created a gl texture.\n";
 	// @note mostly redundant
 	if (img->data == NULL) 
@@ -58,29 +87,23 @@ GLuint createGLTextureFromData(ImageData *img, const GLint internal_format, bool
 	glBindTexture(GL_TEXTURE_2D, texture_id);
 	// @note not needed if image is in correct format
 	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-	if (internal_format == GL_RGB)				glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8,		img->x, img->y, 0, GL_RGB,  GL_UNSIGNED_BYTE,	img->data);
-	else if (internal_format == GL_RED)			glTexImage2D(GL_TEXTURE_2D, 0, GL_R8,		img->x, img->y, 0, GL_RED,  GL_UNSIGNED_BYTE,   img->data);
-	else if (internal_format == GL_RGB32F)		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB32F,	img->x, img->y, 0, GL_RGB,	GL_FLOAT,			img->data);
-	else										glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8,	img->x, img->y, 0, GL_RGBA, GL_UNSIGNED_BYTE,	img->data);
-
+	glTexImage2D(GL_TEXTURE_2D, 0, format, img->x, img->y, 0, getFormatForChannels(img->n), img->floating ? GL_FLOAT: GL_UNSIGNED_BYTE, img->data);
 	stbi_image_free(img->data);
 
-	// Poor filtering, or ...
-	//glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	//glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST); 
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrap);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrap);
 
-	// ... nice trilinear filtering ...
-	if (tile) {
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+	if (trilinear) {
+		// Nice trilinear filtering, or ...
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
 	}
 	else {
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		// poor filtering
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST); 
 	}
 
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
 	glGenerateMipmap(GL_TEXTURE_2D);
 
 	glBindTexture(GL_TEXTURE_2D, 0);
@@ -88,22 +111,20 @@ GLuint createGLTextureFromData(ImageData *img, const GLint internal_format, bool
 	return texture_id;
 }
 
-GLuint loadImage(const std::string &imagepath, glm::ivec2& resolution, const GLint internal_format, bool tile) {
+GLuint loadImage(std::string_view imagepath, glm::ivec2& resolution, const GLenum format, const GLint wrap, bool floating, bool trilinear) {
 	auto img = ImageData();
-	img.internal_format = internal_format;
-	if (!loadImageData(&img, imagepath, internal_format)) {
+
+	if (!loadImageData(&img, imagepath, getChannelsForFormat(format), floating)) {
 		stbi_image_free(img.data);
 		return GL_FALSE;
 	}
 	resolution = glm::ivec2(img.x, img.y);
 
-	return createGLTextureFromData(&img, internal_format, tile);
+	return createGLTextureFromData(&img, format, wrap, trilinear);
 }
 
 // std array is expected to list {front, back, up, down, right, left}?
-GLuint loadCubemap(const std::array<std::string, FACE_NUM_FACES> &paths, glm::ivec2& resolution, const GLint internal_format) {
-	stbi_set_flip_vertically_on_load(false); // @note I don't know why cubemap is not flipped but it isn't
-
+GLuint loadCubemap(const std::array<std::string, FACE_NUM_FACES> &paths, glm::ivec2& resolution, const GLenum format, const GLint wrap, bool floating, bool trilinear) {
 	GLuint texture_id;
 
     glGenTextures(1, &texture_id);
@@ -111,34 +132,40 @@ GLuint loadCubemap(const std::array<std::string, FACE_NUM_FACES> &paths, glm::iv
 
 	std::cout << "Loading Cubemap:\n";
 
-	int x, y, n;
-	unsigned char* data;
+	ImageData img;
     for (int i = 0; i < static_cast<int>(FACE_NUM_FACES); ++i) {
 		std::cout << "\tLoading texture at path " << paths[i] << "\n";
-		if (internal_format == GL_RGB)			data = stbi_load(paths[i].c_str(), &x, &y, &n, STBI_rgb);
-		else if (internal_format == GL_RED)		data = stbi_load(paths[i].c_str(), &x, &y, &n, STBI_grey);
-		else if (internal_format == GL_RGB32F)	data = (unsigned char*)stbi_loadf(paths[i].c_str(), &x, &y, &n, STBI_rgb);
-		else									data = stbi_load(paths[i].c_str(), &x, &y, &n, STBI_rgb_alpha);
-        if (data) {
+		// @note I don't know why cubemap is not flipped but it isn't
+		if (loadImageData(&img, paths[i], getChannelsForFormat(format), floating, false)) {
 			// @note not needed if image is in correct format
 			glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-			if (internal_format == GL_RGB)			glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGB,		x, y, 0, GL_RGB , GL_UNSIGNED_BYTE, data);
-			else if (internal_format == GL_RED)		glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_R8,		x, y, 0, GL_RED , GL_UNSIGNED_BYTE, data);
-			else if (internal_format == GL_RGB32F)	glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGB32F,	x, y, 0, GL_RGB , GL_FLOAT,			data);
-			else									glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGBA8,	x, y, 0, GL_RGBA, GL_UNSIGNED_BYTE, data);
+			glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X+i, 0, format, img.x, img.y, 0, getFormatForChannels(img.n), img.floating ? GL_FLOAT : GL_UNSIGNED_BYTE, img.data);
         } else {
+			stbi_image_free(img.data);
 			std::cerr << "Cubemap texture failed to load.\n";
         	glDeleteTextures(1, &texture_id);
             return GL_FALSE;
         }
-        stbi_image_free(data);
+        stbi_image_free(img.data);
     }
-	resolution = glm::ivec2(x, y);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+	resolution = glm::ivec2(img.x, img.y);
+
+	if (trilinear) {
+		// Nice trilinear filtering, or ...
+		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+	}
+	else {
+		// Poor filtering
+		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	}
+
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, wrap);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, wrap);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, wrap);
+
+	glGenerateMipmap(GL_TEXTURE_CUBE_MAP);
 
 	return texture_id;
 }

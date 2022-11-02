@@ -20,18 +20,30 @@ enum CubemapFaces : unsigned int {
     FACE_NUM_FACES,
 };
 
-struct ImageData {
-	unsigned char* data;
-	int x, y, n;
-    GLint internal_format;
+
+enum class ImageChannels: int {
+    RED = 1,
+    RG = 2,
+    RGB = 3,
+    RGBA = 4,
 };
 
+struct ImageData {
+	unsigned char* data;
+	int x, y;
+    ImageChannels n;
+    bool floating;
+};
 
-GLuint create1x1Texture(const unsigned char color[3], const GLint internal_format = GL_RGB);
-GLuint create1x1TextureFloat(const glm::fvec3& color, const GLint internal_format = GL_RGB);
-bool loadImageData(ImageData  *img, const std::string& imagepath, const GLint internal_format=GL_RGBA);
-GLuint createGLTextureFromData(ImageData *img, const GLint internal_format=GL_RGBA, const bool tile = false);
-GLuint loadImage(const std::string &imagepath, glm::ivec2& resolution, const GLint internal_format=GL_RGBA, const bool tile = false);
-GLuint loadCubemap(const std::array<std::string, FACE_NUM_FACES> &paths, glm::ivec2& resolution, const GLint internal_format=GL_RGB);
+ImageChannels getChannelsForFormat(GLenum format);
+GLenum getFormatForChannels(ImageChannels channels);
+
+GLuint create1x1Texture(const unsigned char color[4], const GLenum format = GL_RGB);
+GLuint create1x1TextureFloat(const glm::fvec4& color, const GLenum format = GL_RGB);
+bool loadImageData(ImageData* img, std::string_view imagepath, ImageChannels channels, bool floating = false, bool flip = true);
+GLuint createGLTextureFromData(ImageData* img, const GLenum format = GL_RGBA, const GLint wrap = GL_REPEAT, bool trilinear = true);
+GLuint loadImage(std::string_view imagepath, glm::ivec2& resolution, const GLenum format=GL_RGBA, const GLint wrap = GL_REPEAT, bool floating = false, bool trilinear = true);
+GLuint loadCubemap(const std::array<std::string, FACE_NUM_FACES> &paths, glm::ivec2& resolution, 
+                   const GLenum format=GL_RGBA, const GLint wrap = GL_REPEAT, bool floating = false, bool trilinear = true);
 
 #endif

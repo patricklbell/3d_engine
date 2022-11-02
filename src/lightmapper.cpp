@@ -66,7 +66,9 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 	auto old_bloom = graphics::do_bloom;
 	auto old_shadows = graphics::do_shadows;
 	auto old_msaa = graphics::do_msaa;
+	auto old_sun_color = sun_color; // Hacky way to get rid of direct contribution
 
+	sun_color = glm::vec3(0.0);
 	graphics::do_bloom = false;
 	graphics::do_msaa = false;
 	graphics::do_shadows = false; // @todo static shadow map
@@ -103,8 +105,7 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 	for (int i = 0; i < lightmaps.size(); ++i) {
 		const auto& m_e = mesh_entities[i];
 
-		m_e->lightmap = asset_manager.getColorTexture(glm::vec3(1, 1, 1), GL_RGB);
-		m_e->ao_mult = 0.0; // @todo not lose ao_mult
+		m_e->lightmap = asset_manager.getColorTexture(glm::vec4(0.0, 0.0, 0.0, 1.0), GL_RGB);
 	}
 
 	constexpr int bounces = 2;
@@ -198,7 +199,6 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 
 			// Generate a new texture seperate from the color texture (which is still stored by asset manager)
 			if (b == 0) {
-				m_e->ao_mult = 1.0;
 				m_e->lightmap = asset_manager.createTexture(level_path + "." + std::to_string(i) + ".tga");
 				glGenTextures(1, &m_e->lightmap->id);
 			}
@@ -248,6 +248,7 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 	free(temp);
 
 	// Restore global graphics state
+	sun_color = old_sun_color;
 	window_width = old_window_width;
 	window_height = old_window_height;
 	glViewport(0, 0, window_width, window_height);

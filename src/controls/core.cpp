@@ -332,7 +332,7 @@ bool State::loadFromFile(std::string_view filepath) {
 		std::istringstream iss(line);
 
 		// Skip comments and empty lines
-		if (line.size() < 2 || (line[0] == '\\' && line[1] == '\\')) {
+		if (line.size() < 2 || (line[0] == '/' && line[1] == '/')) {
 			continue;
 		}
 
@@ -375,7 +375,7 @@ bool State::loadFromFile(std::string_view filepath) {
 		a.continuous = is_continuous;
 
 		//@debug
-		std::cout << "Action " << action_name << ": ";
+		/*std::cout << "Action " << action_name << ": ";
 		bool first = true;
 		for (const auto& k: keynames) {
 			if (!first)
@@ -383,7 +383,7 @@ bool State::loadFromFile(std::string_view filepath) {
 			std::cout << k;
 			first = false;
 		}
-		std::cout << "\n";
+		std::cout << "\n";*/
 		// @todo other settings
 	}
 

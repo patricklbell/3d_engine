@@ -44,7 +44,7 @@ namespace graphics {
     // 
     // SHADOWS
     //
-    constexpr int SHADOW_SIZE = 4096;
+    constexpr int SHADOW_SIZE = 2048;
     constexpr int shadow_num = 4;
     float shadow_cascade_distances[shadow_num];
     // @note make sure to change macro to shadow_num + 1
@@ -210,9 +210,9 @@ glm::mat4x4 getShadowMatrixFromFrustrum(const Camera &camera, float near_plane, 
 }
 
 void updateShadowVP(const Camera &camera){
-    shadow_cascade_distances[0] = camera.frustrum.far_plane / 50.0f;
-    shadow_cascade_distances[1] = camera.frustrum.far_plane / 25.0f;
-    shadow_cascade_distances[2] = camera.frustrum.far_plane / 10.0f;
+    shadow_cascade_distances[0] = camera.frustrum.far_plane / 40.0f;
+    shadow_cascade_distances[1] = camera.frustrum.far_plane / 20.0f;
+    shadow_cascade_distances[2] = camera.frustrum.far_plane / 5.0f;
     shadow_cascade_distances[3] = camera.frustrum.far_plane / 2.0f;
     float np = camera.frustrum.near_plane, fp;
     for(int i = 0; i < shadow_num; i++){
@@ -237,8 +237,8 @@ void initShadowFbo(){
 
     glGenTextures(1, &shadow_buffer);
     glBindTexture(GL_TEXTURE_2D_ARRAY, shadow_buffer);
-    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_DEPTH_COMPONENT32F, 
-                 SHADOW_SIZE, SHADOW_SIZE, shadow_num+1, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_DEPTH_COMPONENT16, 
+                 SHADOW_SIZE, SHADOW_SIZE, shadow_num+1, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_SHORT, NULL);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
@@ -1180,9 +1180,11 @@ void drawEntitiesHdr(const EntityManager& entity_manager, const Texture* skybox,
             glUniform4fv(water_s->uniform("deep_color"), 1, &water->deep_color[0]);
             glUniform4fv(water_s->uniform("foam_color"), 1, &water->foam_color[0]);
 
-            glBindVertexArray(water_grid.vao);
-            glDrawElements(water_grid.draw_mode, water_grid.draw_count[0], water_grid.draw_type, 
-                           (GLvoid*)(sizeof(*water_grid.indices)*water_grid.draw_start[0]));
+            if (water_grid.complete) {
+                glBindVertexArray(water_grid.vao);
+                glDrawElements(water_grid.draw_mode, water_grid.draw_count[0], water_grid.draw_type, 
+                               (GLvoid*)(sizeof(*water_grid.indices)*water_grid.draw_start[0]));
+            }
 
             //glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
             glDepthFunc(GL_LESS);
@@ -1366,11 +1368,10 @@ void convoluteSpecularFromCubemap(Texture* in_tex, Texture* out_tex, GLint forma
 
 bool createEnvironmentFromCubemap(Environment& env, AssetManager &asset_manager, const std::array<std::string, FACE_NUM_FACES>& paths, GLint format) {
     env.skybox = asset_manager.createTexture("skybox");
-    if (!asset_manager.loadCubemapTexture(env.skybox, paths, format)) {
+    if (!asset_manager.loadCubemapTexture(env.skybox, paths, format, GL_REPEAT, true)) {
         std::cerr << "Error loading cubemap\n";
         return false;
     }
-
 
     env.skybox_irradiance = asset_manager.createTexture("skybox_irradiance");
     convoluteIrradianceFromCubemap(env.skybox, env.skybox_irradiance, format);

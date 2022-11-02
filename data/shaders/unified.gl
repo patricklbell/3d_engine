@@ -152,11 +152,14 @@ void main() {
     float roughness  = roughness_mult*texture(roughness_map, texcoord).r; 
     float metallic   = metal_mult    *texture(metallic_map, texcoord).r; 
 
+#if GLOBAL_ILLUMINATION
     vec3 GI = texture(ao_map, texcoord).rgb;
-    float ao = ao_mult*length(GI);
-    albedo *= normalize(GI);
-
+    vec3 hdr_color = brdfSchlickGGX(position, normal, albedo, metallic, roughness, -sun_direction, sun_color, camera_position, GI);
+#else
+    float ao = ao_mult * length(texture(ao_map, texcoord).rgb); // @todo when global illumination works changes back to only red
     vec3 hdr_color = brdfSchlickGGX(position, normal, albedo, metallic, roughness, -sun_direction, sun_color, camera_position, ao);
+#endif
+
 #endif
 
     out_color = vec4(hdr_color, gl_FrontFacing ? 1.0 : 0.0);

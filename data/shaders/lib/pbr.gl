@@ -89,7 +89,11 @@ vec3 importanceSampleGGX(vec2 Xi, vec3 N, vec3 tangent, vec3 bitangent, float ro
 const float MAX_REFLECTION_LOD = 4.0;
 
 // Modified from https://learnopengl.com/PBR
+#if GLOBAL_ILLUMINATION
+vec3 brdfSchlickGGX(vec3 position, vec3 N, vec3 albedo, float metallic, float roughness, vec3 L, vec3 light_col, vec3 camera_position, vec3 GI) {
+#else
 vec3 brdfSchlickGGX(vec3 position, vec3 N, vec3 albedo, float metallic, float roughness, vec3 L, vec3 light_col, vec3 camera_position, float ao) {
+#endif
     vec3 V = normalize(camera_position - position);
     vec3 R = reflect(-V, N);   
     vec3 radiance    = light_col; 
@@ -150,12 +154,24 @@ vec3 brdfSchlickGGX(vec3 position, vec3 N, vec3 albedo, float metallic, float ro
         vec2 brdf = texture(brdf_lut_map, vec2(NdotV, roughness)).rg;
         vec3 specular = prefiltered_color * (F * brdf.x + brdf.y);
 
+#if GLOBAL_ILLUMINATION
+        vec3 irradiance = GI;
+#else
         vec3 irradiance = texture(irradiance_map, N).rgb;
+#endif
         vec3 diffuse = irradiance * albedo;
-        ambient = (kD * diffuse + specular) * ao; 
+        ambient = kD * diffuse + specular;
+#if !GLOBAL_ILLUMINATION
+        ambient *= ao;
+#endif
+        
+#else // !IBL
+#if GLOBAL_ILLUMINATION
+        ambient = albedo * GI;
 #else
         ambient = albedo * ao * 0.01;
 #endif
+#endif // IBL
     }
     
     return ambient + Lo;

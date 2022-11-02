@@ -50,6 +50,7 @@ enum MeshAttributes : char {
 
 struct Mesh {
     std::string handle;
+    bool complete = false;
 
     MeshAttributes attributes = MESH_ATTRIBUTES_NONE;
 
@@ -177,7 +178,7 @@ struct Texture {
     // @debug
     // just used by editor (for now, probably check)
     bool is_color = false;
-    glm::vec3 color;
+    glm::vec4 color;
 };
 
 struct Audio {
@@ -215,24 +216,25 @@ struct Audio {
 //    }
 //};
 
-// Define hash for vec3 so AssetManager can be default initialized
+inline void hash_combine(std::size_t& seed) { }
+
+template <typename T, typename... Rest>
+inline void hash_combine(std::size_t& seed, const T& v, Rest... rest) {
+    std::hash<T> hasher;
+    seed ^= hasher(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+    hash_combine(seed, rest...);
+}
+
+// Define hash for vec4 so AssetManager can be default initialized
 namespace std {
     template <typename T, glm::precision P>
-    struct hash<glm::tvec3<T, P>>
+    struct hash<glm::tvec4<T, P>>
     {
-        std::size_t operator()(const glm::tvec3<T, P>& k) const
+        std::size_t operator()(const glm::tvec4<T, P>& v) const
         {
-            using std::size_t;
-            using std::hash;
-            using std::string;
-
-            // Compute individual hash values for first,
-            // second and third and combine them using XOR
-            // and bit shifting:
-
-            return ((hash<T>()(k.x)
-                ^ (hash<T>()(k.y) << 1)) >> 1)
-                ^ (hash<T>()(k.z) << 1);
+            std::size_t h;
+            hash_combine(h, v.x, v.y, v.z, v.w);
+            return h;
         }
     };
 }
@@ -242,7 +244,7 @@ struct AssetManager {
     std::unordered_map<std::string, AnimatedMesh>   handle_animated_mesh_map;
     std::unordered_map<std::string, Texture>        handle_texture_map;
     std::unordered_map<std::string, Audio>          handle_audio_map;
-    std::unordered_map<glm::vec3,   Texture>        color_texture_map;
+    std::unordered_map<glm::vec4,   Texture>        color_texture_map;
 
     // @note that this function could cause you to "lose" a mesh if the path is the same
     Mesh* createMesh(const std::string &handle);
@@ -265,9 +267,9 @@ struct AssetManager {
 
     // @note that this function could cause you to "lose" a texture if the path is the same
     Texture* createTexture(const std::string &handle);
-    bool loadTextureFromAssimp(Texture *&tex, aiMaterial* mat, const aiScene* scene, aiTextureType texture_type, GLint internal_format=GL_RGB16F);
-    static bool loadTexture(Texture *tex, const std::string &path, GLint internal_format=GL_RGB16F, const bool tile = false);
-    static bool loadCubemapTexture(Texture *tex, const std::array<std::string, FACE_NUM_FACES> &paths, GLint internal_format=GL_RGB16F);
+    bool loadTextureFromAssimp(Texture *&tex, aiMaterial* mat, const aiScene* scene, aiTextureType texture_type, GLint internal_format=GL_RGBA, bool floating = false);
+    static bool loadTexture(Texture *tex, const std::string &path, GLenum format=GL_RGBA, const GLint wrap = GL_REPEAT, bool floating = false, bool trilinear = true);
+    static bool loadCubemapTexture(Texture *tex, const std::array<std::string, FACE_NUM_FACES> &paths, GLenum format = GL_RGBA, const GLint wrap = GL_REPEAT, bool floating = false, bool trilinear = true);
 
     Audio* createAudio(const std::string& handle);
 
@@ -275,7 +277,7 @@ struct AssetManager {
     Mesh*           getMesh(const std::string &path);
     AnimatedMesh*   getAnimatedMesh(const std::string& path);
     Texture*        getTexture(const std::string &path);
-    Texture*        getColorTexture(const glm::vec3 &col, GLint internal_format=GL_RGB);
+    Texture*        getColorTexture(const glm::vec4 &col, GLint format=GL_RGB);
 
     void clearExcluding(const std::set<std::string> &excluded);
     void clear();

@@ -186,7 +186,7 @@ int main() {
     createEnvironmentFromCubemap(graphics::environment, global_assets,
         { "data/textures/stonewall_skybox/px.hdr", "data/textures/stonewall_skybox/nx.hdr",
           "data/textures/stonewall_skybox/py.hdr", "data/textures/stonewall_skybox/ny.hdr",
-          "data/textures/stonewall_skybox/pz.hdr", "data/textures/stonewall_skybox/nz.hdr" }, GL_RGB32F);
+          "data/textures/stonewall_skybox/pz.hdr", "data/textures/stonewall_skybox/nz.hdr" }, GL_RGB16F);
 
     AssetManager asset_manager;
     EntityManager *entity_manager = &level_entity_manager;
@@ -201,7 +201,7 @@ int main() {
     //soloud.setPan(handle1, -0.2f);              // Set pan; -1 is left, 1 is right
     //soloud.setRelativePlaySpeed(handle1, 1.0f); // Play a bit slower; 1.0f is normal
 
-     level_path = "data/levels/lightmap_test.level";
+     level_path = "data/levels/gameplay_test.level";
      loadLevel(*entity_manager, asset_manager, level_path, Cameras::level_camera);
      Cameras::editor_camera = Cameras::level_camera;
 

@@ -1397,8 +1397,10 @@ void drawWaterDebug(WaterEntity* w, const Camera &camera, bool flash = false){
     glUniform1f(shader::debug.uniform("shaded"), 0.0);
     glUniform1f(shader::debug.uniform("flashing"), flash ? 1.0: 0.0);
 
-    glBindVertexArray(graphics::water_grid.vao);
-    glDrawElements(graphics::water_grid.draw_mode, graphics::water_grid.draw_count[0], graphics::water_grid.draw_type, (GLvoid*)(sizeof(GLubyte)*graphics::water_grid.draw_start[0]));
+    if (graphics::water_grid.complete) {
+        glBindVertexArray(graphics::water_grid.vao);
+        glDrawElements(graphics::water_grid.draw_mode, graphics::water_grid.draw_count[0], graphics::water_grid.draw_type, (GLvoid*)(sizeof(GLubyte)*graphics::water_grid.draw_start[0]));
+    }
    
     glEnable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);

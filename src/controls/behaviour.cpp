@@ -52,7 +52,7 @@ Entity* pickEntityWithMouse(Camera& camera, EntityManager& entity_manager) {
             const auto& mesh = m_e->mesh;
             const auto g_trans = createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
 
-            for (int j = 0; j <= mesh->num_indices - 3; j += 3) {
+            for (int j = 0; j <= (int64_t)mesh->num_indices - 3; j += 3) {
                 if (mesh->indices[j] >= mesh->num_vertices ||
                     mesh->indices[j + 1] >= mesh->num_vertices ||
                     mesh->indices[j + 2] >= mesh->num_vertices)
@@ -323,7 +323,7 @@ void handleEditorControls(EntityManager*& entity_manager, AssetManager& asset_ma
     }
     else if (camera.state == Camera::TYPE::SHOOTER && camera_movement_active) {
         static glm::vec3 camera_velocity = glm::vec3(0.0);
-        static const float camera_resistance = 0.05; // The "air resistance" the camera experiences
+        static const float camera_resistance = 50.0; // The "air resistance" the camera experiences
         static float camera_acceleration = 500.0;
 
         // Change acceleration by scrolling
@@ -369,7 +369,12 @@ void handleEditorControls(EntityManager*& entity_manager, AssetManager& asset_ma
             camera_velocity -= camera.up * camera_acceleration * dt;
         }
         camera.set_position(camera.position + camera_velocity * dt);
-        camera_velocity -= camera_resistance*camera_velocity;
+
+        auto previous_camera_velocity_direction = glm::normalize(camera_velocity);
+        camera_velocity -= camera_resistance*camera_velocity*dt;
+        // Ensure resistance doesn't overshoot
+        if (glm::dot(camera_velocity, previous_camera_velocity_direction) < 0)
+            camera_velocity = glm::vec3(0.0);
 
         auto new_target = camera.position + camera_direction_rotated;
         if (new_target != camera.target) {

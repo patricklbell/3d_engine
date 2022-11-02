@@ -299,6 +299,9 @@ void saveLevel(EntityManager & entity_manager, const std::string & level_path, c
             fwrite(&len, sizeof(len), 1, f);
             fwrite(texture->handle.data(), len, 1, f);
 
+            uint16_t format = texture->format;
+            fwrite(&format, sizeof(format), 1, f);
+
             ++asset_index;
         }
     }
@@ -428,11 +431,14 @@ bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const
                 }
                 case TEXTURE_ASSET:
                 {
+                    uint16_t format;
+                    fread(&format, sizeof(format), 1, f);
+
                     auto texture = asset_manager.getTexture(handle);
                     if (texture == nullptr) {
                         // @todo internal_format
                         texture = asset_manager.createTexture(handle);
-                        asset_manager.loadTexture(texture, handle);
+                        asset_manager.loadTexture(texture, handle, format);
                     }
 
                     index_to_asset[asset_index] = (void*)texture;

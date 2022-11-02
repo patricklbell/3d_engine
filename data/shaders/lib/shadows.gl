@@ -38,10 +38,14 @@ uniform mat4 view;
 //}
 
 #define SMOOTH_SHADOWS 0
-#define SAMPLES_COUNT 32
-#define SAMPLES_COUNT_DIV_2 16
-#define INV_SAMPLES_COUNT (1.0f / SAMPLES_COUNT)    
-#define SHADOW_FILTER_SIZE 0.1
+
+// Smaller intial number of samples which determine whether we are on a boundary
+#define SAMPLES_COUNT_1 4
+#define INV_SAMPLES_COUNT_1 (1.0f / float(SAMPLES_COUNT_1))    
+#define SAMPLES_COUNT 16
+#define INV_SAMPLES_COUNT (1.0f / float(SAMPLES_COUNT))    
+#define SHADOW_FILTER_SIZE 100.5
+#define JITTER_SIZE 0.4f
 
 float calculatePcfShadowness(float NdotL, vec3 position, int layer) {
     vec4 shadow_pos = shadow_vps[layer] * vec4(position, 1.0);
@@ -77,11 +81,9 @@ float calculatePcfShadowness(float NdotL, vec3 position, int layer) {
 #if SMOOTH_SHADOWS
     // Nvidia method for softer penumbra result from:
     // https://developer.nvidia.com/gpugems/gpugems2/part-ii-shading-lighting-and-shadows/chapter-17-efficient-soft-edged-shadows-using
-    vec2 j_shadow_coord;
-    const float jscale = 0.5;
 #if COMPILING_FS
-    vec3 jcoord = vec3(gl_FragCoord.xy * jscale, 0); // Take screen space position to vary result
-    vec2 fsize = far_plane * (1.0 / bias) * SHADOW_FILTER_SIZE * texel_size; // Size of pcf filter, adjusting for csm (further away -> lower resolution)
+    vec3 jcoord = vec3(gl_FragCoord.xy * JITTER_SIZE, 0); // Take screen space position to vary result
+    vec2 fsize = far_plane * bias * SHADOW_FILTER_SIZE * texel_size; // Size of pcf filter, @todo adjust for csm (further away -> lower resolution)
 #else // This obvious this won't work but need a fake value to compile
     vec3 jcoord = vec3(0);
     vec2 fsize = SHADOW_FILTER_SIZE * texel_size;
@@ -90,25 +92,25 @@ float calculatePcfShadowness(float NdotL, vec3 position, int layer) {
     shadow_depth -= bias;
 
     // Initially sample edges of disk to see if we are at border of a shadow
-    for (int i = 0; i < 4; i++) {
+    for (int i = 0; i < SAMPLES_COUNT_1; i++) {
         vec4 offset = texture(jitter_vol, jcoord);
-        jcoord.z += 1.0f / SAMPLES_COUNT_DIV_2;
+        jcoord.z += INV_SAMPLES_COUNT;
 
         // Jitters are stored doubly in rg and ba channels
         float pcf_depth = texture(shadow_map, vec3(shadow_coord.xy + offset.xy * fsize, layer)).r; 
-        shadow += shadow_depth > pcf_depth ? 1.0 / 8.0 : 0.0;
+        shadow += shadow_depth > pcf_depth ? INV_SAMPLES_COUNT_1 : 0.0;
 
         pcf_depth = texture(shadow_map, vec3(shadow_coord.xy + offset.zw * fsize, layer)).r; 
-        shadow += shadow_depth > pcf_depth ? 1.0 / 8.0 : 0.0;
+        shadow += shadow_depth > pcf_depth ? INV_SAMPLES_COUNT_1 : 0.0;
     }
 
     // product is zero, we skip expensive shadow-map filtering  
     if (shadow > 0.0 && shadow < 1.0) {    // most likely, we are in the penumbra      
-        shadow *= 1.0f / (SAMPLES_COUNT_DIV_2 / 4.0); // adjust running total      
+        shadow *= SAMPLES_COUNT_1 * INV_SAMPLES_COUNT; // adjust running total      
         // refine our shadow estimate    
-        for (int i = 0; i<SAMPLES_COUNT_DIV_2 - 4; i++) {
+        for (int i = 0; i < SAMPLES_COUNT - SAMPLES_COUNT_1; i++) {
             vec4 offset = texture(jitter_vol, jcoord);
-            jcoord.z += 1.0f / SAMPLES_COUNT_DIV_2;
+            jcoord.z += INV_SAMPLES_COUNT;
 
             // Jitters are stored doubly in rg and ba channels
             float pcf_depth = texture(shadow_map, vec3(shadow_coord.xy + offset.xy * fsize, layer)).r; 
@@ -118,6 +120,7 @@ float calculatePcfShadowness(float NdotL, vec3 position, int layer) {
             shadow += shadow_depth > pcf_depth ? INV_SAMPLES_COUNT : 0.0;
         }
     }
+    shadow *= 0.5;
 #else // !SMOOTH_SHADOWS
     //    Microsoft method from:
     //    https://learn.microsoft.com/en-us/windows/win32/dxtecharts/cascaded-shadow-maps
@@ -135,7 +138,7 @@ float calculatePcfShadowness(float NdotL, vec3 position, int layer) {
     return shadow;
 }
 
-#define CSM_BLEND_BAND 0.3
+#define CSM_BLEND_BAND 0.5
 
 // https://learnopengl.com/Guest-Articles/2021/CSM
 // @note calling multiple times recalculates
