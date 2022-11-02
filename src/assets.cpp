@@ -362,6 +362,15 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
                 tex = default_tex;
             }
             else {
+                auto lu = getTexture(path);
+                if (lu != nullptr) {
+                    // Check if loaded texture contains enough channels
+                    if (getChannelsForFormat(lu->format) >= getChannelsForFormat(format)) {
+                        tex = lu;
+                        return;
+                    }
+                }
+
                 tex = createTexture(path);
                 tex->format = format;
 #if DO_MULTITHREAD 
@@ -650,12 +659,6 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
         auto ai_mat = scene->mMaterials[i];
         auto& mat = mesh->materials[i];
 
-        if (!loadTextureFromAssimp(mat.t_ambient, ai_mat, scene, aiTextureType_AMBIENT_OCCLUSION, GL_RED)) {
-            if (!loadTextureFromAssimp(mat.t_ambient, ai_mat, scene, aiTextureType_AMBIENT, GL_RED)) {
-                mat.t_ambient = default_material->t_ambient;
-            }
-        }
-
         if (!loadTextureFromAssimp(mat.t_albedo, ai_mat, scene, aiTextureType_BASE_COLOR, GL_RGB)) {
             // If base color isnt present assume diffuse is really an albedo
             if (!loadTextureFromAssimp(mat.t_albedo, ai_mat, scene, aiTextureType_DIFFUSE, GL_RGB)) {
@@ -683,6 +686,12 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
                     mat.t_albedo->is_color = true;
                     mat.t_albedo->color = glm::vec4(color, 1.0);
                 }
+            }
+        }
+
+        if (!loadTextureFromAssimp(mat.t_ambient, ai_mat, scene, aiTextureType_AMBIENT_OCCLUSION, GL_RED)) {
+            if (!loadTextureFromAssimp(mat.t_ambient, ai_mat, scene, aiTextureType_AMBIENT, GL_RED)) {
+                mat.t_ambient = default_material->t_ambient;
             }
         }
 
@@ -1509,11 +1518,26 @@ bool AssetManager::loadTextureFromAssimp(Texture *&tex, aiMaterial *mat, const a
 	aiString path;
 	if(aiReturn_SUCCESS == mat->GetTexture(texture_type, 0, &path)) {
         auto ai_tex = scene->GetEmbeddedTexture(path.data);
+
+        std::string p(path.data, path.length);
+        // @todo relative path and possibly copying to texture dump
+        if (ai_tex == nullptr)
+            p = "data/textures/" + p;
+
+        auto lu = getTexture(p);
+        if (lu != nullptr) {
+            // Check if loaded texture contains enough channels
+            if (getChannelsForFormat(lu->format) >= getChannelsForFormat(format)) {
+                tex = lu;
+                return true;
+            }
+        }
+
         // If true this is an embedded texture so load from assimp
         if(ai_tex != nullptr){
             std::cerr << "Loading embedded texture" << path.data << "%s.\n";
 
-            tex = createTexture(std::string(path.data, path.length));
+            tex = createTexture(p);
 
 	        glGenTextures(1, &tex->id);
             glBindTexture(GL_TEXTURE_2D, tex->id);// Binding of texture name
@@ -1529,9 +1553,6 @@ bool AssetManager::loadTextureFromAssimp(Texture *&tex, aiMaterial *mat, const a
 
             return true;
         } else {
-            // @todo relative path and possibly copying to texture dump
-	        auto p = "data/textures/" + std::string(path.data, path.length);
-
             glm::ivec2 resolution;
             auto tex_id = loadImage(p, resolution, format, GL_REPEAT, floating);
             if (tex_id == GL_FALSE) return false;
