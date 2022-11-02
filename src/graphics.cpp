@@ -44,7 +44,7 @@ namespace graphics {
     // 
     // SHADOWS
     //
-    constexpr int SHADOW_SIZE = 2048;
+    constexpr int SHADOW_SIZE = 4096;
     constexpr int shadow_num = 4;
     float shadow_cascade_distances[shadow_num];
     // @note make sure to change macro to shadow_num + 1
@@ -210,12 +210,14 @@ glm::mat4x4 getShadowMatrixFromFrustrum(const Camera &camera, float near_plane, 
 }
 
 void updateShadowVP(const Camera &camera){
-    shadow_cascade_distances[0] = camera.frustrum.far_plane / 40.0f;
+    // Hardcoded csm distances
+    /*shadow_cascade_distances[0] = camera.frustrum.far_plane / 40.0f;
     shadow_cascade_distances[1] = camera.frustrum.far_plane / 20.0f;
     shadow_cascade_distances[2] = camera.frustrum.far_plane / 5.0f;
-    shadow_cascade_distances[3] = camera.frustrum.far_plane / 2.0f;
+    shadow_cascade_distances[3] = camera.frustrum.far_plane / 2.0f;*/
     float np = camera.frustrum.near_plane, fp;
     for(int i = 0; i < shadow_num; i++){
+        shadow_cascade_distances[i] = camera.frustrum.near_plane + (camera.frustrum.far_plane - camera.frustrum.near_plane) * (float)i / (float)shadow_num;
         fp = shadow_cascade_distances[i];
         shadow_vps[i] = getShadowMatrixFromFrustrum(camera, np, fp);
         np = fp;
