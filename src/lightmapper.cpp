@@ -16,6 +16,8 @@
 #include <indicators.hpp>
 
 #include "lightmapper.hpp"
+#include <camera/globals.hpp>
+#include "editor.hpp"
 #include "texture.hpp"
 #include "utilities.hpp"
 #include "shader.hpp"
@@ -40,12 +42,42 @@ static void writeFrambufferToTga(std::string_view path, int width, int height) {
 	fclose(fp);
 }
 
+glm::mat4x4 getShadowMatrixFromRadius(glm::vec3 c, float r) {
+	auto min_c = c - glm::vec3(r);
+	auto max_c = c - glm::vec3(r);
+
+	const auto shadow_view = glm::lookAt(-sun_direction + c, c, glm::vec3(0,1,0));
+	const auto shadow_projection = glm::ortho(min_c.x, max_c.x, min_c.y, max_c.y, min_c.z, max_c.z);
+	return shadow_projection * shadow_view;
+}
+
+void createShadowMapForGeometry(EntityManager& entity_manager, Camera &camera, glm::vec3 position) {
+	const double& cnp = camera.frustrum.near_plane, & cfp = camera.frustrum.far_plane / 10.0f; // Only consider effects of close shadows
+	double r;
+	for (int i = 0; i < SHADOW_CASCADE_NUM; i++) {
+		const double p = (double)(i + 1) / (double)SHADOW_CASCADE_NUM;
+
+		// Simple linear formula
+		r = cnp + (cfp - cnp) * p;
+
+		graphics::shadow_cascade_distances[i] = r;
+		graphics::shadow_vps[i] = getShadowMatrixFromRadius(position, r);
+	}
+
+	writeShadowVpsUbo();
+
+	int old_shadow_size = graphics::shadow_size;
+	graphics::shadow_size = 1024;
+	bindDrawShadowMap(entity_manager);
+	graphics::shadow_size = old_shadow_size;
+}
+
 bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, Texture* skybox, Texture *skybox_irradiance, Texture *skybox_specular) {
 	lm_context* ctx = lmCreate(
 		64,               // hemicube rendering resolution/quality
 		0.01f, 100.0f,    // zNear, zFar
 		1.0f, 1.0f, 1.0f, // sky/clear color
-		2, 0.01f,         // hierarchical selective interpolation for speedup (passes, threshold)
+		4, 0.1f,         // hierarchical selective interpolation for speedup (passes, threshold)
 		0.01f);           // modifier for camera-to-surface distance for hemisphere rendering.
 						  // tweak this to trade-off between interpolated vertex normal quality and other artifacts (see declaration).
 	if (!ctx) {
@@ -71,7 +103,7 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 	sun_color = glm::vec3(0.0);
 	graphics::do_bloom = false;
 	graphics::do_msaa = false;
-	graphics::do_shadows = false; // @todo static shadow map
+	graphics::do_shadows = true;
 	window_width = w;
 	window_height = h;
 	initHdrFbo();
@@ -128,6 +160,8 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 			indicators::ProgressBar bar{ indicators::option::BarWidth{50}, indicators::option::Start{"["}, indicators::option::Fill{"="}, indicators::option::Lead{">"}, indicators::option::Remainder{" "}, indicators::option::End{" ]"}, indicators::option::PostfixText{""}, indicators::option::ForegroundColor{indicators::Color::white}, indicators::option::FontStyles{std::vector<indicators::FontStyle>{indicators::FontStyle::bold}} };
 			bar.set_option(indicators::option::ShowPercentage{ true });
 			
+			createShadowMapForGeometry(entity_manager, camera, m_e->position);
+
 			auto& mesh = m_e->mesh;
 			for (int j = 0; j < mesh->num_meshes; ++j) {
 				auto model = g_model_pos * mesh->transforms[j] * g_model_rot_scl;
@@ -191,7 +225,7 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 			lmImageSmooth(img, temp, w, h, c);
 			lmImageDilate(temp, img, w, h, c);
 			// @hardcoded gamma
-			lmImagePower(img, w, h, c, 1.0f / 1.9f, 0x7); // gamma correct color channels
+			lmImagePower(img, w, h, c, 1.0f / 2.2f, 0x7); // gamma correct color channels
 
 			//if (b == bounces - 1) {
 			//	lmImagePower(img, w, h, c, 0.8); // Add some brightness to final result
@@ -256,4 +290,16 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 	graphics::do_msaa = old_msaa;
 	graphics::do_shadows = old_shadows;
 	initHdrFbo();
+	initShadowFbo();
+
+	// Update shadow vp for correct camera
+	auto camera_ptr = &Cameras::editor_camera;
+	if (playing) {
+		camera_ptr = &Cameras::game_camera;
+	}
+	else if (editor::use_level_camera) {
+		camera_ptr = &Cameras::level_camera;
+	}
+
+	updateShadowVP(*camera_ptr);
 }

@@ -14,14 +14,12 @@ out vec3 position;
 out vec2 texcoord;
 out mat3 TBN;
 
+#load lib/shared.gl
 uniform mat4 mvp;
 uniform mat4 model;
 
 #if ANIMATED_BONES
-layout(std140, binding=1) uniform BoneMatrices 
-{
-    mat4 bone_matrices[MAX_BONES];
-};
+#load lib/bone_ubo.gl
 #endif
 
 void main() {
@@ -82,6 +80,7 @@ layout (location = 1) out vec4 out_bloom_color;
 layout(binding = 0) uniform sampler2D albedo_map;
 layout(binding = 1) uniform sampler2D normal_map;
 uniform vec3 albedo_mult;
+uniform int is_alpha_clipped; // @todo make materials be able to have seperate shaders
 
 #ifdef PBR
 layout(binding = 2) uniform sampler2D metallic_map;
@@ -99,18 +98,21 @@ uniform float specular_exp;
 #load lib/blinn.gl
 #endif
 
-uniform vec3 camera_position;
-uniform vec3 sun_direction;
-uniform vec3 sun_color;
+#load lib/shared.gl
 
 void main() {
+    vec4 albedo_alpha = texture(albedo_map, texcoord);
+    if(is_alpha_clipped > 0 && albedo_alpha.a < 0.5)
+        discard;
+
+    vec3 albedo = albedo_mult*albedo_alpha.rgb;
+
 	// obtain TBN normal from normal map in range [0,1]
     vec3 normal = texture(normal_map, texcoord).rgb;
-    //// transform normal vector to range [-1,1]
+    // transform normal vector to range [-1,1]
     normal = normalize(normal * 2.0 - 1.0); 
-    //// Transform normal from tangent to world space
+    // Transform normal from tangent to world space
     normal = TBN * normal;
-    vec3 albedo = albedo_mult*texture(albedo_map, texcoord).xyz;
 
 // @debug, renders different layers of csm in colors
 //#if SHADOWS
@@ -162,7 +164,7 @@ void main() {
 
 #endif
 
-    out_color = vec4(hdr_color, gl_FrontFacing ? 1.0 : 0.0);
+    out_color = vec4(hdr_color, gl_FrontFacing || is_alpha_clipped > 0 ? 1.0 : 0.0);
 }
 
 #endif

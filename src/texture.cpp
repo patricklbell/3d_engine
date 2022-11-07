@@ -16,6 +16,10 @@
 
 // Determine how many channels we need to load from the file to fit the format required
 ImageChannels getChannelsForFormat(GLenum format) {
+	// GL_FALSE tells us to grab as much data as possible
+	if (format == GL_FALSE)
+		return ImageChannels::ANYTHING;
+
 	GLint param;
 
 	int channels = 0;
@@ -34,8 +38,8 @@ ImageChannels getChannelsForFormat(GLenum format) {
 
 // Returns a format that can matches the number of channels
 GLenum getFormatForChannels(ImageChannels channels) {
-	static const GLenum formats[] = { GL_RED, GL_RG, GL_RGB, GL_RGBA }; 
-	return formats[(int)channels - 1]; // Intentionally throws an exception if channels is invalid
+	static const GLenum formats[] = { GL_RGBA, GL_RED, GL_RG, GL_RGB, GL_RGBA }; 
+	return formats[(int)channels]; // Intentionally throws an exception if channels is invalid
 }
 
 GLuint create1x1Texture(const unsigned char color[4], const GLenum format){
@@ -60,10 +64,12 @@ bool loadImageData(ImageData *img, std::string_view imagepath, ImageChannels cha
 		img->data = (unsigned char*)stbi_loadf(imagepath.data(), &img->x, &img->y, (int*)&img->n, (int)channels);
 	}
 	else {
-		img->data = stbi_load(imagepath.data(), &img->x, &img->y, (int*)&img->n, (int)channels);
+		img->data = stbi_load(imagepath.data(), &img->x, &img->y, (int*)&img->available_n, (int)channels);
 	}
-	// @todo determine image format from channels and floating point nature
-	img->n = channels;
+	if (channels == ImageChannels::ANYTHING)
+		img->n = img->available_n;
+	else
+		img->n = channels;
 	img->floating = floating;
 
 	if (img->data == NULL) {
@@ -111,7 +117,7 @@ GLuint createGLTextureFromData(ImageData* img, const GLenum format, const GLint 
 	return texture_id;
 }
 
-GLuint loadImage(std::string_view imagepath, glm::ivec2& resolution, const GLenum format, const GLint wrap, bool floating, bool trilinear) {
+GLuint loadImage(std::string_view imagepath, glm::ivec2& resolution, GLenum &format, const GLint wrap, bool floating, bool trilinear) {
 	auto img = ImageData();
 
 	if (!loadImageData(&img, imagepath, getChannelsForFormat(format), floating)) {
@@ -119,6 +125,11 @@ GLuint loadImage(std::string_view imagepath, glm::ivec2& resolution, const GLenu
 		return GL_FALSE;
 	}
 	resolution = glm::ivec2(img.x, img.y);
+
+	// When GL_FALSE is set we choose the format to match the data
+	if (format == GL_FALSE) {
+		format = getFormatForChannels(img.available_n);
+	}
 
 	return createGLTextureFromData(&img, format, wrap, trilinear);
 }

@@ -38,14 +38,15 @@ struct Environment {
     Texture* skybox_specular = nullptr;
 };
 
-void initGraphicsPrimitives(AssetManager &asset_manager);
+void initGraphics(AssetManager &asset_manager);
 void drawQuad();
 void drawCube();
 void drawLineCube();
 
 void updateShadowVP(const Camera &camera);
 void initShadowFbo();
-void bindDrawShadowMap(const EntityManager &entity_manager, const Camera &camera);
+void bindDrawShadowMap(const EntityManager &entity_manager);
+void writeShadowVpsUbo();
 
 void initBRDFLut(AssetManager& asset_manager);
 
@@ -63,7 +64,7 @@ void drawEntitiesHdr(const EntityManager& entity_manager, const Texture* skybox,
 void bindBackbuffer();
 void drawPost(Texture *skybox, const Camera& camera);
 
-void blurBloomFbo();
+void blurBloomFbo(double dt);
 void initBloomFbo(bool resize=false);
 
 void initHdrFbo(bool resize=false);
@@ -79,6 +80,7 @@ struct BloomMipInfo {
 };
 
 constexpr int BLOOM_DOWNSAMPLES = 4;
+constexpr int SHADOW_CASCADE_NUM = 4;
 namespace graphics{
     extern bool do_bloom;
     extern GLuint bloom_fbo;
@@ -87,8 +89,11 @@ namespace graphics{
     extern GLuint hdr_fbo;
     extern GLuint hdr_buffer;
 
+    extern int shadow_size;
     extern const std::string shadow_shader_macro;
-    extern GLuint shadow_buffer, shadow_fbo;
+    extern float shadow_cascade_distances[SHADOW_CASCADE_NUM];
+    extern glm::mat4x4 shadow_vps[SHADOW_CASCADE_NUM];
+    extern GLuint shadow_buffer, shadow_fbo, shadow_matrices_ubo;
     extern bool do_shadows;
 
     extern GLuint water_collider_fbos[2], water_collider_buffers[2];

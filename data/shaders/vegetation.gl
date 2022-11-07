@@ -3,6 +3,7 @@
 
 layout (location = 0) in vec3 in_vertex;
 layout (location = 1) in vec3 in_normal;
+layout (location = 2) in vec3 in_tangent;
 layout (location = 3) in vec2 in_texcoord;
 // R - edge stiffness, G - Phase offset, B - overall stiffnes, A - Precomputed ambient occlusion
 layout (location = 7) in vec4 in_color; 
@@ -10,10 +11,14 @@ layout (location = 7) in vec4 in_color;
 out VS_OUT {
     vec2 texcoord;
     vec4 color;
+    vec3 position;
+    mat3 TBN;
 } vs_out; 
 
+#load lib/shared.gl
+
+uniform mat4 model;
 uniform mat4 mvp;
-uniform float time;
 
 uniform vec2 wind_direction;
 uniform float wind_strength;
@@ -25,28 +30,60 @@ void main()
     vec3 vertex = applyWindToVegetation(in_vertex, in_normal, in_color.r, in_color.g, in_color.b, wind_direction, wind_strength, time);
 
     gl_Position = mvp * vec4(vertex, 1.0);
+    vs_out.position = (model * vec4(vertex, 1.0)).xyz;
 	vs_out.texcoord = in_texcoord;
     vs_out.color = in_color;
+
+    // @todo move normal with vertex
+    vec3 T = normalize(vec3(model * vec4(in_tangent, 0.0)));
+	vec3 N = normalize(vec3(model * vec4(in_normal, 0.0)));
+
+	// Re-orthogonalize T with respect to N
+    // Didn't seem to have any benifit
+	//T = normalize(T - dot(T, N) * N);
+	vec3 B = cross(N, T);
+
+	// Transpose of perpendicular matrix is inverse
+	vs_out.TBN = mat3(T, B, N);
 }
 #endif
 
 
 #ifdef COMPILING_FS
 
+#load lib/shadows.gl
+#load lib/pbr.gl
+
 in VS_OUT {
     vec2 texcoord;
     vec4 color;
+    vec3 position;
+    mat3 TBN;
 } fs_in; 
 
 out vec4 out_color;
 
-layout (location = 0) uniform sampler2D image;
+layout (location = 0) uniform sampler2D diffuse_map;
+layout (location = 1) uniform sampler2D normal_map;
+
+#load lib/shared.gl
 
 void main()
 {             
-    out_color = texture(image, fs_in.texcoord);
-    if(out_color.a < 0.1)
+    vec4 diffuse = texture(diffuse_map, fs_in.texcoord);
+    if(diffuse.a < 0.1)
         discard;
+
+    // obtain TBN normal from normal map in range [0,1]
+    vec3 normal = texture(normal_map, fs_in.texcoord).rgb;
+    // transform normal vector to range [-1,1]
+    normal = normalize(normal * 2.0 - 1.0); 
+    // Transform normal from tangent to world space
+    normal = fs_in.TBN * normal;
+
+    vec3 hdr_color = brdfSchlickGGX(fs_in.position, gl_FrontFacing ? -normal: normal, diffuse.rgb, 0.0f, 0.8f, -sun_direction, sun_color, camera_position, 1.0);
+
+    out_color = vec4(hdr_color,  1.0); // @lightmapping
 } 
 
 #endif

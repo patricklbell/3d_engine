@@ -63,7 +63,7 @@ void initDefaultMaterial(AssetManager &asset_manager){
    
     default_material->t_albedo    = asset_manager.getColorTexture(glm::vec4(1,0,1,1), GL_RGB);
     default_material->t_normal    = asset_manager.getColorTexture(glm::vec4(0.5,0.5,1,1), GL_RGB);
-    default_material->t_metallic  = asset_manager.getColorTexture(glm::vec4(1), GL_RED);
+    default_material->t_metallic  = asset_manager.getColorTexture(glm::vec4(0), GL_RED);
     default_material->t_roughness = asset_manager.getColorTexture(glm::vec4(1), GL_RED);
     default_material->t_ambient   = asset_manager.getColorTexture(glm::vec4(1), GL_RGB);
 
@@ -324,6 +324,7 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
 
         mesh->weights = reinterpret_cast<decltype(mesh->weights)>(malloc(sizeof(*mesh->weights) * mesh->num_vertices));
         fread(mesh->weights, sizeof(*mesh->weights), mesh->num_vertices, f);
+        std::cout << "Loaded bone ids and weight.\n";
     }
     if (mesh->attributes & MESH_ATTRIBUTES_COLORS) {
         mesh->colors = reinterpret_cast<decltype(mesh->colors)>(malloc(sizeof(*mesh->colors) * mesh->num_vertices));
@@ -349,7 +350,7 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
         if (is_color) {
             glm::vec4 color;
             fread(&color, sizeof(color), 1, f);
-            tex = this->getColorTexture(color, format);
+            tex = this->getColorTexture(color, format == GL_FALSE ? GL_RGB : format);
         }
         else {
             uint8_t len;
@@ -386,7 +387,7 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
     for(int i = 0; i < mesh->num_materials; ++i){
         auto &mat = mesh->materials[i];
 
-        read_texture(mat.t_albedo, default_material->t_albedo, GL_RGB);
+        read_texture(mat.t_albedo, default_material->t_albedo, GL_FALSE);
         read_texture(mat.t_normal, default_material->t_normal, GL_RGB);
         read_texture(mat.t_ambient, default_material->t_ambient, GL_RED);
         read_texture(mat.t_metallic, default_material->t_metallic, GL_RED);
@@ -412,6 +413,9 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
         auto& img     = std::get<1>(tpl);
         auto& def_tex = std::get<2>(tpl);
 
+        if (tex->format == GL_FALSE) {
+            tex->format = getFormatForChannels(img->available_n);
+        }
         tex->id = createGLTextureFromData(img, tex->format, GL_REPEAT);
         tex->resolution = glm::vec2(img->x, img->y);
         if (tex->id == GL_FALSE) {
@@ -420,6 +424,12 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
         free(img);
     }
 #endif
+    // Fill in alpha info
+    for (int i = 0; i < mesh->num_materials; ++i) {
+        auto& mat = mesh->materials[i];
+
+        mat.alpha = !mat.t_albedo->is_color && mat.t_albedo->format == GL_RGBA;
+    }
 
     fread(&mesh->num_meshes, sizeof(mesh->num_meshes), 1, f);
 
@@ -659,9 +669,9 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
         auto ai_mat = scene->mMaterials[i];
         auto& mat = mesh->materials[i];
 
-        if (!loadTextureFromAssimp(mat.t_albedo, ai_mat, scene, aiTextureType_BASE_COLOR, GL_RGB)) {
+        if (!loadTextureFromAssimp(mat.t_albedo, ai_mat, scene, aiTextureType_BASE_COLOR, GL_FALSE)) {
             // If base color isnt present assume diffuse is really an albedo
-            if (!loadTextureFromAssimp(mat.t_albedo, ai_mat, scene, aiTextureType_DIFFUSE, GL_RGB)) {
+            if (!loadTextureFromAssimp(mat.t_albedo, ai_mat, scene, aiTextureType_DIFFUSE, GL_FALSE)) {
                 aiColor4D col(1.f, 0.f, 1.f, 1.0f);
                 bool flag = true;
                 if (ai_mat->Get(AI_MATKEY_BASE_COLOR, col) != AI_SUCCESS) {
@@ -688,11 +698,12 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
                 }
             }
         }
+        if (!mat.t_albedo->is_color && mat.t_albedo->format == GL_RGBA) {
+            mat.alpha = true;
+        }
 
         if (!loadTextureFromAssimp(mat.t_ambient, ai_mat, scene, aiTextureType_AMBIENT_OCCLUSION, GL_RED)) {
-            if (!loadTextureFromAssimp(mat.t_ambient, ai_mat, scene, aiTextureType_AMBIENT, GL_RED)) {
-                mat.t_ambient = default_material->t_ambient;
-            }
+            mat.t_ambient = default_material->t_ambient;
         }
 
         if (!loadTextureFromAssimp(mat.t_metallic, ai_mat, scene, aiTextureType_METALNESS, GL_RED)) {
@@ -964,8 +975,9 @@ static void setAnimatedMeshBoneData(Mesh *mesh, uint64_t vertex_index, int bone_
 
 static void extractBoneWeightsFromAiMesh(AnimatedMesh *animesh, Mesh *mesh, aiMesh* ai_mesh, const aiScene* scene, std::unordered_map<std::string, uint64_t>& node_name_id_map, uint64_t vertex_offset) {
     for (int bone_i = 0; bone_i < ai_mesh->mNumBones; ++bone_i) {
-        if (animesh->num_bones >= MAX_BONES) {
-            std::cerr << "Too many bones loaded in extractBoneWeightsFromAiMesh, more than " << MAX_BONES << " exist, returning\n";
+        // @todo create valid state so no crash
+        if (animesh->num_bones > MAX_BONES) {
+            std::cerr << "Too many bones loaded in extractBoneWeightsFromAiMesh, " << animesh->num_bones + ai_mesh->mNumBones - bone_i << " is more than " << MAX_BONES << " exist, breaking\n";
             return;
         }
 
@@ -1031,24 +1043,33 @@ static void createBoneKeyframesFromAi(AnimatedMesh::BoneKeyframes &keyframe, uin
     keyframe.id = id;
 
     keyframe.position_keys.num_keys = channel->mNumPositionKeys;
+    keyframe.position_keys.prev_key_i = 0;
     keyframe.position_keys.times = reinterpret_cast<decltype(keyframe.position_keys.times)>(malloc(sizeof(*keyframe.position_keys.times) * keyframe.position_keys.num_keys));
     keyframe.positions = reinterpret_cast<decltype(keyframe.positions)>(malloc(sizeof(*keyframe.positions) * keyframe.position_keys.num_keys));
+    assert(keyframe.position_keys.times != NULL);
+    assert(keyframe.positions != NULL);
     for (uint64_t i = 0; i < keyframe.position_keys.num_keys; ++i) {
         keyframe.positions[i]           = aiVec3ToGlm(channel->mPositionKeys[i].mValue);
         keyframe.position_keys.times[i] = channel->mPositionKeys[i].mTime;
     }
 
     keyframe.rotation_keys.num_keys = channel->mNumRotationKeys;
+    keyframe.rotation_keys.prev_key_i = 0;
     keyframe.rotation_keys.times = reinterpret_cast<decltype(keyframe.rotation_keys.times)>(malloc(sizeof(*keyframe.rotation_keys.times) * keyframe.rotation_keys.num_keys));
     keyframe.rotations = reinterpret_cast<decltype(keyframe.rotations)>(malloc(sizeof(*keyframe.rotations) * keyframe.rotation_keys.num_keys));
+    assert(keyframe.rotation_keys.times != NULL);
+    assert(keyframe.rotations != NULL);
     for (uint64_t i = 0; i < keyframe.rotation_keys.num_keys; ++i) {
         keyframe.rotations[i] = aiQuatToGlm(channel->mRotationKeys[i].mValue);
         keyframe.rotation_keys.times[i] = channel->mRotationKeys[i].mTime;
     }
 
     keyframe.scale_keys.num_keys = channel->mNumScalingKeys;
+    keyframe.scale_keys.prev_key_i = 0;
     keyframe.scale_keys.times = reinterpret_cast<decltype(keyframe.scale_keys.times)>(malloc(sizeof(*keyframe.scale_keys.times) * keyframe.scale_keys.num_keys));
     keyframe.scales = reinterpret_cast<decltype(keyframe.scales)>(malloc(sizeof(*keyframe.scales) * keyframe.scale_keys.num_keys));
+    assert(keyframe.scale_keys.times != NULL);
+    assert(keyframe.scales != NULL);
     for (uint64_t i = 0; i < keyframe.scale_keys.num_keys; ++i) {
         keyframe.scales[i] = aiVec3ToGlm(channel->mScalingKeys[i].mValue);
         keyframe.scale_keys.times[i] = channel->mScalingKeys[i].mTime;
@@ -1142,7 +1163,7 @@ bool AssetManager::loadAnimatedMeshAssimp(AnimatedMesh* animesh, Mesh *mesh, con
         
         // Reading channels(bones engaged in an animation and their keyframes)
         for (int j = 0; j < animation.num_bone_keyframes; j++) {
-            if (animesh->num_bones >= MAX_BONES) {
+            if (animesh->num_bones > MAX_BONES) {
                 std::cerr << "Too many bones loaded in loadAnimatedMeshAssimp, more than " << MAX_BONES << " exist, breaking\n";
                 animation.num_bone_keyframes = j;
                 break;
@@ -1554,11 +1575,12 @@ bool AssetManager::loadTextureFromAssimp(Texture *&tex, aiMaterial *mat, const a
             return true;
         } else {
             glm::ivec2 resolution;
-            auto tex_id = loadImage(p, resolution, format, GL_REPEAT, floating);
+            GLenum result_format = format;
+            auto tex_id = loadImage(p, resolution, result_format, GL_REPEAT, floating);
             if (tex_id == GL_FALSE) return false;
 
             tex = createTexture(p);
-            tex->format = format;
+            tex->format = result_format;
             tex->resolution = resolution;
             tex->id = tex_id;
             return true;

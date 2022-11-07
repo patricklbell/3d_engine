@@ -342,10 +342,24 @@ void handleEditorControls(EntityManager*& entity_manager, AssetManager& asset_ma
             float x_angle = -Controls::delta_mouse_position.x * delta_angle_x;
             float y_angle = -Controls::delta_mouse_position.y * delta_angle_y;
 
-            // @todo Handle camera passing over poles of orbit 
+            auto camera_look = camera.position - camera.target;
 
             auto rotation_x = glm::rotate(glm::mat4x4(1.0f), x_angle, camera.up);
-            auto rotation_y = glm::rotate(glm::mat4x4(1.0f), y_angle, camera.right);
+            glm::mat4 rotation_y(1.0f);
+
+            // Handle camera passing over poles of orbit 
+            // cos of angle between look and up is close to 1 -> parallel, -1 -> antiparallel
+            auto l_cos_up = glm::dot(camera_look, camera.up) / glm::length(camera_look);
+            bool allow_rotation = true;
+            if (abs(1 - l_cos_up) <= 0.01) {
+                allow_rotation = y_angle > 0.f;
+            }
+            else if (abs(l_cos_up + 1) <= 0.01) {
+                allow_rotation = y_angle < 0.f;
+            }
+            if (allow_rotation) {
+                rotation_y = glm::rotate(glm::mat4x4(1.0f), y_angle, camera.right);
+            }
 
             camera_direction_rotated = glm::vec3(rotation_y * (rotation_x * glm::vec4(camera.forward, 1)));
         }

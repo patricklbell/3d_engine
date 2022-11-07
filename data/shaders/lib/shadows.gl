@@ -3,13 +3,7 @@
 layout(binding = 5) uniform sampler2DArray shadow_map;
 layout(binding = 6) uniform sampler3D jitter_vol; // Only needed if using Nvidia method
 
-layout(std140, binding=0) uniform ShadowVP 
-{
-    mat4 shadow_vps[CASCADE_NUM + 1];
-};
-uniform float shadow_cascade_distances[CASCADE_NUM];
-uniform float far_plane;
-uniform mat4 view;
+#load lib/shadow_ubo.gl
 
 //const vec2 poisson_disk[16] = vec2[]( 
 //   vec2( -0.94201624, -0.39906216 ), 
@@ -122,17 +116,18 @@ float calculatePcfShadowness(float NdotL, vec3 position, int layer) {
     }
     shadow *= 0.5;
 #else // !SMOOTH_SHADOWS
-    //    Microsoft method from:
-    //    https://learn.microsoft.com/en-us/windows/win32/dxtecharts/cascaded-shadow-maps
-    for(int x = -1; x <= 1; ++x)
+    // Cheaper method based on, (still PCF)
+    // https://learn.microsoft.com/en-us/windows/win32/dxtecharts/cascaded-shadow-maps and
+    // https://developer.nvidia.com/sites/all/modules/custom/gpugems/books/GPUGems/gpugems_ch11.html
+    for(float x = -1.5; x <= 1.5; x+=1.0)
     {
-        for(int y = -1; y <= 1; ++y)
+        for(float y = -1.5; y <= 1.5; y+=1.0)
         {
             float pcf_depth = texture(shadow_map, vec3(shadow_coord.xy + vec2(x, y) * texel_size, layer)).r; 
             shadow += (shadow_depth - bias) > pcf_depth ? 1.0 : 0.0;
         }    
     }
-    shadow /= 9.0f;
+    shadow /= 16.0f;
 #endif // SMOOTH_SHADOWS
 
     return shadow;

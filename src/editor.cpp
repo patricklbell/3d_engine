@@ -332,10 +332,12 @@ void initEditorGui(AssetManager &asset_manager){
     entity_type_to_string[COLLIDER_ENTITY] = "Mesh Collider";
     entity_type_to_string[VEGETATION_ENTITY] = "Vegetation";
     entity_type_to_string[ANIMATED_MESH_ENTITY] = "Animated Mesh";
+    entity_type_to_string[PLAYER_ENTITY] = "Player";
 }
 
 static bool runLightmapperCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
     runLightmapper(level_entity_manager, asset_manager, graphics::environment.skybox, graphics::environment.skybox_irradiance, graphics::environment.skybox_specular);
+
     return true;
 }
 
@@ -380,6 +382,7 @@ static bool loadLevelCommand(std::vector<std::string>& input_tokens, std::string
             output += "Loaded level at path " + filename;
             selection.clear();
             Cameras::editor_camera = Cameras::level_camera;
+            editor::use_level_camera = false;
             return true;
         }
 

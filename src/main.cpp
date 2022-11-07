@@ -155,14 +155,11 @@ int main() {
     Controls::game.loadFromFile("data/game_controls.txt");
 
     initDefaultMaterial(global_assets);
-    initGraphicsPrimitives(global_assets);
-    initShadowFbo();
-    initAnimationUbo();
-    initWaterColliderFbo();
+    initGraphics(global_assets);
     initEditorGui(global_assets);
 
     // @note camera instanciation uses sun direction to create shadow view
-    sun_direction = glm::normalize(glm::vec3(-1, -1, -0.25));
+    sun_direction = glm::normalize(glm::vec3(-1, -1, -0.25)); // use z = -2.25 for matching stonewall
     sun_color = 5.0f*glm::vec3(0.941, 0.933, 0.849);
 
     {
@@ -217,7 +214,7 @@ int main() {
     Camera *camera_ptr = nullptr; // The currently active camera
     do {
         double current_time = glfwGetTime();
-        float true_dt = (current_time - last_time) * global_time_warp;
+        double true_dt = (current_time - last_time) * global_time_warp;
         last_time = current_time;
         float dt = 1.0/60.0;
         if (global_paused) {
@@ -277,14 +274,14 @@ int main() {
         // Draw entities
         //
         if (graphics::do_shadows)
-            bindDrawShadowMap(*entity_manager, camera);
+            bindDrawShadowMap(*entity_manager);
 
         bindHdr();
         clearFramebuffer();
         drawEntitiesHdr(*entity_manager, graphics::environment.skybox, graphics::environment.skybox_irradiance, graphics::environment.skybox_specular, camera);
 
         if (graphics::do_bloom) {
-            blurBloomFbo();
+            blurBloomFbo(true_dt);
         }
         bindBackbuffer();
         drawPost(graphics::environment.skybox, camera);

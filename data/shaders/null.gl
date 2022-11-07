@@ -1,24 +1,23 @@
 #ifdef COMPILING_VS
 layout (location = 0) in vec3 in_vertex;
 
+#if ALPHA_CLIP
+layout (location = 3) in vec2 in_texcoord;
+out VS_OUT {
+    vec2 texcoord;
+} vs_out;
+#endif
+
 #if VEGETATION
 layout (location = 1) in vec3 in_normal;
-layout (location = 3) in vec2 in_texcoord;
 // R - edge stiffness, G - Phase offset, B - overall stiffnes, A - Precomputed ambient occlusion
 layout (location = 7) in vec4 in_color;
 #endif
 
-out VS_OUT {
-    vec2 texcoord;
-} vs_out;
-
 #if ANIMATED_BONES
 layout (location = 5) in ivec4 in_bone_ids;
 layout (location = 6) in vec4  in_weights;
-layout(std140, binding=1) uniform BoneMatrices 
-{
-    mat4 bone_matrices[MAX_BONES];
-};
+#load lib/bone_ubo.gl
 #endif
 
 #if VEGETATION
@@ -47,6 +46,8 @@ void main() {
 
 #if VEGETATION
     vertex.xyz = applyWindToVegetation(vertex.xyz, in_normal, in_color.r, in_color.g, in_color.b, wind_direction, wind_strength, time);
+#endif
+#if ALPHA_CLIP
     vs_out.texcoord = in_texcoord;
 #endif
 
@@ -56,14 +57,12 @@ void main() {
 #endif
 
 #ifdef COMPILING_GS
-layout(triangles, invocations=INVOCATIONS) in;
+layout(triangles, invocations=CASCADE_NUM) in;
 layout(triangle_strip, max_vertices=3) out;
-layout(std140, binding=0) uniform ShadowVP 
-{
-    mat4 shadow_vps[INVOCATIONS];
-};
 
-#if VEGETATION
+#load lib/shadow_ubo.gl
+
+#if ALPHA_CLIP
 in VS_OUT {
     vec2 texcoord;
 } gs_in[];  
@@ -75,7 +74,7 @@ void main()
     for(int i=0; i < 3; i++){
         gl_Position = shadow_vps[gl_InvocationID] * gl_in[i].gl_Position;
         gl_Layer    = gl_InvocationID;
-#if VEGETATION
+#if ALPHA_CLIP
         texcoord = gs_in[i].texcoord;
 #endif
         EmitVertex();
@@ -87,7 +86,7 @@ void main()
 
 #ifdef COMPILING_FS
 
-#if VEGETATION
+#if ALPHA_CLIP
 in vec2 texcoord;
 
 layout (location = 0) uniform sampler2D image;
@@ -95,7 +94,7 @@ layout (location = 0) uniform sampler2D image;
 
 void main()
 {
-#if VEGETATION
+#if ALPHA_CLIP
     if(texture(image, texcoord).a < 0.1) {
         discard;
     }

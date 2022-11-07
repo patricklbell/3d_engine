@@ -22,6 +22,7 @@ enum CubemapFaces : unsigned int {
 
 
 enum class ImageChannels: int {
+    ANYTHING = 0,
     RED = 1,
     RG = 2,
     RGB = 3,
@@ -32,6 +33,7 @@ struct ImageData {
 	unsigned char* data;
 	int x, y;
     ImageChannels n;
+    ImageChannels available_n; // How many channels were available
     bool floating;
 };
 
@@ -42,7 +44,7 @@ GLuint create1x1Texture(const unsigned char color[4], const GLenum format = GL_R
 GLuint create1x1TextureFloat(const glm::fvec4& color, const GLenum format = GL_RGB);
 bool loadImageData(ImageData* img, std::string_view imagepath, ImageChannels channels, bool floating = false, bool flip = true);
 GLuint createGLTextureFromData(ImageData* img, const GLenum format = GL_RGBA, const GLint wrap = GL_REPEAT, bool trilinear = true);
-GLuint loadImage(std::string_view imagepath, glm::ivec2& resolution, const GLenum format=GL_RGBA, const GLint wrap = GL_REPEAT, bool floating = false, bool trilinear = true);
+GLuint loadImage(std::string_view imagepath, glm::ivec2& resolution, GLenum &format, const GLint wrap = GL_REPEAT, bool floating = false, bool trilinear = true);
 GLuint loadCubemap(const std::array<std::string, FACE_NUM_FACES> &paths, glm::ivec2& resolution, 
                    const GLenum format=GL_RGBA, const GLint wrap = GL_REPEAT, bool floating = false, bool trilinear = true);
 

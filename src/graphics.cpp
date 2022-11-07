@@ -1,4 +1,4 @@
-#include <algorithm>
+﻿#include <algorithm>
 #include <limits>
 #include <stdio.h>
 #include <stdlib.h>
@@ -44,12 +44,11 @@ namespace graphics {
     // 
     // SHADOWS
     //
-    constexpr int SHADOW_SIZE = 4096;
-    constexpr int shadow_num = 4;
-    float shadow_cascade_distances[shadow_num];
-    // @note make sure to change macro to shadow_num + 1
-    const std::string shadow_shader_macro = "#define SHADOWS 1\n#define CASCADE_NUM " + std::to_string(shadow_num) + "\n#define INVOCATIONS " + std::to_string(shadow_num + 1) + "\n";
-    glm::mat4x4 shadow_vps[shadow_num + 1];
+    int shadow_size = 4096;
+    float shadow_cascade_distances[SHADOW_CASCADE_NUM];
+    // @note make sure to change macro to SHADOW_CASCADE_NUM + 1
+    const std::string shadow_shader_macro = "#define SHADOWS 1\n#define CASCADE_NUM " + std::to_string(SHADOW_CASCADE_NUM) + "\n";
+    glm::mat4x4 shadow_vps[SHADOW_CASCADE_NUM];
     GLuint shadow_fbo, shadow_buffer, shadow_matrices_ubo;
     bool do_shadows = true;
     constexpr int JITTER_SIZE = 16;
@@ -88,6 +87,15 @@ namespace graphics {
     // Environment
     //
     Environment environment;
+
+    //
+    // Autmatic exposure (eye correction)
+    //
+    const glm::vec3 LUMA_MULT = glm::vec3(0.299, 0.587, 0.114);
+    float exposure = 1.0;
+    double luma_t = -1.0;
+
+    GLuint shared_uniforms_ubo = GL_FALSE;
 }
 
 using namespace graphics;
@@ -99,6 +107,24 @@ void windowSizeCallback(GLFWwindow* window, int width, int height){
     window_height = height;
 }
 void framebufferSizeCallback(GLFWwindow *window, int width, int height){}
+
+static void initBoneMatricesUbo() {
+    glGenBuffers(1, &bone_matrices_ubo);
+    glBindBuffer(GL_UNIFORM_BUFFER, bone_matrices_ubo);
+    glBufferData(GL_UNIFORM_BUFFER, sizeof(glm::mat4x4) * MAX_BONES, nullptr, GL_DYNAMIC_DRAW);
+    glBindBufferBase(GL_UNIFORM_BUFFER, 2, bone_matrices_ubo);
+}
+
+static void writeBoneMatricesUbo(const std::array<glm::mat4, MAX_BONES>& final_bone_matrices) {
+    // @note if something else binds another ubo to 1 then this will be overwritten
+    // Reloads ubo everytime, this is slow but don't know any other way
+    glBindBuffer(GL_UNIFORM_BUFFER, bone_matrices_ubo);
+    for (size_t i = 0; i < MAX_BONES; ++i)
+    {
+        glBufferSubData(GL_UNIFORM_BUFFER, i * sizeof(glm::mat4x4), sizeof(glm::mat4x4), &final_bone_matrices[i]);
+    }
+    glBindBuffer(GL_UNIFORM_BUFFER, 0);
+}
 
 inline static void drawMeshMat(Shader& s, const Mesh* mesh, const glm::mat4& g_model_rot_scl, const glm::mat4& g_model_pos, const glm::mat4& vp, const Texture *ao=nullptr) {
     glBindVertexArray(mesh->vao);
@@ -112,6 +138,11 @@ inline static void drawMeshMat(Shader& s, const Mesh* mesh, const glm::mat4& g_m
         auto& mat = mesh->materials[mesh->material_indices[j]];
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, mat.t_albedo->id);
+        glUniform1i(s.uniform("is_alpha_clipped"), (int)mat.alpha);
+        if (mat.alpha) {
+            glDisable(GL_CULL_FACE);
+            glEnable(GL_SAMPLE_ALPHA_TO_COVERAGE);
+        }
 
         glActiveTexture(GL_TEXTURE1);
         glBindTexture(GL_TEXTURE_2D, mat.t_normal->id);
@@ -130,6 +161,11 @@ inline static void drawMeshMat(Shader& s, const Mesh* mesh, const glm::mat4& g_m
 
         // Bind VAO and draw
         glDrawElements(mesh->draw_mode, mesh->draw_count[j], mesh->draw_type, (GLvoid*)(sizeof(*mesh->indices) * mesh->draw_start[j]));
+
+        if (mat.alpha) {
+            glEnable(GL_CULL_FACE);
+            glDisable(GL_SAMPLE_ALPHA_TO_COVERAGE);
+        }
     }
 }
 
@@ -145,14 +181,14 @@ inline static void drawMeshShadow(Shader& s, const Mesh* mesh, const glm::mat4& 
     }
 }
 
-glm::mat4x4 getShadowMatrixFromFrustrum(const Camera &camera, float near_plane, float far_plane){
+static glm::mat4x4 getShadowMatrixFromFrustrum(const Camera &camera, double near_plane, double far_plane) {
     // Make shadow's view target the center of the camera frustrum by averaging frustrum corners
     // maybe you can just calculate from view direction and near and far
-    const auto camera_projection_alt = glm::perspective(camera.frustrum.fov, camera.frustrum.aspect_ratio, near_plane, far_plane);
-    const auto inv_VP = glm::inverse(camera_projection_alt * camera.view);
+    const auto camera_projection_alt = glm::perspective((double)camera.frustrum.fov, (double)camera.frustrum.aspect_ratio, near_plane, far_plane);
+    const auto inv_VP = glm::inverse(camera_projection_alt * glm::dmat4(camera.view));
 
     std::vector<glm::vec4> frustrum;
-    auto center = glm::vec3(0.0);
+    auto center = glm::dvec3(0.0);
     for (int x = -1; x < 2; x+=2){
         for (int y = -1; y < 2; y+=2){
             for (int z = -1; z < 2; z+=2){
@@ -165,12 +201,12 @@ glm::mat4x4 getShadowMatrixFromFrustrum(const Camera &camera, float near_plane, 
     }
     center /= frustrum.size();
  
-    const auto shadow_view = glm::lookAt(-sun_direction + center, center, camera.up);
+    const auto shadow_view = glm::lookAt(-glm::dvec3(sun_direction) + center, center, glm::dvec3(camera.up));
     using lim = std::numeric_limits<float>;
-    float min_x = lim::max(), min_y = lim::max(), min_z = lim::max();
-    float max_x = lim::min(), max_y = lim::min(), max_z = lim::min();
+    double min_x = lim::max(), min_y = lim::max(), min_z = lim::max();
+    double max_x = lim::min(), max_y = lim::min(), max_z = lim::min();
     for(const auto &wp: frustrum){
-        const glm::vec4 shadow_p = shadow_view * wp;
+        const glm::dvec4 shadow_p = shadow_view * wp;
         //printf("shadow position: %f, %f, %f, %f\n", shadow_p.x, shadow_p.y, shadow_p.z, shadow_p.w);
         min_x = std::min(shadow_p.x, min_x);
         min_y = std::min(shadow_p.y, min_y);
@@ -195,8 +231,8 @@ glm::mat4x4 getShadowMatrixFromFrustrum(const Camera &camera, float near_plane, 
 
     // Round bounds to reduce artifacts when moving camera
     // @note Relies on shadow map being square
-    //float max_world_units_per_texel = 100*(glm::tan(glm::radians(45.0f)) * (near_plane+far_plane)) / SHADOW_SIZE;
-    //printf("World units per texel %f\n", max_world_units_per_texel);
+    //float max_world_units_per_texel = (glm::tan(glm::radians(45.0f)) * (near_plane+far_plane)) / shadow_size;
+    ////printf("World units per texel %f\n", max_world_units_per_texel);
     //min_x = glm::floor(min_x / max_world_units_per_texel) * max_world_units_per_texel;
     //max_x = glm::floor(max_x / max_world_units_per_texel) * max_world_units_per_texel;    
     //min_y = glm::floor(min_y / max_world_units_per_texel) * max_world_units_per_texel;
@@ -209,28 +245,58 @@ glm::mat4x4 getShadowMatrixFromFrustrum(const Camera &camera, float near_plane, 
     return shadow_projection * shadow_view;
 }
 
-void updateShadowVP(const Camera &camera){
-    // Hardcoded csm distances
-    /*shadow_cascade_distances[0] = camera.frustrum.far_plane / 40.0f;
-    shadow_cascade_distances[1] = camera.frustrum.far_plane / 20.0f;
-    shadow_cascade_distances[2] = camera.frustrum.far_plane / 5.0f;
-    shadow_cascade_distances[3] = camera.frustrum.far_plane / 2.0f;*/
-    float np = camera.frustrum.near_plane, fp;
-    for(int i = 0; i < shadow_num; i++){
-        shadow_cascade_distances[i] = camera.frustrum.near_plane + (camera.frustrum.far_plane - camera.frustrum.near_plane) * (float)i / (float)shadow_num;
-        fp = shadow_cascade_distances[i];
-        shadow_vps[i] = getShadowMatrixFromFrustrum(camera, np, fp);
-        np = fp;
-    }
-    shadow_vps[shadow_num] = getShadowMatrixFromFrustrum(camera, np, camera.frustrum.far_plane);
+static void initShadowVpsUbo() {
+    glGenBuffers(1, &shadow_matrices_ubo);
+    glBindBuffer(GL_UNIFORM_BUFFER, shadow_matrices_ubo);
+    glBufferData(GL_UNIFORM_BUFFER, 64 * SHADOW_CASCADE_NUM + 16 * SHADOW_CASCADE_NUM, nullptr, GL_STATIC_DRAW);
+    glBindBufferBase(GL_UNIFORM_BUFFER, 1, shadow_matrices_ubo);
+    glBindBuffer(GL_UNIFORM_BUFFER, 0);
+}
 
+void writeShadowVpsUbo() {
     // @note if something else binds another ubo to 0 then this will be overwritten
     glBindBuffer(GL_UNIFORM_BUFFER, shadow_matrices_ubo);
-    for (size_t i = 0; i < shadow_num + 1; ++i)
-    {
+    for (size_t i = 0; i < SHADOW_CASCADE_NUM; ++i) {
         glBufferSubData(GL_UNIFORM_BUFFER, i * sizeof(glm::mat4x4), sizeof(glm::mat4x4), &shadow_vps[i]);
     }
+    for (size_t i = 0; i < SHADOW_CASCADE_NUM; ++i) {
+        glBufferSubData(GL_UNIFORM_BUFFER, SHADOW_CASCADE_NUM * 64 + i * 16, 4, &shadow_cascade_distances[i]);
+    }
     glBindBuffer(GL_UNIFORM_BUFFER, 0);
+}
+
+void updateShadowVP(const Camera &camera){
+    const double &cnp = camera.frustrum.near_plane, &cfp = camera.frustrum.far_plane * 0.75;
+
+    // Hardcoded csm distances
+    // Unity two map split - 0.25f
+    // Unity four map split - 0.067f, 0.2f, 0.467f
+    /*shadow_cascade_distances[0] = cfp * 0.067;
+    shadow_cascade_distances[1] = cfp * 0.2;
+    shadow_cascade_distances[2] = cfp * 0.467;
+    shadow_cascade_distances[3] = cfp;*/
+    
+    double snp = cnp, sfp;
+    for(int i = 0; i < SHADOW_CASCADE_NUM; i++){
+        const double p = (double)(i+1) / (double)SHADOW_CASCADE_NUM;
+
+        // Simple linear formula
+        sfp = cnp + (cfp - cnp) * p;
+        // More complicated formula which accounts for wasted area from orthographic 
+        // projection being fitted to perspective -> 0 as we get further away
+        // https://developer.download.nvidia.com/SDK/10.5/opengl/src/cascaded_shadow_maps/doc/cascaded_shadow_maps.pdf
+        //constexpr float l = 1.02; // How much to correct for this error
+        //sfp = l*cnp*pow(cfp / cnp, p) + (1 - l)*(cnp + p*(cfp - cnp));
+        // Use @hardcoded distances, doesn't work when cascade num changes
+        //sfp = shadow_cascade_distances[i];
+
+        shadow_vps[i] = getShadowMatrixFromFrustrum(camera, snp, sfp);
+
+        shadow_cascade_distances[i] = sfp;
+        snp = sfp;
+    }
+
+    writeShadowVpsUbo();
 }
 
 void initShadowFbo(){
@@ -240,7 +306,7 @@ void initShadowFbo(){
     glGenTextures(1, &shadow_buffer);
     glBindTexture(GL_TEXTURE_2D_ARRAY, shadow_buffer);
     glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_DEPTH_COMPONENT16, 
-                 SHADOW_SIZE, SHADOW_SIZE, shadow_num+1, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_SHORT, NULL);
+                 shadow_size, shadow_size, SHADOW_CASCADE_NUM+1, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_SHORT, NULL);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
@@ -259,25 +325,15 @@ void initShadowFbo(){
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-    glGenBuffers(1, &shadow_matrices_ubo);
-    glBindBuffer(GL_UNIFORM_BUFFER, shadow_matrices_ubo);
-    glBufferData(GL_UNIFORM_BUFFER, sizeof(glm::mat4x4) * (shadow_num+1), nullptr, GL_STATIC_DRAW);
-    glBindBufferBase(GL_UNIFORM_BUFFER, 0, shadow_matrices_ubo);
-    glBindBuffer(GL_UNIFORM_BUFFER, 0);
+    initShadowVpsUbo();
 }
 
 // Since shadow buffer wont need to be bound otherwise just combine these operations
-void bindDrawShadowMap(const EntityManager &entity_manager, const Camera &camera){
-    glBindBuffer(GL_UNIFORM_BUFFER, shadow_matrices_ubo);
-    for (size_t i = 0; i < shadow_num + 1; ++i)
-    {
-        glBufferSubData(GL_UNIFORM_BUFFER, i * sizeof(glm::mat4x4), sizeof(glm::mat4x4), &shadow_vps[i]);
-    }
-
-    glBindBuffer(GL_UNIFORM_BUFFER, 0);
+void bindDrawShadowMap(const EntityManager &entity_manager){
+    writeShadowVpsUbo();
 
     glBindFramebuffer(GL_FRAMEBUFFER, shadow_fbo);
-    glViewport(0, 0, SHADOW_SIZE, SHADOW_SIZE);
+    glViewport(0, 0, shadow_size, shadow_size);
     
     // Make shadow line up with object by culling front (Peter Panning)
     // @note face culling wont work with certain techniques i.e. grass
@@ -330,14 +386,7 @@ void bindDrawShadowMap(const EntityManager &entity_manager, const Camera &camera
         for (const auto& a_e : anim_mesh_entities) {
             if (a_e->animesh == nullptr) continue;
 
-            // @note if something else binds another ubo to 1 then this will be overwritten
-            // Reloads ubo everytime, this is slow but don't know any other way
-            glBindBuffer(GL_UNIFORM_BUFFER, bone_matrices_ubo);
-            for (size_t i = 0; i < MAX_BONES; ++i)
-            {
-                glBufferSubData(GL_UNIFORM_BUFFER, i * sizeof(glm::mat4x4), sizeof(glm::mat4x4), &a_e->final_bone_matrices[i]);
-            }
-            glBindBuffer(GL_UNIFORM_BUFFER, 1);
+            writeBoneMatricesUbo(a_e->final_bone_matrices);
 
             auto g_model_rot_scl = glm::mat4_cast(a_e->rotation) * glm::mat4x4(a_e->scale);
             auto g_model_pos = glm::translate(glm::mat4x4(1.0), a_e->position);
@@ -352,9 +401,9 @@ void bindDrawShadowMap(const EntityManager &entity_manager, const Camera &camera
         glUseProgram(shader::null_vegetation.program);
 
         auto wind_direction = glm::normalize(glm::vec2(0.5, 0.6));
-        glUniform2f(shader::vegetation.uniform("wind_direction"), wind_direction.x, wind_direction.y);
-        glUniform1f(shader::vegetation.uniform("wind_strength"), 3.0);
-        glUniform1f(shader::vegetation.uniform("time"), glfwGetTime());
+        glUniform2f(shader::null_vegetation.uniform("wind_direction"), wind_direction.x, wind_direction.y);
+        glUniform1f(shader::null_vegetation.uniform("wind_strength"), 3.0);
+        glUniform1f(shader::null_vegetation.uniform("time"), glfwGetTime());
 
         for (const auto& v_e : vegetation_entities) {
             if (v_e->texture == nullptr) continue;
@@ -411,13 +460,6 @@ void initBRDFLut(AssetManager& asset_manager) {
 
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     drawQuad();
-}
-
-void initAnimationUbo() {
-    glGenBuffers(1, &bone_matrices_ubo);
-    glBindBuffer(GL_UNIFORM_BUFFER, bone_matrices_ubo);
-    glBufferData(GL_UNIFORM_BUFFER, sizeof(glm::mat4x4) * (MAX_BONES), nullptr, GL_DYNAMIC_DRAW);
-    glBindBufferBase(GL_UNIFORM_BUFFER, 1, bone_matrices_ubo);
 }
 
 void initWaterColliderFbo() {
@@ -659,7 +701,32 @@ void initHdrFbo(bool resize) {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-void initGraphicsPrimitives(AssetManager& asset_manager) {
+static void initSharedUbo() {
+    glGenBuffers(1, &shared_uniforms_ubo);
+    glBindBuffer(GL_UNIFORM_BUFFER, shared_uniforms_ubo);
+    glBufferData(GL_UNIFORM_BUFFER, 128, NULL, GL_STATIC_DRAW);
+    glBindBufferBase(GL_UNIFORM_BUFFER, 0, shared_uniforms_ubo);
+    glBindBuffer(GL_UNIFORM_BUFFER, 0);
+}
+
+static void writeSharedUbo(const Camera& camera) {
+    // @note if something else binds another ubo to 0 then this will be overwritten
+    glBindBuffer(GL_UNIFORM_BUFFER, shared_uniforms_ubo);
+    int offset = 0;
+    glBufferSubData(GL_UNIFORM_BUFFER, offset, 64, &camera.view[0][0]); offset += 4*16;
+    glBufferSubData(GL_UNIFORM_BUFFER, offset, 16, &sun_direction[0]); offset += 16;
+    glBufferSubData(GL_UNIFORM_BUFFER, offset, 16, &sun_color[0]); offset += 16;
+    glBufferSubData(GL_UNIFORM_BUFFER, offset, 16, &camera.position[0]); offset += 12;
+    float time = glfwGetTime();
+    glBufferSubData(GL_UNIFORM_BUFFER, offset, 4, &time); offset += 4;
+    glm::ivec2 window_size(window_width, window_height);
+    glBufferSubData(GL_UNIFORM_BUFFER, offset, 8, &window_size[0]); offset += 8;
+    glBufferSubData(GL_UNIFORM_BUFFER, offset, 4, &camera.frustrum.far_plane); offset += 4;
+    glBufferSubData(GL_UNIFORM_BUFFER, offset, 4, &exposure); offset += 4;
+    glBindBuffer(GL_UNIFORM_BUFFER, 0);
+}
+
+void initGraphics(AssetManager& asset_manager) {
     // @hardcoded
     static const float quad_vertices[] = {
         // positions        // texture Coords
@@ -828,6 +895,11 @@ void initGraphicsPrimitives(AssetManager& asset_manager) {
 
     // Set clear color
     glClearColor(0.0, 0.0, 0.0, 1.0);
+
+    initShadowFbo();
+    initSharedUbo();
+    initBoneMatricesUbo();
+    initWaterColliderFbo();
 }
 
 void drawCube() {
@@ -843,7 +915,20 @@ void drawQuad() {
     glDrawArrays(quad.draw_mode, quad.draw_start[0], quad.draw_count[0]);
 }
 
-void blurBloomFbo() {
+// https://bruop.github.io/exposure/, and https://knarkowicz.wordpress.com/2016/01/09/automatic-exposure/
+// S is the Sensor sensitivity, K is the reflected-light meter calibration constant, 
+// q is the lens and vignetting attentuation
+static double calculateCameraLuma(double L_avg) {
+    constexpr double S = 100, K = 12.5, q = 0.65;
+    return 78.0 / (q * S) * L_avg * (S / K);
+}
+
+double calculateExposureFromLuma(double L) {
+    constexpr double L_min = 0.4, L_max = 1.5, L_ec = 0.1;
+    return 0.18 / (glm::clamp(L, L_min, L_max) - L_ec);
+}
+
+void blurBloomFbo(double dt) {
     glBindFramebuffer(GL_FRAMEBUFFER, bloom_fbo);
 
     // 
@@ -870,6 +955,22 @@ void blurBloomFbo() {
         // Set next iterations properties
         glUniform2fv(shader::downsample.uniform("resolution"), 1, &mip.size[0]);
         glBindTexture(GL_TEXTURE_2D, mip.texture);
+
+        // Extract luma from furthest downsample
+        if (i == bloom_mip_infos.size() - 1) {
+            glGenerateMipmap(GL_TEXTURE_2D);
+            glm::fvec3 avg_color{ 1.0 };
+            GLint levels = glm::floor(log2(glm::max(mip.size.x, mip.size.y))); // Make enough mip levels to downsample to single pixel
+            glGetTexImage(GL_TEXTURE_2D, levels, GL_RGB, GL_FLOAT, &avg_color[0]);
+            double luma_0 = calculateCameraLuma(glm::dot(avg_color, LUMA_MULT));
+
+            constexpr double tau = 1.0; // Factore for how quickly eye adjusts
+            if (luma_t > 0.0) // Check if luma has been intialized
+                luma_t = luma_t + (luma_0 - luma_t) * (1 - glm::exp(-dt * tau));
+            else
+                luma_t = luma_0;
+            exposure = calculateExposureFromLuma(luma_t);
+        }
     }
 
     //
@@ -885,7 +986,6 @@ void blurBloomFbo() {
         const auto& mip = bloom_mip_infos[i];
         const auto& next_mip = bloom_mip_infos[i - 1];
 
-        glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, mip.texture);
 
         glViewport(0, 0, next_mip.size.x, next_mip.size.y);
@@ -957,6 +1057,8 @@ void drawEntitiesHdr(const EntityManager& entity_manager, const Texture* skybox,
 
     auto vp = camera.projection * camera.view;
 
+    writeSharedUbo(camera);
+
     if (do_shadows) {
         glActiveTexture(GL_TEXTURE5);
         glBindTexture(GL_TEXTURE_2D_ARRAY, shadow_buffer);
@@ -983,15 +1085,6 @@ void drawEntitiesHdr(const EntityManager& entity_manager, const Texture* skybox,
     }
 
     glUseProgram(unified_s->program);
-    glUniform3fv(unified_s->uniform("sun_color"), 1, &sun_color[0]);
-    glUniform3fv(unified_s->uniform("sun_direction"), 1, &sun_direction[0]);
-    glUniform3fv(unified_s->uniform("camera_position"), 1, &camera.position[0]);
-    if (do_shadows) {
-        glUniformMatrix4fv(unified_s->uniform("view"), 1, GL_FALSE, &camera.view[0][0]);
-        glUniform1fv(unified_s->uniform("shadow_cascade_distances[0]"), shadow_num, shadow_cascade_distances);
-        glUniform1f(unified_s->uniform("far_plane"), camera.frustrum.far_plane);
-    }
-
     for (int i = 0; i < ENTITY_COUNT; ++i) {
         if (entity_manager.entities[i] == nullptr) continue;
 
@@ -1036,30 +1129,13 @@ void drawEntitiesHdr(const EntityManager& entity_manager, const Texture* skybox,
         }
         
         glUseProgram(animated_unified_s->program);
-        glUniform3fv(animated_unified_s->uniform("sun_color"), 1, &sun_color[0]);
-        glUniform3fv(animated_unified_s->uniform("sun_direction"), 1, &sun_direction[0]);
-        glUniform3fv(animated_unified_s->uniform("camera_position"), 1, &camera.position[0]);
-        if (do_shadows) {
-            glUniform1fv(animated_unified_s->uniform("shadow_cascade_distances[0]"), shadow_num, shadow_cascade_distances);
-            glUniform1f(animated_unified_s->uniform("far_plane"), camera.frustrum.far_plane);
-            glUniformMatrix4fv(animated_unified_s->uniform("view"), 1, GL_FALSE, &camera.view[0][0]);
-        }
-
-        auto vp = camera.projection * camera.view;
         for (const auto &a_e : anim_mesh_entities) {
             if (a_e->animesh == nullptr) continue;
 
-            // @note if something else binds another ubo to 1 then this will be overwritten
-            // Reloads ubo everytime, this is slow but don't know any other way
-            glBindBuffer(GL_UNIFORM_BUFFER, bone_matrices_ubo);
-            for (size_t i = 0; i < MAX_BONES; ++i)
-            {
-                glBufferSubData(GL_UNIFORM_BUFFER, i * sizeof(glm::mat4x4), sizeof(glm::mat4x4), &a_e->final_bone_matrices[i]);
-            }
-            glBindBuffer(GL_UNIFORM_BUFFER, 1);
+            writeBoneMatricesUbo(a_e->final_bone_matrices);
 
             // Material multipliers
-            // @editor
+            // @editor Colour model according to animation blend state
             if (editor::debug_animations) {
                 switch (a_e->blend_state)
                 {
@@ -1094,24 +1170,23 @@ void drawEntitiesHdr(const EntityManager& entity_manager, const Texture* skybox,
         glDisable(GL_CULL_FACE);
         glEnable(GL_SAMPLE_ALPHA_TO_COVERAGE);
 
-        glUseProgram(shader::vegetation.program);
+        auto vegetation_s = &shader::vegetation;
+        if (!do_shadows) {
+            vegetation_s = &shader::vegetation_ns;
+        }
 
+        glUseProgram(vegetation_s->program);
         auto wind_direction = glm::normalize(glm::vec2(0.5, 0.6));
-        glUniform2f(shader::vegetation.uniform("wind_direction"), wind_direction.x, wind_direction.y);
-        glUniform1f(shader::vegetation.uniform("wind_strength"), 3.0);
-        glUniform1f(shader::vegetation.uniform("time"), glfwGetTime());
-        
-        // @todo shadow casting on vegetation
-        // glActiveTexture(GL_TEXTURE5);
-        // glBindTexture(GL_TEXTURE_2D_ARRAY, shadow_buffer);
-        // glUniform1fv(shader::unified.uniform("shader")::unified_bloom].shadow_cascade_distances, shadow_num, shadow_cascade_distances);
-        // glUniform1f(shader::unified.uniform("shader")::unified_bloom].far_plane, camera.frustrum.far_plane);
+        glUniform2f(vegetation_s->uniform("wind_direction"), wind_direction.x, wind_direction.y);
+        glUniform1f(vegetation_s->uniform("wind_strength"), 3.0);
 
         for (const auto &v_e : vegetation_entities) {
             if(v_e->texture == nullptr) continue;
 
-            auto mvp   = vp * createModelMatrix(v_e->position, v_e->rotation, v_e->scale);
-            glUniformMatrix4fv(shader::vegetation.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
+            auto model = createModelMatrix(v_e->position, v_e->rotation, v_e->scale);
+            auto mvp   = vp * model;
+            glUniformMatrix4fv(vegetation_s->uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
+            glUniformMatrix4fv(vegetation_s->uniform("model"), 1, GL_FALSE, &model[0][0]);
 
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, v_e->texture->id);
@@ -1119,6 +1194,9 @@ void drawEntitiesHdr(const EntityManager& entity_manager, const Texture* skybox,
             auto &mesh = v_e->mesh;
             glBindVertexArray(mesh->vao);
             for (int j = 0; j < mesh->num_meshes; ++j) {
+                glActiveTexture(GL_TEXTURE1);
+                glBindTexture(GL_TEXTURE_2D, mesh->materials[j].t_normal->id);
+
                 // @note that this will break for models which have transforms
                 // Bind VAO and draw
                 glDrawElements(mesh->draw_mode, mesh->draw_count[j], mesh->draw_type, (GLvoid*)(sizeof(*mesh->indices) * mesh->draw_start[j]));
@@ -1139,16 +1217,6 @@ void drawEntitiesHdr(const EntityManager& entity_manager, const Texture* skybox,
             }
 
             glUseProgram(water_s->program);
-            glUniform3fv(water_s->uniform("sun_color"), 1, &sun_color[0]);
-            glUniform3fv(water_s->uniform("sun_direction"), 1, &sun_direction[0]);
-            glUniform3fv(water_s->uniform("camera_position"), 1, &camera.position[0]);
-            glUniform2f( water_s->uniform("resolution"), window_width, window_height);
-            glUniform1f( water_s->uniform("time"), glfwGetTime());
-            if (do_shadows) {
-                glUniformMatrix4fv( water_s->uniform("view"), 1, GL_FALSE, &camera.view[0][0]);
-                glUniform1f(        water_s->uniform("far_plane"), camera.frustrum.far_plane);
-                glUniform1fv(       water_s->uniform("shadow_cascade_distances[0]"), shadow_num, shadow_cascade_distances);
-            }
             // @debug the geometry shader and tesselation
             //glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
@@ -1214,6 +1282,7 @@ void drawPost(Texture *skybox, const Camera &camera){
     glUseProgram(post.program);
 
     glUniform2f(post.uniform("resolution"), window_width, window_height);
+    glUniform1f(post.uniform("exposure"), exposure);
 
     glActiveTexture(GL_TEXTURE0);
     if (do_msaa) glBindTexture(GL_TEXTURE_2D, hdr_buffer_resolve_multisample);
@@ -1228,14 +1297,19 @@ void drawPost(Texture *skybox, const Camera &camera){
     if (do_msaa) glBindTexture(GL_TEXTURE_2D, hdr_depth_copy);
     else         glBindTexture(GL_TEXTURE_2D, hdr_depth);
 
-    // @note skybox is seperated out instead to work better with msaa and fxaa @todo volumetric lighting to blend
-    //auto untranslated_view = glm::mat4(glm::mat3(camera.view));
-    //auto inverse_projection_untranslated_view = glm::inverse(camera.projection * untranslated_view);
-    //glUniformMatrix4fv(post.uniform("inverse_projection_untranslated_view"), 1, GL_FALSE, &inverse_projection_untranslated_view[0][0]);
-    //glUniformMatrix4fv(post.uniform("projection"), 1, GL_FALSE, & camera.projection[0][0]);
-    //glUniform1f(post.uniform("tan_half_fov"), glm::tan(camera.fov / 2.0f));
-    //glActiveTexture(GL_TEXTURE3);
-    //glBindTexture(GL_TEXTURE_CUBE_MAP, skybox->id);
+    // @todo expose shader macro  values
+    // Rudimentary fog
+    auto untranslated_view = glm::mat4(glm::mat3(camera.view));
+    auto inverse_projection_untranslated_view = glm::inverse(camera.projection * untranslated_view);
+    glUniformMatrix4fv(post.uniform("inverse_projection_untranslated_view"), 1, GL_FALSE, &inverse_projection_untranslated_view[0][0]);
+    // SSAO
+    //glUniformMatrix4fv(post.uniform("projection"), 1, GL_FALSE, &camera.projection[0][0]);
+    glActiveTexture(GL_TEXTURE6);
+    glBindTexture(GL_TEXTURE_3D, jitter_texture->id);
+    //glUniform3fv(post.uniform("camera_position"), 1, &camera.position[0]);
+
+    /*glActiveTexture(GL_TEXTURE3);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, skybox->id);*/
 
     drawQuad();
 }

@@ -1,6 +1,8 @@
 #define AMBIENT_INTENSITY  0.1
 #define DIFFUSE_INTENSITY  0.9
 
+#load lib/shadows.gl
+
 vec3 calcDirectionalLight(vec3 in_position, vec3 in_normal, vec3 sun_direction, vec3 sun_color, vec3 camera_position, float specular_int, float specular_exp)
 {
     vec3 ambient_col = sun_color * AMBIENT_INTENSITY;
@@ -20,5 +22,10 @@ vec3 calcDirectionalLight(vec3 in_position, vec3 in_normal, vec3 sun_direction, 
         }
     }
 
-    return (ambient_col + specular_col + diffuse_col);
+    vec3 Lo = ambient_col + specular_col + diffuse_col;
+#if SHADOWS
+    float NdotL = max(dot(in_normal, sun_direction), 0.0);
+    Lo *= 1.0 - shadowness(NdotL, in_position);
+#endif
+    return Lo;
 }

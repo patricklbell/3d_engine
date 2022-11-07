@@ -96,7 +96,7 @@ struct Mesh {
 
 #define MAX_BONE_WEIGHTS 4
 // @todo in loading you could limit loaded bone rather than in tick step
-#define MAX_BONES 300
+#define MAX_BONES 1000
 
 struct AnimatedMesh {
     std::string handle;
@@ -291,6 +291,7 @@ struct Material {
     Texture* t_ambient   = nullptr;
     Texture* t_roughness = nullptr;
     Texture* t_metallic  = nullptr;
+    bool alpha = false; // Whether to use albedo texture's alpha channel
 };
 extern Material* default_material;
 void initDefaultMaterial(AssetManager &asset_manager);

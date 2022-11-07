@@ -38,7 +38,7 @@ GLuint Shader::uniform(const std::string &name) {
 
 namespace shader {
 	Shader animated_null, null, null_vegetation, unified, unified_ns, animated_unified, animated_unified_ns, water, water_ns, gaussian_blur,
-		plane_projection, jfa, jfa_distance, post[2], debug, depth_only, vegetation, 
+		plane_projection, jfa, jfa_distance, post[2], debug, depth_only, vegetation, vegetation_ns, null_clip,
 		downsample, upsample, diffuse_convolution, specular_convolution, generate_brdf_lut, skybox;
 }
 
@@ -407,7 +407,8 @@ void initGlobalShaders() {
 	shader_list = {
 		{"data/shaders/null.gl",				&animated_null,			true,  graphics::shadow_shader_macro+graphics::animation_macro,		empty_file_time},
 		{"data/shaders/null.gl",				&null,					true,  graphics::shadow_shader_macro,								empty_file_time},
-		{"data/shaders/null.gl",				&null_vegetation,		true,  graphics::shadow_shader_macro+"\n#define VEGETATION 1\n",	empty_file_time},
+		{"data/shaders/null.gl",				&null_vegetation,		true,  graphics::shadow_shader_macro+"\n#define VEGETATION 1\n#define ALPHA_CLIP 1\n", empty_file_time},
+		{"data/shaders/null.gl",				&null_clip,				true,  graphics::shadow_shader_macro + "\n#define ALPHA_CLIP 1\n",	empty_file_time},
 		{"data/shaders/unified.gl",				&unified,				false, graphics::shadow_shader_macro,								empty_file_time},
 		{"data/shaders/unified.gl",				&unified_ns,			false, "#define SHADOWS 0\n",										empty_file_time},
 		{"data/shaders/unified.gl",				&animated_unified,		false, graphics::shadow_shader_macro+graphics::animation_macro,		empty_file_time},
@@ -422,7 +423,8 @@ void initGlobalShaders() {
 		{"data/shaders/post.gl",				&post[1],				false, "#define BLOOM 1\n",											empty_file_time},
 		{"data/shaders/debug.gl",				&debug,					false, "",															empty_file_time},
 		{"data/shaders/depth_only.gl",			&depth_only,			false, "",															empty_file_time},
-		{"data/shaders/vegetation.gl",			&vegetation,			false, "",															empty_file_time},
+		{"data/shaders/vegetation.gl",			&vegetation,			false, graphics::shadow_shader_macro,								empty_file_time},
+		{"data/shaders/vegetation.gl",			&vegetation_ns,			false, "#define SHADOWS 0\n",										empty_file_time},
 		{"data/shaders/downsample.gl",			&downsample,			false, "",															empty_file_time},
 		{"data/shaders/blur_upsample.gl",		&upsample,				false, "",															empty_file_time},
 		{"data/shaders/diffuse_convolution.gl",	&diffuse_convolution,	false, "",															empty_file_time},

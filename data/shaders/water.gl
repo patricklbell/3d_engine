@@ -13,7 +13,8 @@ out VS_FS {
 uniform mat4 model;
 uniform mat4 mvp;
 uniform mat4 shadow_mvp;
-uniform float time;
+
+#load lib/shared.gl
 
 #define WAVE_SPEED 0.1f
 
@@ -171,24 +172,17 @@ in VS_FS
 layout (depth_any) out float gl_FragDepth;
 layout (location = 0) out vec4 out_color;
 
-
-
-uniform vec3 sun_direction;
-uniform vec3 sun_color;
-uniform vec3 camera_position;
-
-uniform vec2 resolution;
 layout (binding = 0) uniform sampler2D screen_map;
 layout (binding = 1) uniform sampler2D depth_map;
 layout (binding = 2) uniform sampler2D simplex_gradient;
 layout (binding = 3) uniform sampler2D simplex_value;
 layout (binding = 4) uniform sampler2D collider;
 
+#load lib/shared.gl
 uniform vec4 shallow_color;
 uniform vec4 deep_color;
 uniform vec4 foam_color;
 
-uniform float time;
 #define WAVE_SPEED 0.1f
 
 #load lib/shadows.gl
@@ -250,7 +244,7 @@ float depthToDist(float d){
 
 void main(){
   float t = time * SPEED;
-  vec2 screencoord = gl_FragCoord.xy / resolution.xy;
+  vec2 screencoord = gl_FragCoord.xy / window_size.xy;
 
   float screen_d = texture(depth_map, screencoord).x;
   float scene_d  = gl_FragCoord.z;
