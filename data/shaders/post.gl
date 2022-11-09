@@ -27,7 +27,7 @@ void main() {
 #define FXAA            1
 #define SSAO            0
 #define DOF             0
-#define FOG             1
+#define FOG             0
 
 in vec3 position;
 in vec2 texcoord;

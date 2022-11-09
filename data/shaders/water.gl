@@ -156,6 +156,12 @@ void main(){
 
 #load lib/constants.gl
 
+#define VOLUMETRICS 1
+
+#if VOLUMETRICS
+#load lib/volumetrics.gl
+#endif
+
 #define EDGE_SCALE      1.252
 
 #define SPEED           0.5
@@ -187,6 +193,7 @@ uniform vec4 foam_color;
 
 #load lib/shadows.gl
 #load lib/pbr.gl
+#load lib/utilities.gl
 
 // Use pre generated noise from
 // https://www.shadertoy.com/view/XdXBRH
@@ -235,11 +242,6 @@ float calcDepthFade(float scene_depth, float screen_depth){
 	
 	depth_fade = clamp(depth_fade, -2.0, 2.0);
 	return depth_fade;
-}
-
-float depthToDist(float d){
-  float z = 2.0*d - 1.0;
-  return 2.0*NEAR*FAR/(FAR + NEAR - z*(FAR - NEAR));
 }
 
 void main(){
@@ -301,7 +303,12 @@ void main(){
     
     //hdr_color = mix(deep_color.rgb, hdr_color, 1.0 - smoothstep(15.0, 25.0, scene_z));
 
+#if VOLUMETRICS
+    hdr_color.rgb = addInscatteredVolumetrics(hdr_color.rgb, gl_FragCoord.xyz);
+#endif
+
     out_color = vec4(hdr_color,  gl_FrontFacing ? 1.0 : 0.0);
+
 
     gl_FragDepth = scene_d;
   }

@@ -55,6 +55,27 @@ namespace graphics {
     Texture* jitter_texture;
 
     //
+    // Volumetric Fog
+    //
+    const bool do_volumetrics = true;
+    const glm::ivec3 VOLUMETRIC_RESOLUTION{ 160, 90, 128 };
+    constexpr int NUM_BLUE_NOISE_TEXTURES = 16;
+    // For now use the same texture for all PM
+    std::array<Texture*, NUM_BLUE_NOISE_TEXTURES> blue_noise_textures; 
+    constexpr int NUM_TEMPORAL_VOLUMES = 2;
+    GLuint temporal_integration_volume[NUM_TEMPORAL_VOLUMES]; // Stores the scattering/transmission for the current and previous frame
+    GLuint accumulated_volumetric_volume; // Stores the accumulated result of ray marching the integration volume for the current frame
+    const glm::ivec3 VOLUMETRIC_LOCAL_SIZE{ 8, 8, 1 }; // Size of work groups for compute shaders
+    const std::string volumetric_shader_macro = "#define LOCAL_SIZE_X " + std::to_string(VOLUMETRIC_LOCAL_SIZE.x) +
+                                              "\n#define LOCAL_SIZE_Y " + std::to_string(VOLUMETRIC_LOCAL_SIZE.y) +
+                                              "\n#define LOCAL_SIZE_Z " + std::to_string(VOLUMETRIC_LOCAL_SIZE.z) + "\n"; // @todo
+    // global fog settings, @todo local fog volumes etc.
+    struct FogProperties {
+        float anisotropy = 0.8;
+        float density = 0.05;
+    } global_fog_properties;
+
+    //
     // WATER PLANE COLLISIONS
     //
     GLuint water_collider_fbos[2] = { GL_FALSE }, water_collider_buffers[2] = { GL_FALSE };
@@ -65,17 +86,17 @@ namespace graphics {
     // BONES/ANIMATION
     //
     GLuint bone_matrices_ubo;
-    const std::string animation_macro = "#define MAX_BONES " + std::to_string(MAX_BONES) + 
-                                        "\n#define MAX_BONE_WEIGHTS " + std::to_string(MAX_BONE_WEIGHTS) + 
-                                        "\n#define ANIMATED_BONES 1\n";
+    const std::string animation_macro = "#define MAX_BONES " + std::to_string(MAX_BONES) +
+                                      "\n#define MAX_BONE_WEIGHTS " + std::to_string(MAX_BONE_WEIGHTS) +
+                                      "\n#define ANIMATED_BONES 1\n";
 
     //
     // ASSETS
     //
     Mesh quad, cube, line_cube, water_grid;
-    Texture * simplex_gradient;
-    Texture * simplex_value;
-    Texture * brdf_lut;
+    Texture* simplex_gradient;
+    Texture* simplex_value;
+    Texture* brdf_lut;
 
     // 
     // MSAA
@@ -100,13 +121,13 @@ namespace graphics {
 
 using namespace graphics;
 
-void windowSizeCallback(GLFWwindow* window, int width, int height){
-    if(width != window_width || height != window_height) window_resized = true;
+void windowSizeCallback(GLFWwindow* window, int width, int height) {
+    if (width != window_width || height != window_height) window_resized = true;
 
-    window_width  = width;
+    window_width = width;
     window_height = height;
 }
-void framebufferSizeCallback(GLFWwindow *window, int width, int height){}
+void framebufferSizeCallback(GLFWwindow* window, int width, int height) {}
 
 static void initBoneMatricesUbo() {
     glGenBuffers(1, &bone_matrices_ubo);
@@ -126,7 +147,7 @@ static void writeBoneMatricesUbo(const std::array<glm::mat4, MAX_BONES>& final_b
     glBindBuffer(GL_UNIFORM_BUFFER, 0);
 }
 
-inline static void drawMeshMat(Shader& s, const Mesh* mesh, const glm::mat4& g_model_rot_scl, const glm::mat4& g_model_pos, const glm::mat4& vp, const Texture *ao=nullptr) {
+inline static void drawMeshMat(Shader& s, const Mesh* mesh, const glm::mat4& g_model_rot_scl, const glm::mat4& g_model_pos, const glm::mat4& vp, const Texture* ao = nullptr) {
     glBindVertexArray(mesh->vao);
     for (int j = 0; j < mesh->num_meshes; ++j) {
         // Since the mesh transforms encode scale this will mess up global translation so we apply translation after
@@ -154,7 +175,7 @@ inline static void drawMeshMat(Shader& s, const Mesh* mesh, const glm::mat4& g_m
         glBindTexture(GL_TEXTURE_2D, mat.t_roughness->id);
 
         glActiveTexture(GL_TEXTURE4);
-        if(ao != nullptr)
+        if (ao != nullptr)
             glBindTexture(GL_TEXTURE_2D, ao->id);
         else
             glBindTexture(GL_TEXTURE_2D, mat.t_ambient->id);
@@ -181,7 +202,7 @@ inline static void drawMeshShadow(Shader& s, const Mesh* mesh, const glm::mat4& 
     }
 }
 
-static glm::mat4x4 getShadowMatrixFromFrustrum(const Camera &camera, double near_plane, double far_plane) {
+static glm::mat4x4 getShadowMatrixFromFrustrum(const Camera& camera, double near_plane, double far_plane) {
     // Make shadow's view target the center of the camera frustrum by averaging frustrum corners
     // maybe you can just calculate from view direction and near and far
     const auto camera_projection_alt = glm::perspective((double)camera.frustrum.fov, (double)camera.frustrum.aspect_ratio, near_plane, far_plane);
@@ -189,10 +210,10 @@ static glm::mat4x4 getShadowMatrixFromFrustrum(const Camera &camera, double near
 
     std::vector<glm::vec4> frustrum;
     auto center = glm::dvec3(0.0);
-    for (int x = -1; x < 2; x+=2){
-        for (int y = -1; y < 2; y+=2){
-            for (int z = -1; z < 2; z+=2){
-                auto p = inv_VP * glm::vec4(x,y,z,1.0f);
+    for (int x = -1; x < 2; x += 2) {
+        for (int y = -1; y < 2; y += 2) {
+            for (int z = -1; z < 2; z += 2) {
+                auto p = inv_VP * glm::vec4(x, y, z, 1.0f);
                 auto wp = p / p.w;
                 center += glm::vec3(wp);
                 frustrum.push_back(wp);
@@ -200,12 +221,12 @@ static glm::mat4x4 getShadowMatrixFromFrustrum(const Camera &camera, double near
         }
     }
     center /= frustrum.size();
- 
+
     const auto shadow_view = glm::lookAt(-glm::dvec3(sun_direction) + center, center, glm::dvec3(camera.up));
     using lim = std::numeric_limits<float>;
     double min_x = lim::max(), min_y = lim::max(), min_z = lim::max();
     double max_x = lim::min(), max_y = lim::min(), max_z = lim::min();
-    for(const auto &wp: frustrum){
+    for (const auto& wp : frustrum) {
         const glm::dvec4 shadow_p = shadow_view * wp;
         //printf("shadow position: %f, %f, %f, %f\n", shadow_p.x, shadow_p.y, shadow_p.z, shadow_p.w);
         min_x = std::min(shadow_p.x, min_x);
@@ -219,13 +240,15 @@ static glm::mat4x4 getShadowMatrixFromFrustrum(const Camera &camera, double near
 
     // @todo Tune this parameter according to the scene
     constexpr float z_mult = 10.0f;
-    if (min_z < 0){
+    if (min_z < 0) {
         min_z *= z_mult;
-    } else {
+    }
+    else {
         min_z /= z_mult;
-    } if (max_z < 0){
+    } if (max_z < 0) {
         max_z /= z_mult;
-    } else {
+    }
+    else {
         max_z *= z_mult;
     }
 
@@ -265,8 +288,8 @@ void writeShadowVpsUbo() {
     glBindBuffer(GL_UNIFORM_BUFFER, 0);
 }
 
-void updateShadowVP(const Camera &camera){
-    const double &cnp = camera.frustrum.near_plane, &cfp = camera.frustrum.far_plane * 0.75;
+void updateShadowVP(const Camera& camera) {
+    const double& cnp = camera.frustrum.near_plane, & cfp = camera.frustrum.far_plane * 0.75;
 
     // Hardcoded csm distances
     // Unity two map split - 0.25f
@@ -275,10 +298,10 @@ void updateShadowVP(const Camera &camera){
     shadow_cascade_distances[1] = cfp * 0.2;
     shadow_cascade_distances[2] = cfp * 0.467;
     shadow_cascade_distances[3] = cfp;*/
-    
+
     double snp = cnp, sfp;
-    for(int i = 0; i < SHADOW_CASCADE_NUM; i++){
-        const double p = (double)(i+1) / (double)SHADOW_CASCADE_NUM;
+    for (int i = 0; i < SHADOW_CASCADE_NUM; i++) {
+        const double p = (double)(i + 1) / (double)SHADOW_CASCADE_NUM;
 
         // Simple linear formula
         sfp = cnp + (cfp - cnp) * p;
@@ -299,28 +322,28 @@ void updateShadowVP(const Camera &camera){
     writeShadowVpsUbo();
 }
 
-void initShadowFbo(){
+void initShadowFbo() {
     glGenFramebuffers(1, &shadow_fbo);
     glBindFramebuffer(GL_FRAMEBUFFER, shadow_fbo);
 
     glGenTextures(1, &shadow_buffer);
     glBindTexture(GL_TEXTURE_2D_ARRAY, shadow_buffer);
-    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_DEPTH_COMPONENT16, 
-                 shadow_size, shadow_size, SHADOW_CASCADE_NUM+1, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_SHORT, NULL);
+    glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_DEPTH_COMPONENT16,
+        shadow_size, shadow_size, SHADOW_CASCADE_NUM + 1, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_SHORT, NULL);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
     const float border_col[] = { 1.0f, 1.0f, 1.0f, 1.0f };
-    glTexParameterfv(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_BORDER_COLOR, border_col); 
-	//glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
-	//glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
+    glTexParameterfv(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_BORDER_COLOR, border_col);
+    //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_FUNC, GL_LEQUAL);
+    //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_COMPARE_MODE, GL_COMPARE_REF_TO_TEXTURE);
 
-	glFramebufferTexture(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, shadow_buffer, 0);
+    glFramebufferTexture(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, shadow_buffer, 0);
     glDrawBuffer(GL_NONE);
     glReadBuffer(GL_NONE);
-	
-    if(glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
         std::cerr << "Failed to create shadow fbo.\n";
 
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -329,12 +352,12 @@ void initShadowFbo(){
 }
 
 // Since shadow buffer wont need to be bound otherwise just combine these operations
-void bindDrawShadowMap(const EntityManager &entity_manager){
+void bindDrawShadowMap(const EntityManager& entity_manager) {
     writeShadowVpsUbo();
 
     glBindFramebuffer(GL_FRAMEBUFFER, shadow_fbo);
     glViewport(0, 0, shadow_size, shadow_size);
-    
+
     // Make shadow line up with object by culling front (Peter Panning)
     // @note face culling wont work with certain techniques i.e. grass
     //glEnable(GL_CULL_FACE);
@@ -343,8 +366,8 @@ void bindDrawShadowMap(const EntityManager &entity_manager){
 
     glDepthMask(GL_TRUE);
     glEnable(GL_DEPTH_TEST);
-	//glDepthFunc(GL_LESS); 
-    
+    //glDepthFunc(GL_LESS); 
+
     //glDisable(GL_BLEND);
     glClear(GL_DEPTH_BUFFER_BIT);
 
@@ -359,6 +382,7 @@ void bindDrawShadowMap(const EntityManager &entity_manager){
         if (entity_manager.entities[i] == nullptr) continue;
 
         auto m_e = reinterpret_cast<MeshEntity*>(entity_manager.entities[i]);
+        if (!(entityInherits(m_e->type, MESH_ENTITY)) || m_e->mesh == nullptr || !m_e->casts_shadow) continue;
         if (entityInherits(m_e->type, ANIMATED_MESH_ENTITY)) {
             auto a_e = (AnimatedMeshEntity*)m_e;
             if (playing || a_e->draw_animated) {
@@ -370,7 +394,6 @@ void bindDrawShadowMap(const EntityManager &entity_manager){
             vegetation_entities.push_back((VegetationEntity*)m_e);
             continue;
         }
-        if(!(entityInherits(m_e->type, MESH_ENTITY)) || m_e->mesh == nullptr) continue;
 
         auto g_model_rot_scl = glm::mat4_cast(m_e->rotation) * glm::mat4x4(m_e->scale);
         auto g_model_pos = glm::translate(glm::mat4x4(1.0), m_e->position);
@@ -632,7 +655,8 @@ void initHdrFbo(bool resize) {
         glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, hdr_buffer);
         glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, MSAA_SAMPLES, GL_RGBA16F, window_width, window_height, GL_TRUE);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D_MULTISAMPLE, hdr_buffer, 0);
-    } else {
+    }
+    else {
         glBindTexture(GL_TEXTURE_2D, hdr_buffer);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, window_width, window_height, 0, GL_RGBA, GL_FLOAT, NULL);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -654,7 +678,8 @@ void initHdrFbo(bool resize) {
         glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, hdr_depth);
         glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, MSAA_SAMPLES, GL_DEPTH24_STENCIL8, window_width, window_height, GL_TRUE);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D_MULTISAMPLE, hdr_depth, 0);
-    } else {
+    }
+    else {
         glBindTexture(GL_TEXTURE_2D, hdr_depth);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH24_STENCIL8, window_width, window_height, 0, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8, NULL);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -704,7 +729,7 @@ void initHdrFbo(bool resize) {
 static void initSharedUbo() {
     glGenBuffers(1, &shared_uniforms_ubo);
     glBindBuffer(GL_UNIFORM_BUFFER, shared_uniforms_ubo);
-    glBufferData(GL_UNIFORM_BUFFER, 128, NULL, GL_STATIC_DRAW);
+    glBufferData(GL_UNIFORM_BUFFER, 192, NULL, GL_STATIC_DRAW);
     glBindBufferBase(GL_UNIFORM_BUFFER, 0, shared_uniforms_ubo);
     glBindBuffer(GL_UNIFORM_BUFFER, 0);
 }
@@ -713,7 +738,9 @@ static void writeSharedUbo(const Camera& camera) {
     // @note if something else binds another ubo to 0 then this will be overwritten
     glBindBuffer(GL_UNIFORM_BUFFER, shared_uniforms_ubo);
     int offset = 0;
-    glBufferSubData(GL_UNIFORM_BUFFER, offset, 64, &camera.view[0][0]); offset += 4*16;
+    glBufferSubData(GL_UNIFORM_BUFFER, offset, 64, &camera.view[0][0]); offset += 4 * 16;
+    glm::mat4 vp = camera.projection * camera.view;
+    glBufferSubData(GL_UNIFORM_BUFFER, offset, 64, &vp[0][0]); offset += 4 * 16;
     glBufferSubData(GL_UNIFORM_BUFFER, offset, 16, &sun_direction[0]); offset += 16;
     glBufferSubData(GL_UNIFORM_BUFFER, offset, 16, &sun_color[0]); offset += 16;
     glBufferSubData(GL_UNIFORM_BUFFER, offset, 16, &camera.position[0]); offset += 12;
@@ -724,6 +751,82 @@ static void writeSharedUbo(const Camera& camera) {
     glBufferSubData(GL_UNIFORM_BUFFER, offset, 4, &camera.frustrum.far_plane); offset += 4;
     glBufferSubData(GL_UNIFORM_BUFFER, offset, 4, &exposure); offset += 4;
     glBindBuffer(GL_UNIFORM_BUFFER, 0);
+}
+
+void initVolumetrics() {
+    glGenTextures(1, &accumulated_volumetric_volume);
+    glBindTexture(GL_TEXTURE_3D, accumulated_volumetric_volume);
+    glTexImage3D(GL_TEXTURE_3D, 0, GL_RGBA16F, VOLUMETRIC_RESOLUTION.x, VOLUMETRIC_RESOLUTION.y, VOLUMETRIC_RESOLUTION.z, 0, GL_RGBA, GL_HALF_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    // We don't want to volumetrics which we haven't calculated
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+
+    glGenTextures(NUM_TEMPORAL_VOLUMES, temporal_integration_volume);
+    for (int i = 0; i < NUM_TEMPORAL_VOLUMES; ++i) {
+        glBindTexture(GL_TEXTURE_3D, temporal_integration_volume[i]);
+        glTexImage3D(GL_TEXTURE_3D, 0, GL_RGBA16F, VOLUMETRIC_RESOLUTION.x, VOLUMETRIC_RESOLUTION.y, VOLUMETRIC_RESOLUTION.z, 0, GL_RGBA, GL_HALF_FLOAT, NULL);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        // We don't want to volumetrics which we haven't calculated
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+    }
+}
+
+void computeVolumetrics(uint64_t frame_i, const Camera& camera) {
+    // @todo integrate with draw entities so we don't send ubo,
+    // in future it would be better to have a system for write ubos easily and checking if something has changed
+    writeSharedUbo(camera);
+
+    if (do_shadows) {
+        glActiveTexture(GL_TEXTURE5);
+        glBindTexture(GL_TEXTURE_2D_ARRAY, shadow_buffer);
+
+        glActiveTexture(GL_TEXTURE6);
+        glBindTexture(GL_TEXTURE_3D, jitter_texture->id);
+    }
+
+    // Convert fog volumes, for now just a global fog, into camera fitted color&density 3D texture
+    auto& vi = shader::volumetric_integration;
+    glUseProgram(vi.program);
+
+    glUniform1f(vi.uniform("anisotropy"), global_fog_properties.anisotropy);
+    glUniform1f(vi.uniform("density"), global_fog_properties.density);
+    glUniform1i(vi.uniform("do_accumulation"), frame_i != 0);
+    glUniform3iv(vi.uniform("vol_size"), 1, &VOLUMETRIC_RESOLUTION[0]);
+
+    const auto inv_vp = glm::inverse(camera.projection * camera.view);
+    glUniformMatrix4fv(vi.uniform("inv_vp"), 1, GL_FALSE, &inv_vp[0][0]);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, blue_noise_textures[frame_i % NUM_BLUE_NOISE_TEXTURES]->id);
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_3D, temporal_integration_volume[(frame_i + 1) % NUM_TEMPORAL_VOLUMES]);
+
+    glBindImageTexture(0, temporal_integration_volume[frame_i % NUM_TEMPORAL_VOLUMES], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
+
+    glm::ivec3 compute_size = glm::ceil(glm::fvec3(VOLUMETRIC_RESOLUTION) / glm::fvec3(VOLUMETRIC_LOCAL_SIZE));
+    glDispatchCompute(compute_size.x, compute_size.y, compute_size.z);
+
+    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT); // @todo do other rendering steps while waiting
+
+    // Raymarch through fog volume to accumulate scattering and transmission
+    auto& vr = shader::volumetric_raymarch;
+    glUseProgram(vr.program);
+
+    glUniform3iv(vr.uniform("vol_size"), 1, &VOLUMETRIC_RESOLUTION[0]);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_3D, temporal_integration_volume[frame_i % NUM_TEMPORAL_VOLUMES]);
+
+    glBindImageTexture(0, accumulated_volumetric_volume, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
+
+    glDispatchCompute(compute_size.x, compute_size.y, 1);
+    glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT); // @todo do other rendering steps while waiting
 }
 
 void initGraphics(AssetManager& asset_manager) {
@@ -885,17 +988,25 @@ void initGraphics(AssetManager& asset_manager) {
 
     asset_manager.loadMeshFile(&water_grid, "data/mesh/water_grid.mesh");
     simplex_gradient = asset_manager.createTexture("data/textures/2d_simplex_gradient_seamless.png");
-    asset_manager.loadTexture(simplex_gradient, "data/textures/2d_simplex_gradient_seamless.png", GL_RGB, true);
+    asset_manager.loadTexture(simplex_gradient, "data/textures/2d_simplex_gradient_seamless.png", GL_RGB, GL_REPEAT);
     simplex_value = asset_manager.createTexture("data/textures/2d_simplex_value_seamless.png");
-    asset_manager.loadTexture(simplex_value, "data/textures/2d_simplex_value_seamless.png", GL_RED, true);
+    asset_manager.loadTexture(simplex_value, "data/textures/2d_simplex_value_seamless.png", GL_RED, GL_REPEAT);
 
     // Create per-pixel jitter lookup textures
     //createJitter3DTexture(jitter_lookup_64, JITTER_SIZE, 8, 8);	// 8 'estimation' samples, 64 total samples
     jitter_texture = createJitter3DTexture(asset_manager, JITTER_SIZE, 4, 8);	// 4 'estimation' samples, 32 total samples
 
+    // Load blue noise textures
+    for (int i = 0; i < NUM_BLUE_NOISE_TEXTURES; ++i) {
+        std::string p = "data/textures/blue_noise/LDR_LLL1_" + std::to_string(i) + ".png";
+        blue_noise_textures[i] = asset_manager.createTexture(p);
+        asset_manager.loadTexture(blue_noise_textures[i], p, GL_RGB, GL_REPEAT);
+    }
+
     // Set clear color
     glClearColor(0.0, 0.0, 0.0, 1.0);
 
+    initVolumetrics();
     initShadowFbo();
     initSharedUbo();
     initBoneMatricesUbo();
@@ -1024,8 +1135,8 @@ void drawSkybox(const Texture* skybox, const Camera &camera) {
 
     glUseProgram(shader::skybox.program);
     auto untranslated_view = glm::mat4(glm::mat3(camera.view));
-    auto vp = camera.projection * untranslated_view;
-    glUniformMatrix4fv(shader::skybox.uniform("vp"), 1, GL_FALSE, &vp[0][0]);
+    auto untranslated_view_projection = camera.projection * untranslated_view;
+    glUniformMatrix4fv(shader::skybox.uniform("untranslated_view_projection"), 1, GL_FALSE, &untranslated_view_projection[0][0]);
 
     glActiveTexture(GL_TEXTURE3);
     glBindTexture(GL_TEXTURE_CUBE_MAP, skybox->id);
@@ -1075,6 +1186,11 @@ void drawEntitiesHdr(const EntityManager& entity_manager, const Texture* skybox,
 
     glActiveTexture(GL_TEXTURE9);
     glBindTexture(GL_TEXTURE_2D, brdf_lut->id);
+
+    if (do_volumetrics) {
+        glActiveTexture(GL_TEXTURE10);
+        glBindTexture(GL_TEXTURE_3D, accumulated_volumetric_volume);
+    }
 
     // 
     // Draw normal static PBR mesh entities
@@ -1299,13 +1415,13 @@ void drawPost(Texture *skybox, const Camera &camera){
 
     // @todo expose shader macro  values
     // Rudimentary fog
-    auto untranslated_view = glm::mat4(glm::mat3(camera.view));
+    /*auto untranslated_view = glm::mat4(glm::mat3(camera.view));
     auto inverse_projection_untranslated_view = glm::inverse(camera.projection * untranslated_view);
-    glUniformMatrix4fv(post.uniform("inverse_projection_untranslated_view"), 1, GL_FALSE, &inverse_projection_untranslated_view[0][0]);
+    glUniformMatrix4fv(post.uniform("inverse_projection_untranslated_view"), 1, GL_FALSE, &inverse_projection_untranslated_view[0][0]);*/
     // SSAO
     //glUniformMatrix4fv(post.uniform("projection"), 1, GL_FALSE, &camera.projection[0][0]);
-    glActiveTexture(GL_TEXTURE6);
-    glBindTexture(GL_TEXTURE_3D, jitter_texture->id);
+    /*glActiveTexture(GL_TEXTURE6);
+    glBindTexture(GL_TEXTURE_3D, jitter_texture->id);*/
     //glUniform3fv(post.uniform("camera_position"), 1, &camera.position[0]);
 
     /*glActiveTexture(GL_TEXTURE3);

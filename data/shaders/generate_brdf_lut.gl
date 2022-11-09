@@ -19,7 +19,7 @@ in vec2 texcoord;
 out vec3 out_color;
 
 #load lib/constants.gl
-#load lib/utilities.gl
+#load lib/noise.gl
 #load lib/pbr.gl
 
 // https://learnopengl.com/PBR/IBL/Specular-IBL

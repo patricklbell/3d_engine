@@ -22,7 +22,7 @@ uniform float roughness;
 uniform float texelSphericalArea; // Perface resolution of cubemap
 
 #load lib/constants.gl
-#load lib/utilities.gl
+#load lib/noise.gl
 #load lib/pbr.gl
 
 // Modified from https://learnopengl.com/PBR/IBL/Specular-IBL

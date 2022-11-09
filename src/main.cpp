@@ -275,6 +275,8 @@ int main() {
         //
         if (graphics::do_shadows)
             bindDrawShadowMap(*entity_manager);
+        if (graphics::do_volumetrics)
+            computeVolumetrics(frame_num, camera);
 
         bindHdr();
         clearFramebuffer();
@@ -314,16 +316,8 @@ int main() {
 
 #ifndef NDEBUG
         checkGLError("Main loop");
-        // Should catch any other errors but the message may be less descriptive
-        static GLenum code;
-        static const GLubyte* string;
-        code = glGetError();
-        if(code != GL_NO_ERROR){
-            string = gluErrorString(code);
-            std::cerr << "<--------------------OpenGL ERROR-------------------->\n" << string << "\n";
-        }
-        frame_num++;
 #endif
+        frame_num++;
     } // Check if the ESC key was pressed or the window was closed
     while(!Controls::editor.isAction("exit") && glfwWindowShouldClose(window) == 0);
 

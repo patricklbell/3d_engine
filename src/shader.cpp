@@ -39,7 +39,7 @@ GLuint Shader::uniform(const std::string &name) {
 namespace shader {
 	Shader animated_null, null, null_vegetation, unified, unified_ns, animated_unified, animated_unified_ns, water, water_ns, gaussian_blur,
 		plane_projection, jfa, jfa_distance, post[2], debug, depth_only, vegetation, vegetation_ns, null_clip,
-		downsample, upsample, diffuse_convolution, specular_convolution, generate_brdf_lut, skybox;
+		downsample, upsample, diffuse_convolution, specular_convolution, generate_brdf_lut, skybox, volumetric_integration, volumetric_raymarch;
 }
 
 using namespace shader;
@@ -222,7 +222,52 @@ static bool not_alphanumeric(char c) {
 	return !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9'));
 }
 
-bool loadShader(Shader& shader, std::string_view vertex_fragment_file_path, std::string_view macros="", bool geometry = false) {
+static bool check_shader_errors(GLuint shader_id) {
+	int info_log_length;
+	glGetShaderiv(shader_id, GL_INFO_LOG_LENGTH, &info_log_length);
+	if (info_log_length > 0) {
+		char* info_log = (char*)malloc(sizeof(char) * (info_log_length + 1));
+		glGetShaderInfoLog(shader_id, info_log_length, NULL, info_log);
+		std::cerr << "Error in shader:\n" << info_log << "\n";
+		free(info_log);
+
+		return true;
+	}
+	return false;
+}
+
+static bool check_program_errors(GLuint program_id) {
+	int info_log_length;
+	glGetProgramiv(program_id, GL_INFO_LOG_LENGTH, &info_log_length);
+	if (info_log_length > 0) {
+		char* info_log = (char*)malloc(sizeof(char) * (info_log_length + 1));
+		glGetProgramInfoLog(program_id, info_log_length, NULL, info_log);
+		std::cerr << "Error in program:\n" << info_log << "\n";
+
+		free(info_log);
+		return true;
+	}
+	return false;
+}
+
+static void print_shader_source(std::vector<char*> linked_shader_codes, bool show_lines = true) {
+	int line_i = 1;
+	for (const auto& src : linked_shader_codes) {
+		auto num_bytes = strlen(src);
+
+		int offset = 0;
+		for (int i = 0; offset < num_bytes; ++i) {
+			int aoffset;
+			auto line = read_line(&src[offset], num_bytes - offset, aoffset);
+			std::cout << std::setfill(' ') << std::setw(3) << line_i << ". " << line << "\n";
+
+			offset += aoffset;
+			line_i++;
+		}
+	}
+}
+
+bool loadShader(Shader& shader, std::string_view vertex_fragment_file_path, std::string_view macros="", const bool geometry = false, const bool compute = false) {
 	// @todo handle macros in cache properly for now just use a hacky way
 	// @fix this doesn't reload a shader if it's dependencies change, maybe bake these in cache file?
 	auto cache_path = std::string(vertex_fragment_file_path) + ".cache";
@@ -255,13 +300,8 @@ bool loadShader(Shader& shader, std::string_view vertex_fragment_file_path, std:
 				return true;
 			} else {
 				std::cerr << "Failed to load cached shader\n";
-				int info_log_length;
-				glGetProgramiv(program_id, GL_INFO_LOG_LENGTH, &info_log_length);
-				if(info_log_length > 0) {
-					char *program_error_message = (char *)malloc(sizeof(char) * (info_log_length+1));
-					glGetProgramInfoLog(program_id, info_log_length, NULL, program_error_message);
-					std::cerr << "Error was:\n" << program_error_message << "\n";
-					free(program_error_message);
+				if (check_program_errors(program_id)) {
+					return true;
 				}
 			}
 		}
@@ -269,18 +309,17 @@ bool loadShader(Shader& shader, std::string_view vertex_fragment_file_path, std:
 
 	const char *path = vertex_fragment_file_path.data();
 	std::cout << "Loading shader " << path << ".\n";
-	const char *fragment_macro = "#define COMPILING_FS 1\n";	
-	const char *vertex_macro   = "#define COMPILING_VS 1\n";
 	
-	GLuint vertex_shader_id   = glCreateShader(GL_VERTEX_SHADER);
-	GLuint fragment_shader_id = glCreateShader(GL_FRAGMENT_SHADER);
-
 	int num_bytes;
 	char *shader_code = read_file_contents(vertex_fragment_file_path, num_bytes);
 	if(shader_code == nullptr) {
 		std::cerr << "Can't open shader file " << path << ".\n";
 		return false;
 	}
+
+	const char* compute_macro =  "#define COMPILING_CS 1\n";
+	const char *fragment_macro = "#define COMPILING_FS 1\n";	
+	const char *vertex_macro   = "#define COMPILING_VS 1\n";
 
 	std::vector<char *> linked_shader_codes = {(char*)glsl_version.c_str(), (char*)macros.data()};
 	const int shader_type_index = linked_shader_codes.size();
@@ -289,22 +328,52 @@ bool loadShader(Shader& shader, std::string_view vertex_fragment_file_path, std:
 	std::unordered_set<std::string> linked_shader_paths;
 	std::vector<char *> linked_shader_codes_to_free = { shader_code }; // Pretty cringe way @todo
 	load_shader_dependencies(shader_code, num_bytes, linked_shader_codes, linked_shader_codes_to_free, linked_shader_paths);
-
 	linked_shader_codes.push_back((char*)shader_code);
+
+	// @todo seperate out common code for shader compilation
+	if (compute) {
+		linked_shader_codes[shader_type_index] = (char*)compute_macro;
+
+		GLuint compute_shader_id = glCreateShader(GL_COMPUTE_SHADER);
+		glShaderSource(compute_shader_id, linked_shader_codes.size(), &linked_shader_codes[0], NULL);
+		glCompileShader(compute_shader_id);
+
+		if (check_shader_errors(compute_shader_id)) {
+			print_shader_source(linked_shader_codes);
+			free_linked_shader_codes(linked_shader_codes_to_free);
+			return false;
+		}
+
+		GLuint program_id = glCreateProgram();
+		glAttachShader(program_id, compute_shader_id);
+		glLinkProgram(program_id);
+
+		if (check_program_errors(program_id)) {
+			print_shader_source(linked_shader_codes);
+			free_linked_shader_codes(linked_shader_codes_to_free);
+			return false;
+		}
+
+		free_linked_shader_codes(linked_shader_codes_to_free);
+		glDetachShader(program_id, compute_shader_id);
+		glDeleteShader(compute_shader_id);
+
+		create_shader_from_program(shader, program_id, vertex_fragment_file_path);
+
+		if (do_shader_caching && shader_binary_supported)
+			write_shader_cache(shader, cache_path, unix_update_time);
+
+		return true;
+	}
+
+	GLuint vertex_shader_id   = glCreateShader(GL_VERTEX_SHADER);
+	GLuint fragment_shader_id = glCreateShader(GL_FRAGMENT_SHADER);
+
 	glShaderSource(vertex_shader_id, linked_shader_codes.size(), &linked_shader_codes[0], NULL);
 	glCompileShader(vertex_shader_id);
 
-	int info_log_length;
-	glGetShaderiv(vertex_shader_id, GL_INFO_LOG_LENGTH, &info_log_length);
-	if ( info_log_length > 0 ){
-		char *vertex_shader_error_message = (char *)malloc(sizeof(char) * (info_log_length+1));
-		glGetShaderInfoLog(vertex_shader_id, info_log_length, NULL, vertex_shader_error_message);
-		std::cerr << "Vertex shader:\n" << vertex_shader_error_message << "\n";
-
-		for (auto &s : linked_shader_codes) {
-			std::cerr << s;
-		}
-		free(vertex_shader_error_message);
+	if (check_shader_errors(vertex_shader_id)) {
+		print_shader_source(linked_shader_codes);
 		free_linked_shader_codes(linked_shader_codes_to_free);
 		return false;
 	}
@@ -313,15 +382,8 @@ bool loadShader(Shader& shader, std::string_view vertex_fragment_file_path, std:
 	glShaderSource(fragment_shader_id, linked_shader_codes.size(), &linked_shader_codes[0], NULL);
 	glCompileShader(fragment_shader_id);
 
-	glGetShaderiv(fragment_shader_id, GL_INFO_LOG_LENGTH, &info_log_length);
-	if (info_log_length > 0) {
-		char* fragment_shader_error_message = (char*)malloc(sizeof(char) * (info_log_length + 1));
-		glGetShaderInfoLog(fragment_shader_id, info_log_length, NULL, fragment_shader_error_message);
-		std::cerr << "Fragment shader:\n" << fragment_shader_error_message << "\n";
-		for (auto& s : linked_shader_codes) {
-			std::cerr << s;
-		}
-		free(fragment_shader_error_message);
+	if (check_shader_errors(fragment_shader_id)) {
+		print_shader_source(linked_shader_codes);
 		free_linked_shader_codes(linked_shader_codes_to_free);
 		return false;
 	}
@@ -336,15 +398,8 @@ bool loadShader(Shader& shader, std::string_view vertex_fragment_file_path, std:
 		glShaderSource(geometry_shader_id, linked_shader_codes.size(), &linked_shader_codes[0], NULL);
 		glCompileShader(geometry_shader_id);
 
-		glGetShaderiv(geometry_shader_id, GL_INFO_LOG_LENGTH, &info_log_length);
-		if (info_log_length > 0) {
-			char* geometry_shader_error_message = (char*)malloc(sizeof(char) * (info_log_length + 1));
-			glGetShaderInfoLog(geometry_shader_id, info_log_length, NULL, geometry_shader_error_message);
-			std::cerr << "Geometry shader:\n" << geometry_shader_error_message << "\n";
-			for (auto& s : linked_shader_codes) {
-				std::cerr << s;
-			}
-			free(geometry_shader_error_message);
+		if (check_shader_errors(geometry_shader_id)) {
+			print_shader_source(linked_shader_codes);
 			free_linked_shader_codes(linked_shader_codes_to_free);
 			return false;
 		}
@@ -356,15 +411,8 @@ bool loadShader(Shader& shader, std::string_view vertex_fragment_file_path, std:
 	glAttachShader(program_id, fragment_shader_id);
 	glLinkProgram(program_id);
 
-	glGetProgramiv(program_id, GL_INFO_LOG_LENGTH, &info_log_length);
-	if (info_log_length > 0) {
-		char* program_error_message = (char*)malloc(sizeof(char) * (info_log_length + 1));
-		glGetProgramInfoLog(program_id, info_log_length, NULL, program_error_message);
-		std::cerr << "Program attaching:\n" << program_error_message << "\n";
-		for (auto& s : linked_shader_codes) {
-			std::cerr << s;
-		}
-		free(program_error_message);
+	if (check_program_errors(program_id)) {
+		print_shader_source(linked_shader_codes);
 		free_linked_shader_codes(linked_shader_codes_to_free);
 		return false;
 	}
@@ -391,6 +439,7 @@ struct ShaderData {
 	std::string path;
 	Shader* shader;
 	bool is_geometry;
+	bool is_compute;
 	std::string macro;
 	std::filesystem::file_time_type update_time;
 };
@@ -404,40 +453,43 @@ void initGlobalShaders() {
 
 	std::filesystem::file_time_type empty_file_time;
 	auto s = &animated_null;
+	// @todo load from file into map, or some better method
 	shader_list = {
-		{"data/shaders/null.gl",				&animated_null,			true,  graphics::shadow_shader_macro+graphics::animation_macro,		empty_file_time},
-		{"data/shaders/null.gl",				&null,					true,  graphics::shadow_shader_macro,								empty_file_time},
-		{"data/shaders/null.gl",				&null_vegetation,		true,  graphics::shadow_shader_macro+"\n#define VEGETATION 1\n#define ALPHA_CLIP 1\n", empty_file_time},
-		{"data/shaders/null.gl",				&null_clip,				true,  graphics::shadow_shader_macro + "\n#define ALPHA_CLIP 1\n",	empty_file_time},
-		{"data/shaders/unified.gl",				&unified,				false, graphics::shadow_shader_macro,								empty_file_time},
-		{"data/shaders/unified.gl",				&unified_ns,			false, "#define SHADOWS 0\n",										empty_file_time},
-		{"data/shaders/unified.gl",				&animated_unified,		false, graphics::shadow_shader_macro+graphics::animation_macro,		empty_file_time},
-		{"data/shaders/unified.gl",				&animated_unified_ns,	false, "#define SHADOWS 0\n"+graphics::animation_macro,				empty_file_time},
-		{"data/shaders/water.gl",				&water,					false, graphics::shadow_shader_macro,								empty_file_time},
-		{"data/shaders/water.gl",				&water_ns,				false, "#define SHADOWS 0\n",										empty_file_time},
-		{"data/shaders/gaussian_blur.gl",		&gaussian_blur,			false, "",															empty_file_time},
-		{"data/shaders/plane_projection.gl",	&plane_projection,		true,  "",															empty_file_time},
-		{"data/shaders/jump_flood.gl",			&jfa,					false, "",															empty_file_time},
-		{"data/shaders/jfa_to_distance.gl",		&jfa_distance,			false, "",															empty_file_time},
-		{"data/shaders/post.gl",				&post[0],				false, "",															empty_file_time},
-		{"data/shaders/post.gl",				&post[1],				false, "#define BLOOM 1\n",											empty_file_time},
-		{"data/shaders/debug.gl",				&debug,					false, "",															empty_file_time},
-		{"data/shaders/depth_only.gl",			&depth_only,			false, "",															empty_file_time},
-		{"data/shaders/vegetation.gl",			&vegetation,			false, graphics::shadow_shader_macro,								empty_file_time},
-		{"data/shaders/vegetation.gl",			&vegetation_ns,			false, "#define SHADOWS 0\n",										empty_file_time},
-		{"data/shaders/downsample.gl",			&downsample,			false, "",															empty_file_time},
-		{"data/shaders/blur_upsample.gl",		&upsample,				false, "",															empty_file_time},
-		{"data/shaders/diffuse_convolution.gl",	&diffuse_convolution,	false, "",															empty_file_time},
-		{"data/shaders/specular_convolution.gl",&specular_convolution,	false, "",															empty_file_time},
-		{"data/shaders/generate_brdf_lut.gl",   &generate_brdf_lut,	    false, "",															empty_file_time},
-		{"data/shaders/skybox.gl",				&skybox,				false, "",															empty_file_time},
+		{"data/shaders/null.gl",					&animated_null,			true,  false, graphics::shadow_shader_macro+graphics::animation_macro,							empty_file_time},
+		{"data/shaders/null.gl",					&null,					true,  false, graphics::shadow_shader_macro,													empty_file_time},
+		{"data/shaders/null.gl",					&null_vegetation,		true,  false, graphics::shadow_shader_macro+"\n#define VEGETATION 1\n#define ALPHA_CLIP 1\n",	empty_file_time},
+		{"data/shaders/null.gl",					&null_clip,				true,  false, graphics::shadow_shader_macro + "\n#define ALPHA_CLIP 1\n",						empty_file_time},
+		{"data/shaders/unified.gl",					&unified,				false, false, graphics::shadow_shader_macro,													empty_file_time},
+		{"data/shaders/unified.gl",					&unified_ns,			false, false, "#define SHADOWS 0\n",															empty_file_time},
+		{"data/shaders/unified.gl",					&animated_unified,		false, false, graphics::shadow_shader_macro+graphics::animation_macro,							empty_file_time},
+		{"data/shaders/unified.gl",					&animated_unified_ns,	false, false, "#define SHADOWS 0\n"+graphics::animation_macro,									empty_file_time},
+		{"data/shaders/water.gl",					&water,					false, false, graphics::shadow_shader_macro,													empty_file_time},
+		{"data/shaders/water.gl",					&water_ns,				false, false, "#define SHADOWS 0\n",															empty_file_time},
+		{"data/shaders/gaussian_blur.gl",			&gaussian_blur,			false, false, "",																				empty_file_time},
+		{"data/shaders/plane_projection.gl",		&plane_projection,		true,  false, "",																				empty_file_time},
+		{"data/shaders/jump_flood.gl",				&jfa,					false, false, "",																				empty_file_time},
+		{"data/shaders/jfa_to_distance.gl",			&jfa_distance,			false, false, "",																				empty_file_time},
+		{"data/shaders/post.gl",					&post[0],				false, false, "",																				empty_file_time},
+		{"data/shaders/post.gl",					&post[1],				false, false, "#define BLOOM 1\n",																empty_file_time},
+		{"data/shaders/debug.gl",					&debug,					false, false, "",																				empty_file_time},
+		{"data/shaders/depth_only.gl",				&depth_only,			false, false, "",																				empty_file_time},
+		{"data/shaders/vegetation.gl",				&vegetation,			false, false, graphics::shadow_shader_macro,													empty_file_time},
+		{"data/shaders/vegetation.gl",				&vegetation_ns,			false, false, "#define SHADOWS 0\n",															empty_file_time},
+		{"data/shaders/downsample.gl",				&downsample,			false, false, "",																				empty_file_time},
+		{"data/shaders/blur_upsample.gl",			&upsample,				false, false, "",																				empty_file_time},
+		{"data/shaders/diffuse_convolution.gl",		&diffuse_convolution,	false, false, "",																				empty_file_time},
+		{"data/shaders/specular_convolution.gl",	&specular_convolution,	false, false, "",																				empty_file_time},
+		{"data/shaders/generate_brdf_lut.gl",		&generate_brdf_lut,	    false, false, "",																				empty_file_time},
+		{"data/shaders/skybox.gl",					&skybox,				false, false, "",																				empty_file_time},
+		{"data/shaders/volumetric_integration.gl",	&volumetric_integration,false, true,  graphics::volumetric_shader_macro+graphics::shadow_shader_macro,					empty_file_time},
+		{"data/shaders/volumetric_raymarch.gl",		&volumetric_raymarch,	false, true,  graphics::volumetric_shader_macro + graphics::shadow_shader_macro,				empty_file_time},
 	};
 	// Fill in with correct file time and actually load
 	for (auto& sd : shader_list) {
 		if (std::filesystem::exists(sd.path))
 			sd.update_time = std::filesystem::last_write_time(sd.path);
 
-		loadShader(*sd.shader, sd.path, sd.macro, sd.is_geometry);
+		loadShader(*sd.shader, sd.path, sd.macro, sd.is_geometry, sd.is_compute);
 	}
 }
 
@@ -446,7 +498,7 @@ void updateGlobalShaders() {
 		if (std::filesystem::exists(sd.path) && sd.update_time != std::filesystem::last_write_time(sd.path)) {
 			sd.update_time = std::filesystem::last_write_time(sd.path);
 
-			loadShader(*sd.shader, sd.path, sd.macro, sd.is_geometry);
+			loadShader(*sd.shader, sd.path, sd.macro, sd.is_geometry, sd.is_compute);
 		}
 	}
 }

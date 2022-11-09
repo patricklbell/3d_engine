@@ -1,0 +1,87 @@
+#load lib/constants.gl
+
+layout(local_size_x = LOCAL_SIZE_X, local_size_y = LOCAL_SIZE_Y, local_size_z = LOCAL_SIZE_Z) in;
+
+layout(binding = 0, rgba16f) uniform writeonly image3D integrated_vol;
+
+#load lib/shared.gl
+#load lib/shadows.gl
+#load lib/utilities.gl
+
+layout(binding = 0) uniform sampler2D bluenoise_map;
+layout(binding = 1) uniform sampler3D prev_vol;
+
+uniform mat4 inv_vp; // Reproject from texture coordinates to world coordinates
+
+// @todo make fog vols and global height based fog
+uniform float anisotropy; // How much effect the light direction has on the fogs visibility
+uniform float density;
+uniform bool do_accumulation;
+uniform ivec3 vol_size;
+
+// Henyey-Greenstein
+float phase_function(vec3 view, vec3 light, float g)
+{
+    float cos_theta = dot(view, light);
+    float denom     = 1.0f + g * g + 2.0f * g * cos_theta;
+    return (1.0f / (4.0f * PI)) * (1.0f - g * g) / max(pow(denom, 1.5f), EPSILON);
+}
+
+float sample_blue_noise(ivec3 coord) {
+    return texelFetch(bluenoise_map, coord.xy, 0).r; // Maybe jittering in z will matter
+}
+
+vec3 texel_to_world(vec3 texel, ivec3 texture_size, mat4 inverse_view_proj) {
+    vec3 uv = (texel + 0.5) / texture_size; // Offset texel and convert to 0 -> 1
+
+    float dist = linearToExponentialDist(uv.z); // Convert z from 0 -> 1 to near -> far
+    float depth = distToDepthNdc(dist); // Convert our exponential dist back to a depth value
+
+    vec3 ndc =  vec3(uv.xy * 2.0 - 1.0, depth); // Convert uv to screen coordinates to get final NDC
+
+    vec4 p = inverse_view_proj * vec4(ndc, 1.0);
+    if(p.w != 0.0)
+        return p.xyz / p.w; // Depth divide if we aren't too close
+    return p.xyz;
+}
+
+void main() {
+    ivec3 coord = ivec3(gl_GlobalInvocationID.xyz);
+
+    // Check that invocation is inside vol, seems slightly redudant
+    if (all(lessThan(coord, vol_size))) {
+        // Remap blue noise to -0.5 < j < +0.5
+        float jitter = (sample_blue_noise(coord / vol_size) - 0.5) * (1.0 - EPSILON);
+
+        vec3 jittered_texel = vec3(coord);
+        jittered_texel.z += jitter; // Jitter z coordinate, @todo check jittering other components
+        vec3 jittered_world_pos = texel_to_world(jittered_texel, vol_size, inv_vp);
+
+        // Get the view direction from the current voxel.
+        vec3 view = normalize(camera_position - jittered_world_pos);
+
+        // Density and coefficient estimation.
+        float thickness = view.z;
+        
+        vec3 lighting = sun_color;
+
+        float visibility = 1.0 - shadowness(0.0, jittered_world_pos); // @todo @hardcoded good NdtoL to change bias
+
+        if (visibility > 0.5) {
+            lighting += visibility * sun_color * phase_function(view, -sun_direction, anisotropy);
+        }
+
+        // RGB = Amount of in-scattered light, A = Density.
+        vec4 color_density = vec4(lighting * density, density);
+
+        // Temporal accumulation
+        if (do_accumulation) { 
+            vec4 prev_color_density = textureLod(prev_vol, coord / float(vol_size), 0.0);
+
+            // Blend with previous value, probably better techniques (eg motion vectors)
+            color_density = mix(prev_color_density, color_density, 0.9f);
+        }
+
+        imageStore(integrated_vol, coord, color_density);
+    }
+}

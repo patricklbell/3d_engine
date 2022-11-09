@@ -1,14 +1,14 @@
 #ifdef COMPILING_VS
 layout (location = 0) in vec3 in_position;
 
-uniform mat4 vp;
+uniform mat4 untranslated_view_projection;
 
 out vec3 texcoords;
 
 void main()
 {
     texcoords = in_position;
-    gl_Position = vp * vec4(in_position, 1.0);
+    gl_Position = untranslated_view_projection * vec4(in_position, 1.0);
     // @optimize? because part of multiplication is not needed
     gl_Position.z = gl_Position.w;
 }
@@ -16,18 +16,23 @@ void main()
 
 #ifdef COMPILING_FS
 
+#define VOLUMETRICS 1
+
 in vec3 texcoords;
 
 layout (location = 0) out vec4 out_color;
 
-#ifdef BLOOM
-layout (location = 1) out vec4 out_bloom_color; 
-#endif
-
 layout(binding = 3) uniform samplerCube skybox;
+
+#if VOLUMETRICS
+#load lib/volumetrics.gl
+#endif
 
 void main()
 {
     out_color = texture(skybox, texcoords);
+#if VOLUMETRICS
+    out_color.rgb = addInscatteredVolumetrics(out_color.rgb, gl_FragCoord.xyz);
+#endif
 } 
 #endif

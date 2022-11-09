@@ -48,6 +48,8 @@ void initShadowFbo();
 void bindDrawShadowMap(const EntityManager &entity_manager);
 void writeShadowVpsUbo();
 
+void computeVolumetrics(uint64_t frame_i, const Camera& camera);
+
 void initBRDFLut(AssetManager& asset_manager);
 
 void initAnimationUbo();
@@ -95,6 +97,9 @@ namespace graphics{
     extern glm::mat4x4 shadow_vps[SHADOW_CASCADE_NUM];
     extern GLuint shadow_buffer, shadow_fbo, shadow_matrices_ubo;
     extern bool do_shadows;
+
+    extern const bool do_volumetrics;
+    extern const std::string volumetric_shader_macro;
 
     extern GLuint water_collider_fbos[2], water_collider_buffers[2];
     extern int water_collider_final_fbo;

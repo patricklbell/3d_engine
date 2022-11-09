@@ -65,7 +65,8 @@ void main() {
 
 #if COMPILING_FS
 
-#define PBR 1
+#define PBR         1
+#define VOLUMETRICS 1
 
 in vec3 position;
 in vec2 texcoord;
@@ -82,7 +83,11 @@ layout(binding = 1) uniform sampler2D normal_map;
 uniform vec3 albedo_mult;
 uniform int is_alpha_clipped; // @todo make materials be able to have seperate shaders
 
-#ifdef PBR
+#if VOLUMETRICS
+#load lib/volumetrics.gl
+#endif
+
+#if PBR
 layout(binding = 2) uniform sampler2D metallic_map;
 uniform float metal_mult;
 layout(binding = 3) uniform sampler2D roughness_map;
@@ -162,6 +167,10 @@ void main() {
     vec3 hdr_color = brdfSchlickGGX(position, normal, albedo, metallic, roughness, -sun_direction, sun_color, camera_position, ao);
 #endif
 
+#endif
+
+#if VOLUMETRICS
+    hdr_color = addInscatteredVolumetrics(hdr_color, gl_FragCoord.xyz);
 #endif
 
     out_color = vec4(hdr_color, gl_FrontFacing || is_alpha_clipped > 0 ? 1.0 : 0.0);

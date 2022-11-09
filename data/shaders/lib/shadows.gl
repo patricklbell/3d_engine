@@ -41,7 +41,7 @@ layout(binding = 6) uniform sampler3D jitter_vol; // Only needed if using Nvidia
 #define SHADOW_FILTER_SIZE 50.5
 #define JITTER_SIZE 10.5f
 
-float calculatePcfShadowness(float NdotL, vec3 position, int layer) {
+float calculateShadowness(float NdotL, vec3 position, int layer) {
     vec4 shadow_pos = shadow_vps[layer] * vec4(position, 1.0);
     // perform perspective divide
     vec3 shadow_coord = shadow_pos.xyz / shadow_pos.w;
@@ -151,7 +151,7 @@ float shadowness(float NdotL, vec3 position){
         }
     }
 
-    float shadowness = calculatePcfShadowness(NdotL, position, layer);
+    float shadowness = calculateShadowness(NdotL, position, layer);
 
     // Blend between shadow maps as suggested by, seems a bit expensive:
     // https://learn.microsoft.com/en-us/windows/win32/dxtecharts/cascaded-shadow-maps
@@ -159,7 +159,7 @@ float shadowness(float NdotL, vec3 position){
         float delta = frag_dist - shadow_cascade_distances[layer - 1];
         if(delta <= CSM_BLEND_BAND) { // Do blending
             float blend = smoothstep(CSM_BLEND_BAND, 0.0, delta);
-            shadowness = mix(shadowness, calculatePcfShadowness(NdotL, position, layer - 1), blend);
+            shadowness = mix(shadowness, calculateShadowness(NdotL, position, layer - 1), blend);
         }
     }
 
