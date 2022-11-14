@@ -9,4 +9,4 @@ namespace Cameras {
 	extern Camera game_camera;
 };
 
-#endif CAMERA_GLOBALS_HPP
+#endif // CAMERA_GLOBALS_HPP

@@ -16,4 +16,4 @@ namespace Controls {
 	void registerCallbacks();
 };
 
-#endif CONTROLS_GLOBALS_HPP
+#endif // CONTROLS_GLOBALS_HPP

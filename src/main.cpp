@@ -163,7 +163,7 @@ int main() {
     sun_color = 5.0f*glm::vec3(0.941, 0.933, 0.849);
 
     {
-        Camera::Frustrum frustrum;
+        Frustrum frustrum;
         frustrum.aspect_ratio = (float)window_width / (float)window_height;
 
         Cameras::editor_camera.set_frustrum(frustrum);
@@ -198,7 +198,7 @@ int main() {
     //soloud.setPan(handle1, -0.2f);              // Set pan; -1 is left, 1 is right
     //soloud.setRelativePlaySpeed(handle1, 1.0f); // Play a bit slower; 1.0f is normal
 
-     level_path = "data/levels/gameplay_test.level";
+     level_path = "data/levels/lightmap_test.level";
      loadLevel(*entity_manager, asset_manager, level_path, Cameras::level_camera);
      Cameras::editor_camera = Cameras::level_camera;
 

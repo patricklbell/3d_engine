@@ -1726,7 +1726,9 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
                 }
                 else {
                     auto pos = m_e->position + m_e->gizmo_position_offset;
-                    edited_transform = editTransform(camera, pos, glm::quat(), glm::mat3(), TransformType::POS);
+                    glm::quat _unused_quat;
+                    glm::mat3 _unused_mat;
+                    edited_transform = editTransform(camera, pos, _unused_quat, _unused_mat, TransformType::POS);
                     m_e->gizmo_position_offset = pos - m_e->position;
                 }
                 editor::transform_active = edited_transform != TransformType::NONE;
