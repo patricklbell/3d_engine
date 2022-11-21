@@ -1,4 +1,8 @@
-#ifdef COMPILING_VS
+#begin VERTEX
+#macro ALPHA_CLIP 0
+#macro VEGETATION 0
+#macro ANIMATED_BONES 0
+
 layout (location = 0) in vec3 in_vertex;
 
 #if ALPHA_CLIP
@@ -54,9 +58,9 @@ void main() {
     gl_Position = model * vertex;
 }
 
-#endif
+#end
 
-#ifdef COMPILING_GS
+#begin GEOMETRY
 layout(triangles, invocations=CASCADE_NUM) in;
 layout(triangle_strip, max_vertices=3) out;
 
@@ -82,9 +86,9 @@ void main()
     EndPrimitive();
 }
 
-#endif
+#end
 
-#ifdef COMPILING_FS
+#begin FRAGMENT
 
 #if ALPHA_CLIP
 in vec2 texcoord;
@@ -100,4 +104,5 @@ void main()
     }
 #endif
 } 
-#endif
+
+#end

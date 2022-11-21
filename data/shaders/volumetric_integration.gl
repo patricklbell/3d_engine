@@ -1,3 +1,5 @@
+#begin COMPUTE
+
 #load lib/constants.gl
 
 layout(local_size_x = LOCAL_SIZE_X, local_size_y = LOCAL_SIZE_Y, local_size_z = LOCAL_SIZE_Z) in;
@@ -19,12 +21,60 @@ uniform float density;
 uniform bool do_accumulation;
 uniform ivec3 vol_size;
 
+uniform vec3 wind_direction;
+uniform float wind_strength;
+uniform float noise_amount;
+uniform float noise_scale;
+
+layout (binding = 2) uniform sampler2D simplex_value;
+
+// Noise functions
+// https://github.com/Unity-Technologies/VolumetricLighting/blob/master/Assets/VolumetricFog/Shaders/InjectLightingAndDensity.compute
+// Used for scrolling fog density
+float hash( float n ) { return fract(sin(n)*753.5453123); }
+float noisep(vec3 x) {
+    vec3 p = floor(x);
+    vec3 f = fract(x);
+    f = f*f*(3.0-2.0*f);
+	
+    float n = p.x + p.y*157.0 + 113.0*p.z;
+    return mix(mix(mix( hash(n+  0.0), hash(n+  1.0),f.x),
+                   mix( hash(n+157.0), hash(n+158.0),f.x),f.y),
+               mix(mix( hash(n+113.0), hash(n+114.0),f.x),
+                   mix( hash(n+270.0), hash(n+271.0),f.x),f.y),f.z);
+}
+
+float ScrollNoise(vec3 pos, float speed, float scale, vec3 dir, float amount, float bias = 0.0, float mult = 1.0) {
+	float time = time * speed;
+	float noiseScale = scale;
+	vec3 noiseScroll = dir * time;
+	vec3 q = pos - noiseScroll;
+	q *= scale;
+	float f = 0;
+	f = 0.5 * noisep(q);
+	// scroll the next octave in the opposite direction to get some morphing instead of just scrolling
+	q += noiseScroll * scale;
+	q = q * 2.01;
+	f += 0.25 * noisep(q);
+
+	f += bias;
+	f *= mult;
+
+	f = max(f, 0.0);
+	return mix(1.0, f, amount);
+}
+// -------------------------------------------------------------------------------------------
+
 // Henyey-Greenstein
 float phase_function(vec3 view, vec3 light, float g)
 {
     float cos_theta = dot(view, light);
-    float denom     = 1.0f + g * g + 2.0f * g * cos_theta;
-    return (1.0f / (4.0f * PI)) * (1.0f - g * g) / max(pow(denom, 1.5f), EPSILON);
+
+    float gsq = g * g;
+    float denom  = 1.0 + gsq - 2.0 * g * cos_theta;
+    denom = denom * denom * denom;
+    denom = sqrt(max(0.0, denom));
+    return (1.0 - gsq) / denom;
 }
 
 float sample_blue_noise(ivec3 coord) {
@@ -45,13 +95,15 @@ vec3 texel_to_world(vec3 texel, ivec3 texture_size, mat4 inverse_view_proj) {
     return p.xyz;
 }
 
+//#load lib/noise.gl
+
 void main() {
     ivec3 coord = ivec3(gl_GlobalInvocationID.xyz);
 
     // Check that invocation is inside vol, seems slightly redudant
     if (all(lessThan(coord, vol_size))) {
         // Remap blue noise to -0.5 < j < +0.5
-        float jitter = (sample_blue_noise(coord / vol_size) - 0.5) * (1.0 - EPSILON);
+        float jitter = (sample_blue_noise(coord) - 0.5) * (1.0 - EPSILON);
 
         vec3 jittered_texel = vec3(coord);
         jittered_texel.z += jitter; // Jitter z coordinate, @todo check jittering other components
@@ -63,25 +115,30 @@ void main() {
         // Density and coefficient estimation.
         float thickness = view.z;
         
-        vec3 lighting = sun_color;
+        vec3 lighting = sun_color*.4; // Set ambient fog color
 
-        float visibility = 1.0 - shadowness(0.0, jittered_world_pos); // @todo @hardcoded good NdtoL to change bias
-
-        if (visibility > 0.5) {
+        // Add directional lighting
+        {
+            float visibility = 1.0 - shadowness(0.0, jittered_world_pos); // @todo @hardcoded good NdtoL to change bias
             lighting += visibility * sun_color * phase_function(view, -sun_direction, anisotropy);
         }
 
+        // ScrollNoise(warp, _WindSpeed, _NoiseFogScale, _WindDir, _NoiseFogAmount, -0.3, 8.0);
+        float calc_density = density * clamp(ScrollNoise(jittered_world_pos, wind_strength, noise_scale, wind_direction, noise_amount, -0.3, 8.0), 0.0, 1.0 - EPSILON);
+
         // RGB = Amount of in-scattered light, A = Density.
-        vec4 color_density = vec4(lighting * density, density);
+        vec4 color_density = vec4(lighting * calc_density, calc_density);
 
         // Temporal accumulation
         if (do_accumulation) { 
             vec4 prev_color_density = textureLod(prev_vol, coord / float(vol_size), 0.0);
 
             // Blend with previous value, probably better techniques (eg motion vectors)
-            color_density = mix(prev_color_density, color_density, 0.9f);
+            color_density = mix(prev_color_density, color_density, 0.5f);
         }
 
         imageStore(integrated_vol, coord, color_density);
     }
 }
+
+#end

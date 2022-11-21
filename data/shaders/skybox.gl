@@ -1,4 +1,4 @@
-#ifdef COMPILING_VS
+#begin VERTEX
 layout (location = 0) in vec3 in_position;
 
 uniform mat4 untranslated_view_projection;
@@ -12,11 +12,10 @@ void main()
     // @optimize? because part of multiplication is not needed
     gl_Position.z = gl_Position.w;
 }
-#endif
+#end
+#begin FRAGMENT
 
-#ifdef COMPILING_FS
-
-#define VOLUMETRICS 1
+#macro VOLUMETRICS 1
 
 in vec3 texcoords;
 
@@ -34,5 +33,6 @@ void main()
 #if VOLUMETRICS
     out_color.rgb = addInscatteredVolumetrics(out_color.rgb, gl_FragCoord.xyz);
 #endif
-} 
-#endif
+}
+
+#end

@@ -1,7 +1,9 @@
 #define AMBIENT_INTENSITY  0.1
 #define DIFFUSE_INTENSITY  0.9
 
+#if SHADOWS
 #load lib/shadows.gl
+#endif
 
 vec3 calcDirectionalLight(vec3 in_position, vec3 in_normal, vec3 sun_direction, vec3 sun_color, vec3 camera_position, float specular_int, float specular_exp)
 {

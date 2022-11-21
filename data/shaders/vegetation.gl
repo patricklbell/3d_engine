@@ -1,4 +1,4 @@
-#ifdef COMPILING_VS
+#begin VERTEX
 #load lib/constants.gl
 
 layout (location = 0) in vec3 in_vertex;
@@ -46,13 +46,12 @@ void main()
 	// Transpose of perpendicular matrix is inverse
 	vs_out.TBN = mat3(T, B, N);
 }
-#endif
 
+#end
+#begin FRAGMENT
+#macro SHADOWS 0
+#macro VOLUMETRICS 1
 
-#ifdef COMPILING_FS
-
-#load lib/shadows.gl
-#load lib/pbr.gl
 
 in VS_OUT {
     vec2 texcoord;
@@ -63,16 +62,15 @@ in VS_OUT {
 
 out vec4 out_color;
 
-layout (location = 0) uniform sampler2D diffuse_map;
-layout (location = 1) uniform sampler2D normal_map;
-
 #load lib/shared.gl
-
-#define VOLUMETRICS 1
-
+#load lib/shadows.gl
+#load lib/pbr.gl
 #if VOLUMETRICS
 #load lib/volumetrics.gl
 #endif
+
+layout (location = 0) uniform sampler2D diffuse_map;
+layout (location = 1) uniform sampler2D normal_map;
 
 void main()
 {             
@@ -93,7 +91,7 @@ void main()
     hdr_color.rgb = addInscatteredVolumetrics(hdr_color.rgb, gl_FragCoord.xyz);
 #endif
 
-    out_color = vec4(hdr_color,  1.0); // @lightmapping
+    out_color = vec4(hdr_color,  1.0);
 } 
 
-#endif
+#end

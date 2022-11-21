@@ -1,5 +1,3 @@
-#if SHADOWS
-
 layout(binding = 5) uniform sampler2DArray shadow_map;
 layout(binding = 6) uniform sampler3D jitter_vol; // Only needed if using Nvidia method
 
@@ -165,5 +163,3 @@ float shadowness(float NdotL, vec3 position){
 
     return shadowness;
 }
-
-#endif

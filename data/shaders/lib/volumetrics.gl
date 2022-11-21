@@ -46,7 +46,7 @@ vec4 textureTricubic(sampler3D tex, vec3 coord)
 	return mix(tex001, tex000, g0.z); // Weigh along the z-direction
 }
 
-#define TRICUBIC 1
+#macro TRICUBIC 1
 
 #load lib/constants.gl
 #load lib/utilities.gl

@@ -11,14 +11,15 @@
 #include <glm/detail/type_mat.hpp>
 
 #include <camera/core.hpp>
+#include <shader/globals.hpp>
 
 #include "graphics.hpp"
 #include "assets.hpp"
 #include "utilities.hpp"
 #include "globals.hpp"
-#include "shader.hpp"
 #include "entities.hpp"
 #include "editor.hpp"
+#include "game_behaviour.hpp"
 
 int    window_width;
 int    window_height;
@@ -47,7 +48,7 @@ namespace graphics {
     int shadow_size = 4096;
     float shadow_cascade_distances[SHADOW_CASCADE_NUM];
     // @note make sure to change macro to SHADOW_CASCADE_NUM + 1
-    const std::string shadow_shader_macro = "#define SHADOWS 1\n#define CASCADE_NUM " + std::to_string(SHADOW_CASCADE_NUM) + "\n";
+    const std::string shadow_shader_macro = "#define CASCADE_NUM " + std::to_string(SHADOW_CASCADE_NUM) + "\n";
     glm::mat4x4 shadow_vps[SHADOW_CASCADE_NUM];
     GLuint shadow_fbo, shadow_buffer, shadow_matrices_ubo;
     bool do_shadows = true;
@@ -57,7 +58,7 @@ namespace graphics {
     //
     // Volumetric Fog
     //
-    const bool do_volumetrics = true;
+    bool do_volumetrics = true;
     const glm::ivec3 VOLUMETRIC_RESOLUTION{ 160, 90, 128 };
     constexpr int NUM_BLUE_NOISE_TEXTURES = 16;
     // For now use the same texture for all PM
@@ -70,10 +71,7 @@ namespace graphics {
                                               "\n#define LOCAL_SIZE_Y " + std::to_string(VOLUMETRIC_LOCAL_SIZE.y) +
                                               "\n#define LOCAL_SIZE_Z " + std::to_string(VOLUMETRIC_LOCAL_SIZE.z) + "\n"; // @todo
     // global fog settings, @todo local fog volumes etc.
-    struct FogProperties {
-        float anisotropy = 0.8;
-        float density = 0.05;
-    } global_fog_properties;
+    FogProperties global_fog_properties;
 
     //
     // WATER PLANE COLLISIONS
@@ -87,8 +85,7 @@ namespace graphics {
     //
     GLuint bone_matrices_ubo;
     const std::string animation_macro = "#define MAX_BONES " + std::to_string(MAX_BONES) +
-                                      "\n#define MAX_BONE_WEIGHTS " + std::to_string(MAX_BONE_WEIGHTS) +
-                                      "\n#define ANIMATED_BONES 1\n";
+                                      "\n#define MAX_BONE_WEIGHTS " + std::to_string(MAX_BONE_WEIGHTS) + "\n";
 
     //
     // ASSETS
@@ -108,6 +105,12 @@ namespace graphics {
     // Environment
     //
     Environment environment;
+
+    //
+    // Wind
+    // @todo 
+    glm::vec3 wind_direction = glm::normalize(glm::vec3(0.5, -0.1, 0.6));
+    float wind_strength = 3.0;
 
     //
     // Autmatic exposure (eye correction)
@@ -147,7 +150,7 @@ static void writeBoneMatricesUbo(const std::array<glm::mat4, MAX_BONES>& final_b
     glBindBuffer(GL_UNIFORM_BUFFER, 0);
 }
 
-inline static void drawMeshMat(Shader& s, const Mesh* mesh, const glm::mat4& g_model_rot_scl, const glm::mat4& g_model_pos, const glm::mat4& vp, const Texture* ao = nullptr) {
+inline static void drawMeshMat(const Shader& s, const Mesh* mesh, const glm::mat4& g_model_rot_scl, const glm::mat4& g_model_pos, const glm::mat4& vp, const Texture* ao = nullptr) {
     glBindVertexArray(mesh->vao);
     for (int j = 0; j < mesh->num_meshes; ++j) {
         // Since the mesh transforms encode scale this will mess up global translation so we apply translation after
@@ -190,7 +193,7 @@ inline static void drawMeshMat(Shader& s, const Mesh* mesh, const glm::mat4& g_m
     }
 }
 
-inline static void drawMeshShadow(Shader& s, const Mesh* mesh, const glm::mat4& g_model_rot_scl, const glm::mat4& g_model_pos) {
+inline static void drawMeshShadow(const Shader& s, const Mesh* mesh, const glm::mat4& g_model_rot_scl, const glm::mat4& g_model_pos) {
     glBindVertexArray(mesh->vao);
     for (int j = 0; j < mesh->num_meshes; ++j) {
         // Since the mesh transforms encode scale this will mess up global translation so we apply translation after
@@ -377,7 +380,7 @@ void bindDrawShadowMap(const EntityManager& entity_manager) {
     // 
     // Draw normal static mesh entities
     //
-    glUseProgram(shader::null.program);
+    glUseProgram(Shaders::shadow.program());
     for (int i = 0; i < ENTITY_COUNT; ++i) {
         if (entity_manager.entities[i] == nullptr) continue;
 
@@ -397,15 +400,17 @@ void bindDrawShadowMap(const EntityManager& entity_manager) {
 
         auto g_model_rot_scl = glm::mat4_cast(m_e->rotation) * glm::mat4x4(m_e->scale);
         auto g_model_pos = glm::translate(glm::mat4x4(1.0), m_e->position);
-        drawMeshShadow(shader::null, m_e->mesh, g_model_rot_scl, g_model_pos);
+        drawMeshShadow(Shaders::shadow, m_e->mesh, g_model_rot_scl, g_model_pos);
     }
 
     // 
     // Draw animated PBR mesh entities, same as static with some extra uniforms
     //
-    if (anim_mesh_entities.size() > 0) {
-        glUseProgram(shader::animated_null.program);
 
+    if (anim_mesh_entities.size() > 0) {
+        Shaders::shadow.set_macro("ANIMATED_BONES", true);
+
+        glUseProgram(Shaders::shadow.program());
         for (const auto& a_e : anim_mesh_entities) {
             if (a_e->animesh == nullptr) continue;
 
@@ -413,26 +418,29 @@ void bindDrawShadowMap(const EntityManager& entity_manager) {
 
             auto g_model_rot_scl = glm::mat4_cast(a_e->rotation) * glm::mat4x4(a_e->scale);
             auto g_model_pos = glm::translate(glm::mat4x4(1.0), a_e->position);
-            drawMeshShadow(shader::animated_null, a_e->mesh, g_model_rot_scl, g_model_pos);
+            drawMeshShadow(Shaders::shadow, a_e->mesh, g_model_rot_scl, g_model_pos);
         }
+
+        Shaders::shadow.set_macro("ANIMATED_BONES", false);
     }
 
     if (vegetation_entities.size() > 0) {
         glDisable(GL_CULL_FACE);
         glEnable(GL_SAMPLE_ALPHA_TO_COVERAGE);
+        Shaders::shadow.set_macro("VEGETATION", true, false);
+        Shaders::shadow.set_macro("ALPHA_CLIP", true);
 
-        glUseProgram(shader::null_vegetation.program);
+        glUseProgram(Shaders::shadow.program());
 
-        auto wind_direction = glm::normalize(glm::vec2(0.5, 0.6));
-        glUniform2f(shader::null_vegetation.uniform("wind_direction"), wind_direction.x, wind_direction.y);
-        glUniform1f(shader::null_vegetation.uniform("wind_strength"), 3.0);
-        glUniform1f(shader::null_vegetation.uniform("time"), glfwGetTime());
+        const auto wind_direction_planar = glm::normalize(glm::vec2(wind_direction.x, wind_direction.z));
+        glUniform2fv(Shaders::shadow.uniform("wind_direction"), 1, &wind_direction_planar[0]);
+        glUniform1f(Shaders::shadow.uniform("wind_strength"), wind_strength);
 
         for (const auto& v_e : vegetation_entities) {
             if (v_e->texture == nullptr) continue;
 
             auto model = createModelMatrix(v_e->position, v_e->rotation, v_e->scale);
-            glUniformMatrix4fv(shader::null_vegetation.uniform("model"), 1, GL_FALSE, &model[0][0]);
+            glUniformMatrix4fv(Shaders::shadow.uniform("model"), 1, GL_FALSE, &model[0][0]);
 
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, v_e->texture->id);
@@ -446,6 +454,8 @@ void bindDrawShadowMap(const EntityManager& entity_manager) {
             }
         }
 
+        Shaders::shadow.set_macro("VEGETATION", false, false);
+        Shaders::shadow.set_macro("ALPHA_CLIP", false);
         glEnable(GL_CULL_FACE);
         glDisable(GL_SAMPLE_ALPHA_TO_COVERAGE);
     }
@@ -477,7 +487,7 @@ void initBRDFLut(AssetManager& asset_manager) {
     glBindFramebuffer(GL_FRAMEBUFFER, FBO);
     glBindRenderbuffer(GL_RENDERBUFFER, RBO);
 
-    glUseProgram(shader::generate_brdf_lut.program);
+    glUseProgram(Shaders::generate_brdf_lut.program());
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, brdf_lut->id, 0);
     glViewport(0, 0, brdf_lut->resolution.x, brdf_lut->resolution.y);
 
@@ -513,7 +523,7 @@ void bindDrawWaterColliderMap(const EntityManager& entity_manager, WaterEntity* 
     glViewport(0, 0, WATER_COLLIDER_SIZE, WATER_COLLIDER_SIZE);
 
     // Render entities only when they intersect water plane
-    glUseProgram(shader::plane_projection.program);
+    glUseProgram(Shaders::plane_projection.program());
     glDisable(GL_DEPTH_TEST);
     glDepthMask(GL_TRUE);
     glDisable(GL_CULL_FACE);
@@ -531,7 +541,7 @@ void bindDrawWaterColliderMap(const EntityManager& entity_manager, WaterEntity* 
 
         auto model = createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
         auto model_inv_water_grid = inv_water_grid * model;
-        glUniformMatrix4fv(shader::plane_projection.uniform("model"), 1, GL_FALSE, &model_inv_water_grid[0][0]);
+        glUniformMatrix4fv(Shaders::plane_projection.uniform("model"), 1, GL_FALSE, &model_inv_water_grid[0][0]);
 
         auto& mesh = m_e->mesh;
         for (int j = 0; j < mesh->num_materials; ++j) {
@@ -548,20 +558,20 @@ void bindDrawWaterColliderMap(const EntityManager& entity_manager, WaterEntity* 
 void distanceTransformWaterFbo(WaterEntity* water) {
     constexpr uint64_t num_steps = nextPowerOf2(WATER_COLLIDER_SIZE, WATER_COLLIDER_SIZE) - 2.0;
 
-    glUseProgram(shader::jfa.program);
-    glUniform1f(shader::jfa.uniform("num_steps"), num_steps);
-    glUniform2f(shader::jfa.uniform("resolution"), WATER_COLLIDER_SIZE, WATER_COLLIDER_SIZE);
+    glUseProgram(Shaders::jump_flood.program());
+    glUniform1f(Shaders::jump_flood.uniform("num_steps"), num_steps);
+    glUniform2f(Shaders::jump_flood.uniform("resolution"), WATER_COLLIDER_SIZE, WATER_COLLIDER_SIZE);
 
     glViewport(0, 0, WATER_COLLIDER_SIZE, WATER_COLLIDER_SIZE);
     for (int step = 0; step <= num_steps; step++)
     {
         // Last iteration convert jfa to distance transform
         if (step != num_steps) {
-            glUniform1f(shader::jfa.uniform("step"), step);
+            glUniform1f(Shaders::jump_flood.uniform("step"), step);
         }
         else {
-            glUseProgram(shader::jfa_distance.program);
-            glUniform2f(shader::jfa_distance.uniform("dimensions"), water->scale[0][0], water->scale[2][2]);
+            glUseProgram(Shaders::jfa_to_distance.program());
+            glUniform2f(Shaders::jfa_to_distance.uniform("dimensions"), water->scale[0][0], water->scale[2][2]);
         }
 
         glBindFramebuffer(GL_FRAMEBUFFER, water_collider_fbos[(step + 1) % 2]);
@@ -577,12 +587,12 @@ void distanceTransformWaterFbo(WaterEntity* water) {
     glGenerateMipmap(GL_TEXTURE_2D);
     water_collider_final_fbo = (num_steps + 1) % 2;
 
-    glUseProgram(shader::gaussian_blur.program);
+    glUseProgram(Shaders::gaussian_blur.program());
     for (unsigned int i = 0; i < 2; i++)
     {
         glBindFramebuffer(GL_FRAMEBUFFER, water_collider_fbos[(num_steps + i) % 2]);
 
-        glUniform1i(shader::gaussian_blur.uniform("horizontal"), (int)i);
+        glUniform1i(Shaders::gaussian_blur.uniform("horizontal"), (int)i);
 
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, water_collider_buffers[(num_steps + i + 1) % 2]);
@@ -791,13 +801,25 @@ void computeVolumetrics(uint64_t frame_i, const Camera& camera) {
     }
 
     // Convert fog volumes, for now just a global fog, into camera fitted color&density 3D texture
-    auto& vi = shader::volumetric_integration;
-    glUseProgram(vi.program);
+    auto& vi = Shaders::volumetric_integration;
+    glUseProgram(vi.program());
 
-    glUniform1f(vi.uniform("anisotropy"), global_fog_properties.anisotropy);
-    glUniform1f(vi.uniform("density"), global_fog_properties.density);
+    if (playing) {
+        glUniform1f(vi.uniform("anisotropy"), Game::fog_properties.anisotropy);
+        glUniform1f(vi.uniform("density"), Game::fog_properties.density);
+        glUniform1f(vi.uniform("noise_scale"), Game::fog_properties.noise_scale);
+        glUniform1f(vi.uniform("noise_amount"), Game::fog_properties.noise_amount);
+    }
+    else {
+        glUniform1f(vi.uniform("anisotropy"), global_fog_properties.anisotropy);
+        glUniform1f(vi.uniform("density"), global_fog_properties.density);
+        glUniform1f(vi.uniform("noise_scale"), global_fog_properties.noise_scale);
+        glUniform1f(vi.uniform("noise_amount"), global_fog_properties.noise_amount);
+    }
     glUniform1i(vi.uniform("do_accumulation"), frame_i != 0);
     glUniform3iv(vi.uniform("vol_size"), 1, &VOLUMETRIC_RESOLUTION[0]);
+    glUniform3fv(vi.uniform("wind_direction"), 1, &wind_direction[0]);
+    glUniform1f(vi.uniform("wind_strength"), wind_strength);
 
     const auto inv_vp = glm::inverse(camera.projection * camera.view);
     glUniformMatrix4fv(vi.uniform("inv_vp"), 1, GL_FALSE, &inv_vp[0][0]);
@@ -815,8 +837,8 @@ void computeVolumetrics(uint64_t frame_i, const Camera& camera) {
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT); // @todo do other rendering steps while waiting
 
     // Raymarch through fog volume to accumulate scattering and transmission
-    auto& vr = shader::volumetric_raymarch;
-    glUseProgram(vr.program);
+    auto& vr = Shaders::volumetric_raymarch;
+    glUseProgram(vr.program());
 
     glUniform3iv(vr.uniform("vol_size"), 1, &VOLUMETRIC_RESOLUTION[0]);
 
@@ -1045,8 +1067,8 @@ void blurBloomFbo(double dt) {
     // 
     // Progressively downsample screen texture
     //
-    glUseProgram(shader::downsample.program);
-    glUniform2f(shader::downsample.uniform("resolution"), window_width, window_height);
+    glUseProgram(Shaders::downsample.program());
+    glUniform2f(Shaders::downsample.uniform("resolution"), window_width, window_height);
 
     glActiveTexture(GL_TEXTURE0);
     if(do_msaa) glBindTexture(GL_TEXTURE_2D, hdr_buffer_resolve_multisample);
@@ -1059,12 +1081,12 @@ void blurBloomFbo(double dt) {
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mip.texture, 0);
 
         int is_mip0 = i == bloom_mip_infos.size() - 1;
-        glUniform1i(shader::downsample.uniform("is_mip0"), is_mip0);
+        glUniform1i(Shaders::downsample.uniform("is_mip0"), is_mip0);
 
         drawQuad();
 
         // Set next iterations properties
-        glUniform2fv(shader::downsample.uniform("resolution"), 1, &mip.size[0]);
+        glUniform2fv(Shaders::downsample.uniform("resolution"), 1, &mip.size[0]);
         glBindTexture(GL_TEXTURE_2D, mip.texture);
 
         // Extract luma from furthest downsample
@@ -1092,7 +1114,7 @@ void blurBloomFbo(double dt) {
     glBlendFunc(GL_ONE, GL_ONE);
     glBlendEquation(GL_FUNC_ADD);
 
-    glUseProgram(shader::upsample.program);
+    glUseProgram(Shaders::blur_upsample.program());
     for (int i = bloom_mip_infos.size() - 1; i > 0; i--) {
         const auto& mip = bloom_mip_infos[i];
         const auto& next_mip = bloom_mip_infos[i - 1];
@@ -1133,10 +1155,11 @@ void drawSkybox(const Texture* skybox, const Camera &camera) {
 	glDepthFunc(GL_LEQUAL); 
     glDisable(GL_CULL_FACE);
 
-    glUseProgram(shader::skybox.program);
+    Shaders::skybox.set_macro("VOLUMETRICS", do_volumetrics);
+    glUseProgram(Shaders::skybox.program());
     auto untranslated_view = glm::mat4(glm::mat3(camera.view));
     auto untranslated_view_projection = camera.projection * untranslated_view;
-    glUniformMatrix4fv(shader::skybox.uniform("untranslated_view_projection"), 1, GL_FALSE, &untranslated_view_projection[0][0]);
+    glUniformMatrix4fv(Shaders::skybox.uniform("untranslated_view_projection"), 1, GL_FALSE, &untranslated_view_projection[0][0]);
 
     glActiveTexture(GL_TEXTURE3);
     glBindTexture(GL_TEXTURE_CUBE_MAP, skybox->id);
@@ -1195,12 +1218,10 @@ void drawEntitiesHdr(const EntityManager& entity_manager, const Texture* skybox,
     // 
     // Draw normal static PBR mesh entities
     //
-    auto unified_s = &shader::unified;
-    if (!do_shadows) {
-        unified_s = &shader::unified_ns;
-    }
+    Shaders::unified.set_macro("SHADOWS", do_shadows);
+    Shaders::unified.set_macro("VOLUMETRICS", do_volumetrics);
 
-    glUseProgram(unified_s->program);
+    glUseProgram(Shaders::unified.program());
     for (int i = 0; i < ENTITY_COUNT; ++i) {
         if (entity_manager.entities[i] == nullptr) continue;
 
@@ -1225,26 +1246,23 @@ void drawEntitiesHdr(const EntityManager& entity_manager, const Texture* skybox,
         if (!(entityInherits(m_e->type, MESH_ENTITY)) || m_e->mesh == nullptr) continue;
 
         // Material multipliers
-        glUniform3fv(unified_s->uniform("albedo_mult"), 1, &m_e->albedo_mult[0]);
-        glUniform1f(unified_s->uniform("roughness_mult"), m_e->roughness_mult);
-        glUniform1f(unified_s->uniform("metal_mult"),     m_e->metal_mult);
-        glUniform1f(unified_s->uniform("ao_mult"),        m_e->ao_mult);
+        glUniform3fv(Shaders::unified.uniform("albedo_mult"), 1, &m_e->albedo_mult[0]);
+        glUniform1f(Shaders::unified.uniform("roughness_mult"), m_e->roughness_mult);
+        glUniform1f(Shaders::unified.uniform("metal_mult"),     m_e->metal_mult);
+        glUniform1f(Shaders::unified.uniform("ao_mult"),        m_e->ao_mult);
 
         auto g_model_rot_scl = glm::mat4_cast(m_e->rotation) * glm::mat4x4(m_e->scale);
         auto g_model_pos     = glm::translate(glm::mat4x4(1.0), m_e->position);
-        drawMeshMat(*unified_s, m_e->mesh, g_model_rot_scl, g_model_pos, vp, m_e->do_lightmap ? m_e->lightmap: nullptr);
+        drawMeshMat(Shaders::unified, m_e->mesh, g_model_rot_scl, g_model_pos, vp, m_e->do_lightmap ? m_e->lightmap: nullptr);
     }
 
     // 
     // Draw animated PBR mesh entities, same as static with some extra uniforms
     //
     if (!lightmapping && anim_mesh_entities.size() > 0) {
-        auto animated_unified_s = &shader::animated_unified;
-        if (!do_shadows) {
-            animated_unified_s = &shader::animated_unified_ns;
-        }
+        Shaders::unified.set_macro("ANIMATED_BONES", true);
         
-        glUseProgram(animated_unified_s->program);
+        glUseProgram(Shaders::unified.program());
         for (const auto &a_e : anim_mesh_entities) {
             if (a_e->animesh == nullptr) continue;
 
@@ -1256,26 +1274,28 @@ void drawEntitiesHdr(const EntityManager& entity_manager, const Texture* skybox,
                 switch (a_e->blend_state)
                 {
                 case AnimatedMeshEntity::BlendState::PREVIOUS:
-                    glUniform3f(animated_unified_s->uniform("albedo_mult"), 0, 0, 1);
+                    glUniform3f(Shaders::unified.uniform("albedo_mult"), 0, 0, 1);
                     break;
                 case AnimatedMeshEntity::BlendState::NEXT:
-                    glUniform3f(animated_unified_s->uniform("albedo_mult"), 1, 0, 0);
+                    glUniform3f(Shaders::unified.uniform("albedo_mult"), 1, 0, 0);
                     break;
                 default:
-                    glUniform3fv(animated_unified_s->uniform("albedo_mult"), 1, &a_e->albedo_mult[0]);
+                    glUniform3fv(Shaders::unified.uniform("albedo_mult"), 1, &a_e->albedo_mult[0]);
                     break;
                 }
             } else {
-                glUniform3fv(animated_unified_s->uniform("albedo_mult"), 1, &a_e->albedo_mult[0]);
+                glUniform3fv(Shaders::unified.uniform("albedo_mult"), 1, &a_e->albedo_mult[0]);
             }
-            glUniform1f(animated_unified_s->uniform("roughness_mult"), a_e->roughness_mult);
-            glUniform1f(animated_unified_s->uniform("metal_mult"), a_e->metal_mult);
-            glUniform1f(animated_unified_s->uniform("ao_mult"), a_e->ao_mult);
+            glUniform1f(Shaders::unified.uniform("roughness_mult"), a_e->roughness_mult);
+            glUniform1f(Shaders::unified.uniform("metal_mult"), a_e->metal_mult);
+            glUniform1f(Shaders::unified.uniform("ao_mult"), a_e->ao_mult);
 
             auto g_model_rot_scl = glm::mat4_cast(a_e->rotation) * glm::mat4x4(a_e->scale);
             auto g_model_pos = glm::translate(glm::mat4x4(1.0), a_e->position);
-            drawMeshMat(*animated_unified_s, a_e->mesh, g_model_rot_scl, g_model_pos, vp);
+            drawMeshMat(Shaders::unified, a_e->mesh, g_model_rot_scl, g_model_pos, vp);
         }
+
+        Shaders::unified.set_macro("ANIMATED_BONES", false);
     }
 
     // 
@@ -1285,24 +1305,20 @@ void drawEntitiesHdr(const EntityManager& entity_manager, const Texture* skybox,
     if(!lightmapping && vegetation_entities.size() > 0) {
         glDisable(GL_CULL_FACE);
         glEnable(GL_SAMPLE_ALPHA_TO_COVERAGE);
+        Shaders::vegetation.set_macro("SHADOWS", do_shadows);
+        Shaders::vegetation.set_macro("VOLUMETRICS", do_volumetrics);
 
-        auto vegetation_s = &shader::vegetation;
-        if (!do_shadows) {
-            vegetation_s = &shader::vegetation_ns;
-        }
-
-        glUseProgram(vegetation_s->program);
-        auto wind_direction = glm::normalize(glm::vec2(0.5, 0.6));
-        glUniform2f(vegetation_s->uniform("wind_direction"), wind_direction.x, wind_direction.y);
-        glUniform1f(vegetation_s->uniform("wind_strength"), 3.0);
+        glUseProgram(Shaders::vegetation.program());
+        glUniform2f(Shaders::vegetation.uniform("wind_direction"), wind_direction.x, wind_direction.y);
+        glUniform1f(Shaders::vegetation.uniform("wind_strength"), 3.0);
 
         for (const auto &v_e : vegetation_entities) {
             if(v_e->texture == nullptr) continue;
 
             auto model = createModelMatrix(v_e->position, v_e->rotation, v_e->scale);
             auto mvp   = vp * model;
-            glUniformMatrix4fv(vegetation_s->uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
-            glUniformMatrix4fv(vegetation_s->uniform("model"), 1, GL_FALSE, &model[0][0]);
+            glUniformMatrix4fv(Shaders::vegetation.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
+            glUniformMatrix4fv(Shaders::vegetation.uniform("model"), 1, GL_FALSE, &model[0][0]);
 
             glActiveTexture(GL_TEXTURE0);
             glBindTexture(GL_TEXTURE_2D, v_e->texture->id);
@@ -1327,12 +1343,10 @@ void drawEntitiesHdr(const EntityManager& entity_manager, const Texture* skybox,
     if (!lightmapping && entity_manager.water != NULLID) {
         auto water = (WaterEntity*)entity_manager.getEntity(entity_manager.water);
         if (water != nullptr) {
-            auto water_s = &shader::water;
-            if (!do_shadows) {
-                water_s = &shader::water_ns;
-            }
+            Shaders::water.set_macro("SHADOWS", do_shadows);
+            Shaders::water.set_macro("VOLUMETRICS", do_volumetrics);
 
-            glUseProgram(water_s->program);
+            glUseProgram(Shaders::water.program());
             // @debug the geometry shader and tesselation
             //glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
@@ -1360,11 +1374,11 @@ void drawEntitiesHdr(const EntityManager& entity_manager, const Texture* skybox,
     
             auto model = createModelMatrix(water->position, glm::quat(), water->scale);
             auto mvp = vp * model;
-            glUniformMatrix4fv(water_s->uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
-            glUniformMatrix4fv(water_s->uniform("model"), 1, GL_FALSE, &model[0][0]);
-            glUniform4fv(water_s->uniform("shallow_color"), 1, &water->shallow_color[0]);
-            glUniform4fv(water_s->uniform("deep_color"), 1, &water->deep_color[0]);
-            glUniform4fv(water_s->uniform("foam_color"), 1, &water->foam_color[0]);
+            glUniformMatrix4fv(Shaders::water.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
+            glUniformMatrix4fv(Shaders::water.uniform("model"), 1, GL_FALSE, &model[0][0]);
+            glUniform4fv(Shaders::water.uniform("shallow_color"), 1, &water->shallow_color[0]);
+            glUniform4fv(Shaders::water.uniform("deep_color"), 1, &water->deep_color[0]);
+            glUniform4fv(Shaders::water.uniform("foam_color"), 1, &water->foam_color[0]);
 
             if (water_grid.complete) {
                 glBindVertexArray(water_grid.vao);
@@ -1394,11 +1408,11 @@ void drawPost(Texture *skybox, const Camera &camera){
     glDepthMask(GL_FALSE);
     glDisable(GL_DEPTH_TEST);
 
-    auto& post = shader::post[(int)do_bloom];
-    glUseProgram(post.program);
+    Shaders::post.set_macro("BLOOM", do_bloom);
+    glUseProgram(Shaders::post.program());
 
-    glUniform2f(post.uniform("resolution"), window_width, window_height);
-    glUniform1f(post.uniform("exposure"), exposure);
+    glUniform2f(Shaders::post.uniform("resolution"), window_width, window_height);
+    glUniform1f(Shaders::post.uniform("exposure"), exposure);
 
     glActiveTexture(GL_TEXTURE0);
     if (do_msaa) glBindTexture(GL_TEXTURE_2D, hdr_buffer_resolve_multisample);
@@ -1465,7 +1479,7 @@ void convoluteIrradianceFromCubemap(Texture *in_tex, Texture *out_tex, GLint for
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
-    glUseProgram(shader::diffuse_convolution.program);
+    glUseProgram(Shaders::diffuse_convolution.program());
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_CUBE_MAP, in_tex->id);
@@ -1474,7 +1488,7 @@ void convoluteIrradianceFromCubemap(Texture *in_tex, Texture *out_tex, GLint for
     glBindFramebuffer(GL_FRAMEBUFFER, FBO);
     for (unsigned int i = 0; i < 6; ++i) {
         auto vp = projection * glm::mat4(glm::mat3(views[i])); // removes translation @speed
-        glUniformMatrix4fv(shader::diffuse_convolution.uniform("vp"), 1, GL_FALSE, &vp[0][0]);
+        glUniformMatrix4fv(Shaders::diffuse_convolution.uniform("vp"), 1, GL_FALSE, &vp[0][0]);
         
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, out_tex->id, 0);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -1525,23 +1539,23 @@ void convoluteSpecularFromCubemap(Texture* in_tex, Texture* out_tex, GLint forma
 
     glGenerateMipmap(GL_TEXTURE_CUBE_MAP); // Since we store different roughnesses in mip maps
 
-    glUseProgram(shader::specular_convolution.program);
+    glUseProgram(Shaders::specular_convolution.program());
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_CUBE_MAP, in_tex->id);
     float texelSphericalArea = 4.0 * PI / (6.0 * in_tex->resolution[0] * in_tex->resolution[0]);
-    glUniform1f(shader::specular_convolution.uniform("texelSphericalArea"), texelSphericalArea);
+    glUniform1f(Shaders::specular_convolution.uniform("texelSphericalArea"), texelSphericalArea);
 
     glm::ivec2 mip_resolution = out_tex->resolution;
     for (unsigned int mip = 0; mip < MAX_SPECULAR_MIP; ++mip) {
         glViewport(0, 0, mip_resolution.x, mip_resolution.y);
         
         float roughness = (float)mip / (float)(MAX_SPECULAR_MIP - 1);
-        glUniform1f(shader::specular_convolution.uniform("roughness"), roughness);
+        glUniform1f(Shaders::specular_convolution.uniform("roughness"), roughness);
 
         for (unsigned int i = 0; i < 6; ++i) {
             auto vp = projection * glm::mat4(glm::mat3(views[i])); // removes translation @speed precompute
-            glUniformMatrix4fv(shader::specular_convolution.uniform("vp"), 1, GL_FALSE, &vp[0][0]);
+            glUniformMatrix4fv(Shaders::specular_convolution.uniform("vp"), 1, GL_FALSE, &vp[0][0]);
 
             glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
                 GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, out_tex->id, mip);

@@ -1,4 +1,4 @@
-#ifdef COMPILING_VS
+#begin VERTEX
 layout (location = 0) in vec3 vertex;
 
 uniform mat4 model;
@@ -8,9 +8,9 @@ void main()
     // transforms vertex into grid space
     gl_Position = model * vec4(vertex, 1.0);
 }
-#endif
 
-#ifdef COMPILING_GS
+#end
+#begin GEOMETRY
 
 layout (triangles) in;
 layout (triangle_strip, max_vertices = 4) out;
@@ -70,9 +70,8 @@ void main() {
     }
 }  
 
-#endif
-
-#ifdef COMPILING_FS
+#end
+#begin FRAGMENT
 
 in vec2 texcoord;
 out vec4 out_color;
@@ -80,5 +79,6 @@ out vec4 out_color;
 void main()
 {
     out_color = vec4(texcoord, 1.0, 1.0);
-} 
-#endif
+}
+
+#end

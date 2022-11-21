@@ -15,7 +15,7 @@ vec4 SmoothTriangleWave( vec4 x ) {
 vec3 applyWindToVegetation(vec3 v, vec3 n, float branch_atten, float branch_phase, float edge_atten, vec2 direction, float strength, float time) {
     float fLength = length(v);
 
-    const float fDetailPhase = 0.5;
+    const float fDetailPhase = 0.9;
     // Phases (object, v, branch)    
     float object_phase = dot(v.xyz, vec3(1.0)); 
     branch_phase += object_phase; 
@@ -23,7 +23,7 @@ vec3 applyWindToVegetation(vec3 v, vec3 n, float branch_atten, float branch_phas
     // x is used for edges; y is used for branches    
     vec2 wave_t = vec2(time) + vec2(v_phase, branch_phase); 
 
-    const float fSpeed = strength, fDetailAmp = 0.2, fBranchAmp = 0.6;
+    const float fSpeed = strength, fDetailAmp = 0.01, fBranchAmp = 1.6;
     // 1.975, 0.793, 0.375, 0.193 are good frequencies    
     vec4 wave = (fract( wave_t.xxyy * vec4(1.975, 0.793, 0.375, 0.193) ) * 2.0 - 1.0 ) * fSpeed; 
     wave = SmoothTriangleWave( wave ); 
@@ -32,7 +32,7 @@ vec3 applyWindToVegetation(vec3 v, vec3 n, float branch_atten, float branch_phas
     v.xyz += wave_sum.xxy * vec3((1.0-edge_atten) * fDetailAmp * n.xy, (1.0-branch_atten) * fBranchAmp); 
 
     //const float fBendScale = 0.1 + 0.1*sin(0.5*time);
-    const float fBendScale = 0.007;
+    const float fBendScale = 0.01;
     // Bend factor - Wind variation is done on the CPU.    
     float fBF = v.z * fBendScale; 
     // Smooth bending factor and increase its nearby height limit. 
@@ -46,4 +46,3 @@ vec3 applyWindToVegetation(vec3 v, vec3 n, float branch_atten, float branch_phas
 
     return v;
 }
-

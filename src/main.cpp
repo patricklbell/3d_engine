@@ -31,11 +31,11 @@ GLFWwindow* window;
 #include <controls/globals.hpp>
 
 #include <camera/globals.hpp>
+#include <shader/globals.hpp>
 
 #include "globals.hpp"
 #include "graphics.hpp"
 #include "utilities.hpp"
-#include "shader.hpp"
 #include "texture.hpp"
 #include "editor.hpp"
 #include "assets.hpp"
@@ -45,7 +45,6 @@ GLFWwindow* window;
 #include "lightmapper.hpp"
 
 // Defined in globals.hpp
-std::string glsl_version;
 std::string exepath;
 glm::vec3 sun_color;
 glm::vec3 sun_direction;
@@ -57,6 +56,18 @@ bool playing = false, global_paused = false;
 bool has_played = false;
 SoLoud::Soloud soloud;
 float global_time_warp = 1.0;
+
+static void cleanup() {
+    // Clean up SoLoud
+    soloud.deinit();
+
+#if DO_MULTITHREAD
+    global_thread_pool->stop();
+#endif
+
+    // Close OpenGL window and terminate GLFW
+    glfwTerminate();
+}
 
 int main() {
     exepath = getexepath();
@@ -72,10 +83,8 @@ int main() {
     glfwWindowHint(GLFW_SAMPLES, 4);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-    glsl_version = "#version 430\n";
 #ifdef __APPLE__
     // GL 4.3 + GLSL 430
-    glsl_version = "#version 430\n";
     glfwWindowHint( // required on Mac OS
         GLFW_OPENGL_FORWARD_COMPAT,
         GL_TRUE
@@ -84,12 +93,10 @@ int main() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 #elif __linux__
     // GL 4.3 + GLSL 430
-    glsl_version = "#version 430\n";
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 #elif _WIN32
     // GL 4.3 + GLSL 430
-    glsl_version = "#version 430\n";
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
 #endif
@@ -147,6 +154,17 @@ int main() {
     global_thread_pool = &thread_pool;
 #endif
 
+
+    // 
+    // Load shaders
+    //
+    if (!Shaders::init()) {
+        std::cerr << "Failed to load shaders, you may have the wrong working directory."
+            " Updating Opengl or your GPU drivers may also fix the problem.\n";
+        cleanup();
+        return true;
+    }
+
     // 
     // Load key binding
     //
@@ -171,11 +189,6 @@ int main() {
         Cameras::level_camera.state = Camera::TYPE::STATIC;
     }
 
-    // 
-    // Load shaders
-    //
-    initGlobalShaders();
-
     /*createEnvironmentFromCubemap(graphics::environment, global_assets,
         { "data/textures/simple_skybox/0006.png", "data/textures/simple_skybox/0002.png",
           "data/textures/simple_skybox/0005.png", "data/textures/simple_skybox/0004.png",
@@ -198,7 +211,7 @@ int main() {
     //soloud.setPan(handle1, -0.2f);              // Set pan; -1 is left, 1 is right
     //soloud.setRelativePlaySpeed(handle1, 1.0f); // Play a bit slower; 1.0f is normal
 
-     level_path = "data/levels/gameplay_test.level";
+     level_path = "data/levels/lightmap_test.level";
      loadLevel(*entity_manager, asset_manager, level_path, Cameras::level_camera);
      Cameras::editor_camera = Cameras::level_camera;
 
@@ -225,7 +238,12 @@ int main() {
         // Hotswap shader files every second
         if (current_time - last_filesystem_hotswap_check >= 1.0) {
             last_filesystem_hotswap_check = current_time;
-            updateGlobalShaders();
+            if (!Shaders::live_update()) {
+                std::cerr << "Failed to load shaders, you may have the wrong working directory."
+                             " Updating Opengl or your GPU drivers may also fix the problem.\n";
+                cleanup();
+                return true;
+            }
         }
         
         if (window_resized){
@@ -321,17 +339,8 @@ int main() {
     } // Check if the ESC key was pressed or the window was closed
     while(!Controls::editor.isAction("exit") && glfwWindowShouldClose(window) == 0);
 
-    // Clean up SoLoud
-    soloud.deinit();
-
-#if DO_MULTITHREAD
-    thread_pool.stop();
-#endif
-
-    // Close OpenGL window and terminate GLFW
-    glfwTerminate();
-
-    return 0;
+    cleanup();
+    return false;
 }
 
 

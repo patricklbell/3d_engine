@@ -1,4 +1,4 @@
-#if COMPILING_VS
+#begin VERTEX
 
 layout (location = 0) in vec3 in_vertex;
 layout (location = 1) in vec2 in_texcoord;
@@ -10,9 +10,9 @@ void main(){
     texcoord = in_texcoord;
 }
 
-#endif
+#end
 
-#if COMPILING_FS
+#begin FRAGMENT
 // https://learnopengl.com/Guest-Articles/2022/Phys.-Based-Bloom
 // This shader performs upsampling on an image,
 // as taken from Call Of Duty method, presented at ACM Siggraph 2014.
@@ -60,4 +60,5 @@ void main()
     out_color += (a+c+g+i);
     out_color *= 1.0 / 16.0;
 }
-#endif
+
+#end

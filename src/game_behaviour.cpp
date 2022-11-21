@@ -10,6 +10,13 @@
 glm::vec3 camera_move_target, camera_move_origin;
 float camera_move_time, camera_move_duration;
 bool do_camera_move = false;
+
+namespace Game {
+    graphics::FogProperties fog_properties;
+};
+
+using namespace Game;
+
 void initCameraMove(glm::vec3 origin, glm::vec3 target, float duration) {
     do_camera_move = true;
     camera_move_target = target;
@@ -17,6 +24,7 @@ void initCameraMove(glm::vec3 origin, glm::vec3 target, float duration) {
 
     camera_move_duration = duration;
     camera_move_time = 0.0f;
+    fog_properties = graphics::global_fog_properties;
 }
 
 void updateCameraMove(float dt) {
@@ -25,6 +33,8 @@ void updateCameraMove(float dt) {
         float t = glm::smoothstep(0.0f, camera_move_duration, camera_move_time);
         t = sqrt(t);
         Cameras::game_camera.set_position(glm::mix(camera_move_origin, camera_move_target, t));
+        fog_properties.density = glm::mix(20 * graphics::global_fog_properties.density, graphics::global_fog_properties.density, t);
+        fog_properties.noise_amount = glm::mix(1.0f, graphics::global_fog_properties.noise_amount, t);
 
         do_camera_move = camera_move_time <= camera_move_duration;
     }
@@ -146,7 +156,7 @@ void resetGameEntities() {
 
     Cameras::game_camera = Cameras::level_camera;
     auto look_dir = glm::normalize(Cameras::game_camera.target - Cameras::game_camera.position);
-    initCameraMove(Cameras::game_camera.position - look_dir * 4.0f, Cameras::game_camera.position, 1.5f);
+    initCameraMove(Cameras::game_camera.position - look_dir * 6.0f, Cameras::game_camera.position, 1.2f);
 }
 
 void playGame(EntityManager* &entity_manager) {

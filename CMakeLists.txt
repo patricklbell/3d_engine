@@ -66,10 +66,13 @@ set(SOURCES
 	src/camera/core.cpp
 	src/camera/globals.cpp
 
+	src/shader/core.cpp
+	src/shader/globals.cpp
+
 	src/utilities.cpp
 	src/graphics.cpp
 	src/main.cpp
-	src/shader.cpp
+	
 	src/texture.cpp
 	src/editor.cpp
 	src/assets.cpp

@@ -98,8 +98,14 @@ namespace graphics{
     extern GLuint shadow_buffer, shadow_fbo, shadow_matrices_ubo;
     extern bool do_shadows;
 
-    extern const bool do_volumetrics;
+    extern bool do_volumetrics;
     extern const std::string volumetric_shader_macro;
+    extern struct FogProperties {
+        float anisotropy = 0.5;
+        float density = 0.02;
+        float noise_scale = 1.5;
+        float noise_amount = 0.5;
+    } global_fog_properties;
 
     extern GLuint water_collider_fbos[2], water_collider_buffers[2];
     extern int water_collider_final_fbo;

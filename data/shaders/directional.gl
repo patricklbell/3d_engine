@@ -1,13 +1,13 @@
-#ifdef COMPILING_VS
+#begin VERTEX
 layout (location = 0) in vec3 position;
 
 void main()
 {
     gl_Position = vec4(position, 1.0);
 }
-#endif
+#end
 
-#ifdef COMPILING_FS
+#begin FRAGMENT
 out vec4 out_color;
 
 uniform sampler2D   positionMap;
@@ -58,5 +58,6 @@ void main()
     vec3 normal = normalize(texture(normalMap, texcoord).xyz);
 
     out_color = vec4(color * calcDirectionalLight(position, normal), 1.0);
-} 
-#endif
+}
+
+#end

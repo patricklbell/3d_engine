@@ -27,7 +27,6 @@
 #include "assimp/types.h"
 #include "texture.hpp"
 #include "assets.hpp"
-#include "shader.hpp"
 #include "graphics.hpp"
 #include "utilities.hpp"
 #include "globals.hpp"

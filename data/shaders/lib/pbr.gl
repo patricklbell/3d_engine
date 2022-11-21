@@ -1,4 +1,7 @@
 #load lib/constants.gl
+#if SHADOWS
+#load lib/shadows.gl
+#endif
 
 #define IBL 1
 

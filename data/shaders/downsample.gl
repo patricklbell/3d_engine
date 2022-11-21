@@ -1,4 +1,4 @@
-#if COMPILING_VS
+#begin VERTEX
 
 layout (location = 0) in vec3 in_vertex;
 layout (location = 1) in vec2 in_texcoord;
@@ -10,9 +10,11 @@ void main(){
     texcoord = in_texcoord;
 }
 
-#endif
+#end
 
-#if COMPILING_FS
+#begin FRAGMENT
+#macro KARIS 1
+
 // https://learnopengl.com/Guest-Articles/2022/Phys.-Based-Bloom
 // This shader performs downsampling on an image,
 // as taken from Call Of Duty method, presented at ACM Siggraph 2014.
@@ -28,7 +30,6 @@ out vec3 out_color;
 
 uniform vec2 resolution;
 layout (location = 0) uniform sampler2D image;
-#define KARIS 1
 #if KARIS
 uniform int is_mip0;
 
@@ -130,4 +131,5 @@ void main()
 #endif
 
 }
-#endif
+
+#end

@@ -20,7 +20,6 @@
 #include "editor.hpp"
 #include "texture.hpp"
 #include "utilities.hpp"
-#include "shader.hpp"
 
 static void writeFrambufferToTga(std::string_view path, int width, int height) {
 	int* buffer = new int[width * height * 3];

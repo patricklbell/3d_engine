@@ -1,4 +1,4 @@
-#if COMPILING_VS
+#begin VERTEX
 
 layout (location = 0) in vec3 in_vertex;
 layout (location = 3) in vec2 in_texcoord;
@@ -48,7 +48,7 @@ void main(){
     vs_out.texcoord = in_texcoord;
 }
 
-#endif
+#end
 
 // Essentially a tesselation shader, but as geometry shader, make into tesselation which has lod for performance
 //#if COMPILING_GS
@@ -152,11 +152,11 @@ void main(){
 //
 //#endif
 
-#if COMPILING_FS
+#begin FRAGMENT
+#macro SHADOWS 0
+#macro VOLUMETRICS 1
 
 #load lib/constants.gl
-
-#define VOLUMETRICS 1
 
 #if VOLUMETRICS
 #load lib/volumetrics.gl
@@ -191,7 +191,6 @@ uniform vec4 foam_color;
 
 #define WAVE_SPEED 0.1f
 
-#load lib/shadows.gl
 #load lib/pbr.gl
 #load lib/utilities.gl
 
@@ -314,4 +313,4 @@ void main(){
   }
 }
 
-#endif
+#end

@@ -1,4 +1,4 @@
-#if COMPILING_VS
+#begin VERTEX
 
 layout (location = 0) in vec3 in_vertex;
 layout (location = 1) in vec2 in_texcoord;
@@ -10,9 +10,8 @@ void main(){
     texcoord = in_texcoord;
 }
 
-#endif
-
-#if COMPILING_FS
+#end
+#begin FRAGMENT
 
 in vec2 texcoord;
 out vec4 out_color;
@@ -34,4 +33,4 @@ void main() {
     out_color = make_distance_transform(gl_FragCoord.xy);
 }
 
-#endif
+#end

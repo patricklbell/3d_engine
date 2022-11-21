@@ -277,5 +277,3 @@ vec3 layeredNormalSimplexNoise2(vec2 v, int octaves, float period, float persist
    return res / avg;
 }
 // -------------------
-
-

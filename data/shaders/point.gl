@@ -1,4 +1,4 @@
-#ifdef COMPILING_VS
+#begin VERTEX
 
 layout (location = 0) in vec3 position;
 
@@ -6,9 +6,9 @@ void main()
 {
     gl_Position = vec4(position, 1.0);
 }
-#endif
 
-#ifdef COMPILING_FS
+#end
+#begin FRAGMENT
 out vec4 out_color;
 
 uniform sampler2D positionMap;
@@ -68,4 +68,5 @@ void main()
 
     out_color = vec4(color, 1.0) * calcPointLight(position, normal);
 }
-#endif
+
+#end
