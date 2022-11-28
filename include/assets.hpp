@@ -49,18 +49,16 @@ enum MeshAttributes : char {
 };
 
 struct Mesh {
-    std::string handle;
     bool complete = false;
+    std::string handle;
 
     MeshAttributes attributes = MESH_ATTRIBUTES_NONE;
 
-    // Serialised Section
     unsigned int    num_indices = 0;
     unsigned int*   indices = nullptr;
 
-    // @note Mesh is not responsible for material's pointers
     uint64_t        num_materials = 0;
-    Material*       materials = nullptr;
+    Material*       materials = nullptr; // @note !!!IMPORTANT!!! allocated with new
     uint64_t*       material_indices = nullptr;
 
     uint64_t        num_vertices = 0;
@@ -74,12 +72,14 @@ struct Mesh {
 
     bool            transparent = false;
 
-    uint64_t        num_meshes = 0;
+    // A submesh is an indice group which is used to avoid rebinding VAOs and duplicating vertices
+    uint64_t        num_submeshes = 0;
     glm::mat4x4*    transforms = nullptr;
-    GLenum          draw_mode = GL_TRIANGLES;
-    GLenum          draw_type = GL_UNSIGNED_INT;
     GLint*          draw_start = nullptr;
     GLint*          draw_count = nullptr;
+
+    GLenum          draw_mode = GL_TRIANGLES;
+    GLenum          draw_type = GL_UNSIGNED_INT; // For now these won't work, but in future this could save memory
 
     GLuint          indices_vbo     = GL_FALSE;
     GLuint 	        vertices_vbo    = GL_FALSE;
@@ -91,6 +91,12 @@ struct Mesh {
     GLuint          weights_vbo     = GL_FALSE;
     GLuint          vao             = GL_FALSE;
 
+    // Culling information @todo
+    struct AABB {
+        glm::vec4 data; // min x, min y, max x, max y
+    };
+    AABB* aabbs = nullptr;
+
     ~Mesh();
 };
 
@@ -99,6 +105,7 @@ struct Mesh {
 #define MAX_BONES 1000
 
 struct AnimatedMesh {
+    bool complete = false;
     std::string handle;
 
     ~AnimatedMesh(); // Frees C arrays
@@ -170,7 +177,9 @@ float getAnimationDuration(const AnimatedMesh &animesh, const std::string& name)
 glm::mat4x4 tickBonesKeyframe(AnimatedMesh::BoneKeyframes& keyframes, float time, bool looping);
 
 struct Texture {
+    bool complete = false;
     std::string handle;
+
     GLuint id = GL_FALSE;
     GLint format = GL_RGBA;
     glm::ivec2 resolution;
@@ -182,39 +191,11 @@ struct Texture {
 };
 
 struct Audio {
+    bool complete = false;
     std::string handle;
+
     SoLoud::WavStream wav_stream;
 };
-
-//enum AssetType {
-//    ASSET = 0,
-//    MESH_ASSET = 1,
-//    TEXTURE_ASSET = 2,
-//};
-//
-//struct Asset {
-//    AssetType type = AssetType::ASSET;
-//    std::string path;
-//    Asset(std::string _path) : path(_path){}
-//};
-//
-//struct MeshAsset : Asset {
-//    Mesh mesh;
-//    MeshAsset(std::string _path) : Asset(_path){
-//        type = AssetType::MESH_ASSET;
-//    };
-//    ~MeshAsset();
-//};
-//
-//struct TextureAsset : Asset {
-//    GLuint texture_id;
-//    TextureAsset(std::string _path) : Asset(_path){
-//        type = AssetType::TEXTURE_ASSET;
-//    };
-//    ~TextureAsset(){
-//        glDeleteTextures(1, &texture_id);
-//    }
-//};
 
 inline void hash_combine(std::size_t& seed) { }
 
@@ -274,25 +255,144 @@ struct AssetManager {
     Audio* createAudio(const std::string& handle);
 
     // This returns nullptr if the asset doesn't exist
-    Mesh*           getMesh(const std::string &path);
-    AnimatedMesh*   getAnimatedMesh(const std::string& path);
-    Texture*        getTexture(const std::string &path);
+    Mesh*           getMesh(const std::string &path) const;
+    AnimatedMesh*   getAnimatedMesh(const std::string& path) const;
+    Texture*        getTexture(const std::string &path) const;
     Texture*        getColorTexture(const glm::vec4 &col, GLint format=GL_RGB);
 
     void clearExcluding(const std::set<std::string> &excluded);
     void clear();
 };
 
-struct Material {
-// Store constant uniforms in 1x1 textures, it would be good to
-// check if this is performant.
-    Texture* t_normal    = nullptr;
-    Texture* t_albedo    = nullptr;
-    Texture* t_ambient   = nullptr;
-    Texture* t_roughness = nullptr;
-    Texture* t_metallic  = nullptr;
-    bool alpha = false; // Whether to use albedo texture's alpha channel
+namespace MaterialType {
+    enum Type : uint64_t {
+        NONE        = 0,
+        PBR         = 1 << 0,
+        BLINN_PHONG = 1 << 1,
+        EMISSIVE    = 1 << 2,
+        METALLIC    = 1 << 3,
+        ALPHA_CLIP  = 1 << 4,
+        VEGETATION  = 1 << 5,
+        LIGHTMAPPED = 1 << 6,
+        AO          = 1 << 7,
+    };
+}
+
+enum class TextureSlot : uint64_t {
+    NORMAL      = 1,
+    ALPHA_CLIP  = 0,
+
+    // PBR
+    ALBEDO      = 0,
+    METAL       = 2,
+    ROUGHNESS   = 3,
+
+    // BLINN PHONG
+    DIFFUSE     = 0,
+    SPECULAR    = 2,
+    SHININESS   = 3,
+
+    AO          = 4,
+    GI          = 4,
+
+    EMISSIVE    = 4,
 };
+
+struct Uniform {
+    enum class Type: uint64_t {
+        NONE = 0,
+        VEC4,
+        VEC3,
+        VEC2,
+        FLOAT,
+        INT,
+    };
+
+    Uniform(glm::vec4 val) {
+        type = Type::VEC4;
+        data = malloc(size(type));
+        new (data) glm::vec4(val);
+    }
+    Uniform(glm::vec3 val) {
+        type = Type::VEC3;
+        data = malloc(size(type));
+        new (data) glm::vec3(val);
+    }
+    Uniform(glm::vec2 val) {
+        type = Type::VEC2;
+        data = malloc(size(type));
+        new (data) glm::vec2(val);
+    }
+    Uniform(float val) {
+        type = Type::FLOAT;
+        data = malloc(size(type));
+        new (data) GLfloat(val);
+    }
+    Uniform(int val) {
+        type = Type::INT;
+        data = malloc(size(type));
+        new (data) GLint(val);
+    }
+    Uniform(void* _data, Type _type) 
+        : data(_data), type(_type) 
+    {
+    }
+    Uniform()
+        : data(nullptr), type(Type::NONE) // Use placement new so we can also pass a pre allocated buffer
+    {
+    }
+
+    void bind(GLint loc) const {
+        switch (type)
+        {
+        case Uniform::Type::VEC4:
+            glUniform4fv(loc, 1, (GLfloat*)data);
+            break;
+        case Uniform::Type::VEC3:
+            glUniform3fv(loc, 1, (GLfloat*)data);
+            break;
+        case Uniform::Type::VEC2:
+            glUniform2fv(loc, 1, (GLfloat*)data);
+            break;
+        case Uniform::Type::FLOAT:
+            glUniform1fv(loc, 1, (GLfloat*)data);
+            break;
+        case Uniform::Type::INT:
+            glUniform1iv(loc, 1, (GLint*)data);
+            break;
+        default:
+            break;
+        }
+    }
+
+    constexpr static size_t size(Type t) {
+        switch (t)
+        {
+        case Type::VEC4:   return sizeof(glm::vec4);
+        case Type::VEC3:   return sizeof(glm::vec3);
+        case Type::VEC2:   return sizeof(glm::vec2);
+        case Type::FLOAT:  return sizeof(GLfloat);
+        case Type::INT:    return sizeof(GLint);
+        default:                    return 0;
+        }
+    }
+
+    ~Uniform() {
+        free(data);
+    }
+
+    void* data = nullptr;
+    Type type = Type::NONE;
+};
+
+struct Material {
+    MaterialType::Type type = MaterialType::NONE;
+    std::unordered_map<TextureSlot, Texture*> textures;
+    std::unordered_map<std::string, Uniform> uniforms; // @note this string could be made into a binding location
+
+    ~Material();
+};
+
 extern Material* default_material;
 void initDefaultMaterial(AssetManager &asset_manager);
 

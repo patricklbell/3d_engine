@@ -2,6 +2,7 @@
 #macro ANIMATED_BONES 0
 #macro SHADOWS 0
 #macro ALPHA_CLIP 0
+#macro VEGETATION 0
 
 layout (location = 0) in vec3  in_vertex;
 layout (location = 1) in vec3  in_normal;
@@ -11,6 +12,11 @@ layout (location = 3) in vec2  in_texcoord;
 #if ANIMATED_BONES
 layout (location = 5) in ivec4 in_bone_ids;
 layout (location = 6) in vec4  in_weights;
+#endif
+#if VEGETATION
+layout (location = 1) in vec3 in_normal;
+// R - edge stiffness, G - Phase offset, B - overall stiffnes, A - Precomputed ambient occlusion
+layout (location = 7) in vec4 in_color;
 #endif
 
 out vec3 position;
@@ -23,6 +29,11 @@ uniform mat4 model;
 
 #if ANIMATED_BONES
 #load lib/bone_ubo.gl
+#endif
+#if VEGETATION
+#load lib/vegetation.gl
+uniform vec2 wind_direction;
+uniform float wind_strength;
 #endif
 
 void main() {
@@ -45,7 +56,7 @@ void main() {
 	texcoord = in_texcoord;
 
 #if ANIMATED_BONES
-    // Copied this so might be wrong or inefficient
+    // Copied this from forum post so might be wrong or inefficient
     mat3 bone_normal_transform = transpose(inverse(mat3(bone_transform)));
 
 	vec3 T = normalize(vec3(model * vec4(bone_normal_transform*in_tangent, 0.0)));
@@ -56,7 +67,7 @@ void main() {
 #endif
 
 	// Re-orthogonalize T with respect to N
-    // Didn't seem to have any benifit
+    // Didn't seem to have any benefits
 	//T = normalize(T - dot(T, N) * N);
 	vec3 B = cross(N, T);
 
@@ -67,9 +78,13 @@ void main() {
 #end
 #begin FRAGMENT
 
-#macro PBR                  1
 #macro VOLUMETRICS          1
-#macro GLOBAL_ILLUMNIATION  0
+#macro PBR                  1
+#macro AO                   0
+#macro GLOBAL_ILLUMINATION  0
+#macro EMISSIVE             0
+#macro DEBUG_SHADOWS        0
+#macro METALLIC             0
 
 #load lib/shared.gl
 #load lib/shadows.gl
@@ -85,33 +100,59 @@ in mat3 TBN;
 
 layout (location = 0) out vec4 out_color;
 
-#ifdef BLOOM
-layout (location = 1) out vec4 out_bloom_color; 
-#endif
-
-layout(binding = 0) uniform sampler2D albedo_map;
 layout(binding = 1) uniform sampler2D normal_map;
-uniform vec3 albedo_mult;
-uniform int is_alpha_clipped; // @todo make materials be able to have seperate shaders
 
 #if PBR
-layout(binding = 2) uniform sampler2D metallic_map;
-uniform float metal_mult;
+
+layout(binding = 0) uniform sampler2D albedo_map;
+uniform vec3 albedo_mult;
 layout(binding = 3) uniform sampler2D roughness_map;
 uniform float roughness_mult;
-layout(binding = 4) uniform sampler2D ao_map;
-uniform float ao_mult;
-#else
-uniform float specular_int;
-uniform float specular_exp;
+#if METALLIC
+layout(binding = 2) uniform sampler2D metallic_map;
+uniform float metal_mult;
+#endif
+#if AMBIENT
+layout(binding = 4) uniform sampler2D ambient_map;
+uniform float ambient_mult;
+#endif
+
+#else // PBR
+
+layout(binding = 0) uniform sampler2D diffuse_map;
+uniform vec3 diffuse_mult;
+layout(binding = 3) uniform sampler2D specular_map;
+uniform float specular_mult;
+layout(binding = 2) uniform sampler2D shininess_map;
+uniform float shininess_mult;
+
+#endif // PBR
+
+#if EMISSIVE
+layout(binding = 11) uniform sampler2D emissive_map;
+uniform vec3 emissive_mult;
 #endif
 
 void main() {
-    vec4 albedo_alpha = texture(albedo_map, texcoord);
-    if(is_alpha_clipped > 0 && albedo_alpha.a < 0.5)
-        discard;
+#if PBR
 
+    vec4 albedo_alpha = texture(albedo_map, texcoord);
+#if ALPHA_CLIP
+    if(albedo_alpha.a < 0.25)
+        discard;
+#endif
     vec3 albedo = albedo_mult*albedo_alpha.rgb;
+
+#else // PBR, kinda pointless but naming is clearer
+
+    vec4 diffuse_alpha = texture(diffuse_map, texcoord);
+#if ALPHA_CLIP
+    if(diffuse_alpha.a < 0.25)
+        discard;
+#endif
+
+    vec3 diffuse = diffuse_mult*diffuse_alpha.rgb;
+#endif // PBR
 
 	// obtain TBN normal from normal map in range [0,1]
     vec3 normal = texture(normal_map, texcoord).rgb;
@@ -121,57 +162,74 @@ void main() {
     normal = TBN * normal;
 
 // @debug, renders different layers of csm in colors
-//#if SHADOWS
-//    float frag_dist = abs((view * vec4(position, 1.0)).z);
-//    int layer = CASCADE_NUM;
-//    for (int i = 0; i < CASCADE_NUM; ++i)
-//    {
-//        if (frag_dist < shadow_cascade_distances[i])
-//        {
-//            layer = i;
-//            break;
-//        }
-//    }
-//        
-//    const vec3 colors[] = {vec3(1.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0), vec3(0.0, 0.0, 1.0), vec3(1.0, 1.0, 0.0), vec3(1.0, 0.0, 1.0)};
-//    float NdotL = dot(normal, -sun_direction);
-//
-//    // show blending
-//    vec3 color = colors[layer];
-//    if(layer > 0) {
-//        float delta = frag_dist - shadow_cascade_distances[layer - 1];
-//        if(delta <= CSM_BLEND_BAND) { // Do blending
-//            float blend = smoothstep(CSM_BLEND_BAND, 0.0, delta);
-//            color = mix(color, colors[layer - 1], blend);
-//        }
-//    }
-//
-//    out_color = vec4((1.0-0.8*shadowness(NdotL, position))*color, 1.0);
-//#else
-//    out_color = vec4(1.0);
-//#endif
+#if DEBUG_SHADOWS
+#if SHADOWS
+    float frag_dist = abs((view * vec4(position, 1.0)).z);
+    int layer = CASCADE_NUM;
+    for (int i = 0; i < CASCADE_NUM; ++i)
+    {
+        if (frag_dist < shadow_cascade_distances[i])
+        {
+            layer = i;
+            break;
+        }
+    }
+        
+    const vec3 colors[] = {vec3(1.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0), vec3(0.0, 0.0, 1.0), vec3(1.0, 1.0, 0.0), vec3(1.0, 0.0, 1.0)};
+    float NdotL = dot(normal, -sun_direction);
 
-#ifndef PBR
-    // Treats albedo as diffuse texture
-    vec3 hdr_color = albedo * calcDirectionalLight(position, normal, sun_direction, sun_color, camera_position, specular_int, specular_exp);
-#endif
+    // show blending
+    vec3 color = colors[layer];
+    if(layer > 0) {
+        float delta = frag_dist - shadow_cascade_distances[layer - 1];
+        if(delta <= CSM_BLEND_BAND) { // Do blending
+            float blend = smoothstep(CSM_BLEND_BAND, 0.0, delta);
+            color = mix(color, colors[layer - 1], blend);
+        }
+    }
 
-#ifdef PBR
-    float roughness  = roughness_mult*texture(roughness_map, texcoord).r; 
-    float metallic   = metal_mult    *texture(metallic_map, texcoord).r; 
+    out_color = vec4((1.0-0.8*shadowness(NdotL, position))*color, 1.0);
+#else  // SHADOWS
+    out_color = vec4(1.0);
+#endif // SHADOWS
+    return;
+#endif // DEBUG_SHADOWS
 
 #if GLOBAL_ILLUMINATION
-    vec3 GI = texture(ao_map, texcoord).rgb;
-    vec3 hdr_color = brdfSchlickGGX(position, normal, albedo, metallic, roughness, -sun_direction, sun_color, camera_position, GI);
+    const vec3 ambient = ambient_mult * texture(ambient_map, texcoord).rgb;
+#elif AO
+    const float ambient = ambient_mult * texture(ambient_map, texcoord).r;
 #else
-    float ao = ao_mult * length(texture(ao_map, texcoord).rgb); // @todo when global illumination works changes back to only red
-    vec3 hdr_color = brdfSchlickGGX(position, normal, albedo, metallic, roughness, -sun_direction, sun_color, camera_position, ao);
+    const float ambient = 1.0;
 #endif
 
+#if PBR
+
+    float roughness  = roughness_mult*texture(roughness_map, texcoord).r; 
+#if METALLIC
+    float metallic   = metal_mult    *texture(metallic_map, texcoord).r; 
+#else
+    float metallic = 0.0;
 #endif
+
+    vec3 hdr_color = brdfSchlickGGX(position, normal, albedo, metallic, roughness, -sun_direction, sun_color, camera_position, ambient);
+#else // PBR
+
+    float specular_int = specular_mult *texture(specular_map, texcoord).r; 
+    float specular_exp = shininess_mult*texture(shininess_map, texcoord).r; 
+    
+    vec3 hdr_color = diffuse * calcDirectionalLight(position, normal, sun_direction, sun_color, camera_position, specular_int, specular_exp);
+    hdr_color *= ambient;
+
+#endif // PBR
 
 #if VOLUMETRICS
     hdr_color = addInscatteredVolumetrics(hdr_color, gl_FragCoord.xyz);
+#endif
+
+#if EMISSIVE
+    vec3 emissive = emissive_mult * texture(emissive_map, texcoord).rgb;
+    hdr_color += emissive;
 #endif
 
     out_color = vec4(hdr_color, 1.0);

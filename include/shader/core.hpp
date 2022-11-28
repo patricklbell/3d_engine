@@ -18,7 +18,8 @@ struct Shader {
     constexpr GLuint program() {
         return active_program;
     }
-    bool set_macro(std::string_view macro, bool value, bool recompile = true);
+    bool Shader::activate_macros(); // Returns true if recompile was necessary
+    bool set_macro(std::string_view macro, bool value, bool activate = true);
     GLuint uniform(std::string_view name) const;
 
     std::string handle = "";

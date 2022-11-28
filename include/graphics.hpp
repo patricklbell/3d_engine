@@ -45,7 +45,6 @@ void drawLineCube();
 
 void updateShadowVP(const Camera &camera);
 void initShadowFbo();
-void bindDrawShadowMap(const EntityManager &entity_manager);
 void writeShadowVpsUbo();
 
 void computeVolumetrics(uint64_t frame_i, const Camera& camera);
@@ -60,8 +59,41 @@ void distanceTransformWaterFbo(WaterEntity* water);
 
 void clearFramebuffer();
 void bindHdr();
+
+namespace RenderState {
+    enum Type : uint64_t {
+        NONE = 0,
+        FRONT_CULL = 1 << 1,
+        ALPHA_COVERAGE = 1 << 2,
+        DEPTH_READ = 1 << 3,
+        DEPTH_WRITE = 1 << 4,
+        BACK_CULL = 1 << 5,
+        ALL = FRONT_CULL | BACK_CULL | ALPHA_COVERAGE | DEPTH_READ | DEPTH_READ,
+    };
+};
+
+struct RenderItem {
+    Material* mat;
+    glm::mat4x4 model;
+    uint64_t submesh_i;
+    Mesh* mesh;
+    RenderState::Type state;
+    std::vector<std::pair<std::string, std::vector<float>>> uniforms; // Avoid using this! Only for special cases like flashing materials
+    std::array<glm::mat4, MAX_BONES>* bone_matrices = nullptr;
+    bool vegetation = false;
+};
+
+// @todo Decouple entities from rendering
+struct RenderQueue {
+    std::vector<RenderItem> opaque_items;
+    std::vector<RenderItem> transparent_items;
+    WaterEntity* water = nullptr;
+};
+
+void createRenderQueue(RenderQueue& q, const EntityManager& entity_manager, const bool lightmapping=false);
+void drawRenderQueue(const RenderQueue& q, const Texture* skybox, const Texture* irradiance_map, const Texture* prefiltered_specular_map, const Camera& camera);
+void drawRenderQueueShadows(const RenderQueue& q);
 void drawSkybox(const Texture* skybox, const Camera& camera);
-void drawEntitiesHdr(const EntityManager& entity_manager, const Texture* skybox, const Texture* irradiance_map, const Texture* prefiltered_specular_map, const Camera& camera, const bool lightmapping=false);
 
 void bindBackbuffer();
 void drawPost(Texture *skybox, const Camera& camera);

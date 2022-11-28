@@ -52,15 +52,10 @@ struct MeshEntity : Entity {
     glm::vec3 gizmo_position_offset = glm::vec3(0.0);
 
     Mesh* mesh = nullptr;
-
-    glm::vec3 albedo_mult = glm::vec3(1.0);
-    float roughness_mult = 1.0;
-    float metal_mult = 1.0;
-    float ao_mult = 1.0;
+    std::unordered_map<uint64_t, Material> overidden_materials; // submesh indices whose material we want to override
 
     uint8_t casts_shadow = true;
     uint8_t do_lightmap = true;
-    Texture* lightmap = nullptr;
 
     MeshEntity(Id _id = NULLID) : Entity(_id) {
         type = EntityType::MESH_ENTITY;

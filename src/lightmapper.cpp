@@ -20,6 +20,7 @@
 #include "editor.hpp"
 #include "texture.hpp"
 #include "utilities.hpp"
+#include "assets.hpp"
 
 static void writeFrambufferToTga(std::string_view path, int width, int height) {
 	int* buffer = new int[width * height * 3];
@@ -50,7 +51,7 @@ glm::mat4x4 getShadowMatrixFromRadius(glm::vec3 c, float r) {
 	return shadow_projection * shadow_view;
 }
 
-void createShadowMapForGeometry(EntityManager& entity_manager, Camera &camera, glm::vec3 position) {
+void createShadowMapForGeometry(RenderQueue& q, Camera &camera, glm::vec3 position) {
 	const double& cnp = camera.frustrum.near_plane, & cfp = camera.frustrum.far_plane / 10.0f; // Only consider effects of close shadows
 	double r;
 	for (int i = 0; i < SHADOW_CASCADE_NUM; i++) {
@@ -67,7 +68,7 @@ void createShadowMapForGeometry(EntityManager& entity_manager, Camera &camera, g
 
 	int old_shadow_size = graphics::shadow_size;
 	graphics::shadow_size = 1024;
-	bindDrawShadowMap(entity_manager);
+	drawRenderQueueShadows(q);
 	graphics::shadow_size = old_shadow_size;
 }
 
@@ -132,12 +133,8 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 		mesh_entities.push_back(m_e);
 	}
 
-	// Set all ambient occlusion to white and 0 intially
-	for (int i = 0; i < lightmaps.size(); ++i) {
-		const auto& m_e = mesh_entities[i];
-
-		m_e->lightmap = asset_manager.getColorTexture(glm::vec4(0.0, 0.0, 0.0, 1.0), GL_RGB);
-	}
+	RenderQueue q;
+	createRenderQueue(q, entity_manager, true);
 
 	constexpr int bounces = 2;
 	for (int b = 0; b < bounces; b++) {
@@ -159,10 +156,10 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 			indicators::ProgressBar bar{ indicators::option::BarWidth{50}, indicators::option::Start{"["}, indicators::option::Fill{"="}, indicators::option::Lead{">"}, indicators::option::Remainder{" "}, indicators::option::End{" ]"}, indicators::option::PostfixText{""}, indicators::option::ForegroundColor{indicators::Color::white}, indicators::option::FontStyles{std::vector<indicators::FontStyle>{indicators::FontStyle::bold}} };
 			bar.set_option(indicators::option::ShowPercentage{ true });
 			
-			createShadowMapForGeometry(entity_manager, camera, m_e->position);
+			createShadowMapForGeometry(q, camera, m_e->position);
 
 			auto& mesh = m_e->mesh;
-			for (int j = 0; j < mesh->num_meshes; ++j) {
+			for (int j = 0; j < mesh->num_submeshes; ++j) {
 				auto model = g_model_pos * mesh->transforms[j] * g_model_rot_scl;
 
 				assert(mesh->uvs != nullptr); // Mesh should be parameterized and packed
@@ -197,12 +194,12 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 					//sleep_for(milliseconds(10));
 
 					glViewport(vp[0], vp[1], vp[2], vp[3]);
-					drawEntitiesHdr(entity_manager, skybox, skybox_irradiance, skybox_specular, camera, true);
+					drawRenderQueue(q, skybox, skybox_irradiance, skybox_specular, camera);
 					
 					double time = glfwGetTime();
 					if (time - last_update_time > 1.0) {
 						last_update_time = time;
-						bar.set_progress(lmProgress(ctx) * 100.0f * ((float)(j+1) / (float)mesh->num_meshes));
+						bar.set_progress(lmProgress(ctx) * 100.0f * ((float)(j+1) / (float)mesh->num_submeshes));
 					}
 
 					lmEnd(ctx);
@@ -214,6 +211,10 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 
 		indicators::ProgressBar bar{ indicators::option::BarWidth{50}, indicators::option::Start{"["}, indicators::option::Fill{"="}, indicators::option::Lead{">"}, indicators::option::Remainder{" "}, indicators::option::End{" ]"}, indicators::option::PostfixText{""}, indicators::option::ForegroundColor{indicators::Color::white}, indicators::option::FontStyles{std::vector<indicators::FontStyle>{indicators::FontStyle::bold}} };
 		bar.set_option(indicators::option::ShowPercentage{ true });
+		if (b == bounces - 1) {
+			indicators::ProgressBar bar{ indicators::option::BarWidth{50}, indicators::option::Start{"["}, indicators::option::Fill{"="}, indicators::option::Lead{">"}, indicators::option::Remainder{" "}, indicators::option::End{" ]"}, indicators::option::PostfixText{""}, indicators::option::ForegroundColor{indicators::Color::white}, indicators::option::FontStyles{std::vector<indicators::FontStyle>{indicators::FontStyle::bold}} };
+			bar.set_option(indicators::option::ShowPercentage{ true });
+		}
 
 		count = 1;
 		// postprocess and upload all lightmaps to the GPU now to use them for indirect lighting during the next bounce.
@@ -226,19 +227,16 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 			// @hardcoded gamma
 			lmImagePower(img, w, h, c, 1.0f / 2.2f, 0x7); // gamma correct color channels
 
-			//if (b == bounces - 1) {
-			//	lmImagePower(img, w, h, c, 0.8); // Add some brightness to final result
-			//}
-
 			// Generate a new texture seperate from the color texture (which is still stored by asset manager)
+			Texture* lightmap;
 			if (b == 0) {
-				m_e->lightmap = asset_manager.createTexture(level_path + "." + std::to_string(i) + ".tga");
-				glGenTextures(1, &m_e->lightmap->id);
+				lightmap = asset_manager.createTexture(level_path + "." + std::to_string(i) + ".tga");
+				glGenTextures(1, &lightmap->id);
 			}
-			m_e->lightmap->format = GL_RGB16F;
-			m_e->lightmap->resolution = glm::ivec2(w, h);
+			lightmap->format = GL_RGB16F;
+			lightmap->resolution = glm::ivec2(w, h);
 
-			glBindTexture(GL_TEXTURE_2D, m_e->lightmap->id);
+			glBindTexture(GL_TEXTURE_2D, lightmap->id);
 			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, w, h, 0, GL_RGBA, GL_FLOAT, img);
 
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -247,34 +245,46 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
 			glGenerateMipmap(GL_TEXTURE_2D);
+			lightmap->complete = true;
+
+			// Make all materials unique to each submesh and add the lightmapped texture
+			const auto& mesh = *m_e->mesh;
+			for (uint64_t submesh_i = 0; submesh_i < mesh.num_submeshes; submesh_i++) {
+				Material new_mat = mesh.materials[mesh.material_indices[submesh_i]];
+				new_mat.type = (MaterialType::Type)(new_mat.type | MaterialType::LIGHTMAPPED);
+				new_mat.textures[TextureSlot::GI] = lightmap;
+				// @hardcoded IDK whether to use uniform bindings or just a static map, this will do for now
+				if (new_mat.uniforms.find("ambient_mult") == new_mat.uniforms.end()) {
+					new_mat.uniforms["ambient_mult"] = Uniform(1.0f);
+				}
+
+				m_e->overidden_materials[submesh_i] = new_mat;
+			}
 
 			bar.set_progress((float)(count) / (float)lightmaps.size());
 			bar.set_option(indicators::option::PostfixText{ "Postprocessing " + std::to_string(count) + " / " + std::to_string(lightmaps.size()) });
 			count++;
+
+			// If we are on the last bound we want to save to disk
+			if (b == bounces - 1) {
+				indicators::ProgressBar bar{ indicators::option::BarWidth{50}, indicators::option::Start{"["}, indicators::option::Fill{"="}, indicators::option::Lead{">"}, indicators::option::Remainder{" "}, indicators::option::End{" ]"}, indicators::option::PostfixText{""}, indicators::option::ForegroundColor{indicators::Color::white}, indicators::option::FontStyles{std::vector<indicators::FontStyle>{indicators::FontStyle::bold}} };
+				bar.set_option(indicators::option::ShowPercentage{ true });
+
+				const auto& img = lightmaps[i];
+				const auto& m_e = mesh_entities[i];
+
+				lmImageSaveTGAf(lightmap->handle.c_str(), img, w, h, c, 1.0);
+
+				bar.set_progress((float)(count) / (float)lightmaps.size());
+				bar.set_option(indicators::option::PostfixText{ "Writing TGA " + std::to_string(count) + " / " + std::to_string(lightmaps.size()) });
+				count++;
+			}
 		}
-		glBindTexture(GL_TEXTURE_2D, 0);
 		bar.set_progress(100);
 	}
-
+	
+	// Free memory, @todo chunk the lightmapping so memory usage is managed
 	lmDestroy(ctx);
-
-	indicators::ProgressBar bar{ indicators::option::BarWidth{50}, indicators::option::Start{"["}, indicators::option::Fill{"="}, indicators::option::Lead{">"}, indicators::option::Remainder{" "}, indicators::option::End{" ]"}, indicators::option::PostfixText{""}, indicators::option::ForegroundColor{indicators::Color::white}, indicators::option::FontStyles{std::vector<indicators::FontStyle>{indicators::FontStyle::bold}} };
-	bar.set_option(indicators::option::ShowPercentage{ true });
-
-	// gamma correct and save lightmaps to disk
-	int count = 1;
-	for (int i = 0; i < lightmaps.size(); ++i) {
-		const auto& img = lightmaps[i];
-		const auto& m_e = mesh_entities[i];
-
-		lmImageSaveTGAf(m_e->lightmap->handle.c_str(), img, w, h, c, 1.0);
-
-		bar.set_progress((float)(count) / (float)lightmaps.size());
-		bar.set_option(indicators::option::PostfixText{ "Writing TGA " + std::to_string(count) + " / " + std::to_string(lightmaps.size()) });
-		count++;
-	}
-	bar.set_progress(100);
-
 	for (auto& img : lightmaps) {
 		free(img);
 	}

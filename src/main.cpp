@@ -172,7 +172,7 @@ int main() {
     Controls::editor.loadFromFile("data/editor_controls.txt");
     Controls::game.loadFromFile("data/game_controls.txt");
 
-    initDefaultMaterial(global_assets);
+    initDefaultMaterial(global_assets); // Should only be needed by editor meshes
     initGraphics(global_assets);
     initEditorGui(global_assets);
 
@@ -199,6 +199,7 @@ int main() {
           "data/textures/stonewall_skybox/pz.hdr", "data/textures/stonewall_skybox/nz.hdr" }, GL_RGB16F);
 
     AssetManager asset_manager;
+    initDefaultMaterial(asset_manager);
     EntityManager *entity_manager = &level_entity_manager;
 
     // Load background music
@@ -211,9 +212,9 @@ int main() {
     //soloud.setPan(handle1, -0.2f);              // Set pan; -1 is left, 1 is right
     //soloud.setRelativePlaySpeed(handle1, 1.0f); // Play a bit slower; 1.0f is normal
 
-     level_path = "data/levels/lightmap_test.level";
-     loadLevel(*entity_manager, asset_manager, level_path, Cameras::level_camera);
-     Cameras::editor_camera = Cameras::level_camera;
+     //level_path = "data/levels/lightmap_test.level";
+     //loadLevel(*entity_manager, asset_manager, level_path, Cameras::level_camera);
+     //Cameras::editor_camera = Cameras::level_camera;
 
 #ifndef NDEBUG 
     checkGLError("Pre-loop");
@@ -224,6 +225,7 @@ int main() {
     uint64_t frame_num = 0;
     window_resized = true;
 
+    RenderQueue render_queue;
     Camera *camera_ptr = nullptr; // The currently active camera
     do {
         double current_time = glfwGetTime();
@@ -291,14 +293,16 @@ int main() {
         // 
         // Draw entities
         //
+        createRenderQueue(render_queue, *entity_manager);
+
         if (graphics::do_shadows)
-            bindDrawShadowMap(*entity_manager);
+            drawRenderQueueShadows(render_queue);
         if (graphics::do_volumetrics)
             computeVolumetrics(frame_num, camera);
 
         bindHdr();
         clearFramebuffer();
-        drawEntitiesHdr(*entity_manager, graphics::environment.skybox, graphics::environment.skybox_irradiance, graphics::environment.skybox_specular, camera);
+        drawRenderQueue(render_queue, graphics::environment.skybox, graphics::environment.skybox_irradiance, graphics::environment.skybox_specular, camera);
 
         if (graphics::do_bloom) {
             blurBloomFbo(true_dt);

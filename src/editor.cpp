@@ -321,9 +321,9 @@ void initEditorGui(AssetManager &asset_manager){
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init(Shaders::glsl_version.c_str());
 
-    asset_manager.loadMeshFile(&arrow_mesh, "data/mesh/arrow.mesh");
-    asset_manager.loadMeshFile(&block_arrow_mesh, "data/mesh/block_arrow.mesh");
-    asset_manager.loadMeshFile(&ring_mesh, "data/mesh/ring.mesh");
+    asset_manager.loadMeshAssimp(&arrow_mesh, "data/models/arrow.obj");
+    asset_manager.loadMeshAssimp(&block_arrow_mesh, "data/models/block_arrow.obj");
+    asset_manager.loadMeshAssimp(&ring_mesh, "data/models/ring.obj");
 
     entity_type_to_string[ENTITY] = "Basic Entity";
     entity_type_to_string[MESH_ENTITY] = "Mesh";
@@ -1477,7 +1477,7 @@ void drawMeshWireframe(const Mesh &mesh, const glm::mat4& g_model_rot_scl, const
     auto vp = camera.projection * camera.view;
 
     glBindVertexArray(mesh.vao);
-    for (int j = 0; j < mesh.num_meshes; ++j) {
+    for (int j = 0; j < mesh.num_submeshes; ++j) {
         // Since the mesh transforms encode scale this will mess up global translation so we apply translation after
         auto model = g_model_pos * mesh.transforms[j] * g_model_rot_scl;
         auto mvp = vp * model;
@@ -1819,7 +1819,9 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
                     //        create_tex_ui(&mat.t_roughness, i, "Roughness", true);
                     //    }
                     //}
-                    auto albedo    = m_e->albedo_mult;
+
+                    // @todo
+                    /*auto albedo    = m_e->albedo_mult;
                     bool albedo_chng = false;
                     auto roughness = m_e->roughness_mult;
                     bool roughness_chng = false;
@@ -1843,7 +1845,7 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
                         if (roughness_chng) e->roughness_mult = roughness;
                         if (ao_chng) e->ao_mult = ao;
                         if (metal_chng) e->metal_mult = metal;
-                    }
+                    }*/
                 }
 
                 if (selection.ids.size() == 1 && ImGui::CollapsingHeader("Lightmapping")) {
@@ -1854,14 +1856,15 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
                         m_e->do_lightmap = do_lightmap;
                     }
 
-                    if (m_e->lightmap != nullptr) {
+                    // @todo
+                    /*if (m_e->lightmap != nullptr) {
                         void* tex = (void*)(intptr_t)m_e->lightmap->id;
                         ImGui::Image(tex, ImVec2(sidebar_w, sidebar_w));
 
                         if (ImGui::Button("Clear", button_size)) {
                             m_e->lightmap = nullptr;
                         }
-                    }
+                    }*/
                 }
 
             }

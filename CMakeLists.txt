@@ -73,6 +73,7 @@ set(SOURCES
 	src/graphics.cpp
 	src/main.cpp
 	
+	src/serialize.cpp
 	src/texture.cpp
 	src/editor.cpp
 	src/assets.cpp

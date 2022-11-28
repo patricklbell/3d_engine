@@ -293,7 +293,28 @@ bool Shader::compile(std::string_view _prepend) {
 	return true;
 }
 
-bool Shader::set_macro(std::string_view macro, bool value, bool recompile) {
+bool Shader::activate_macros() {
+	auto hash = compute_bitmap_hash(macros);
+	if (active_hash == hash) 
+		return false;
+
+	auto& program_lu = programs.find(hash);
+	if (program_lu == programs.end()) {
+		compile();
+		return true;
+	}
+
+	active_hash = hash;
+	active_program = program_lu->second;
+
+	// For now just overwrite uniforms @todo store uniforms for each hash if necessary
+	uniforms.clear();
+	get_uniforms_from_program(active_program, uniforms);
+
+	return false;
+}
+
+bool Shader::set_macro(std::string_view macro, bool value, bool activate) {
 	auto& macro_lu = macros.find(std::string(macro));
 	if (macro_lu == macros.end()) {
 		std::cerr << "Unknown macro " << macro << " for shader " << handle << "\n";
@@ -303,20 +324,9 @@ bool Shader::set_macro(std::string_view macro, bool value, bool recompile) {
 
 	macro_lu->second = value;
 
-	auto hash = compute_bitmap_hash(macros);
-	auto& program_lu = programs.find(hash);
-	if (program_lu == programs.end()) {
-		if (recompile)
-			compile();
-		return recompile;
+	if (activate) {
+		activate_macros();
 	}
-
-	active_hash = hash;
-	active_program = program_lu->second;
-	// For now just overwrite uniforms @todo do faster maybe
-	uniforms.clear();
-	get_uniforms_from_program(active_program, uniforms);
-	return true;
 }
 
 // ----------------------------------------------------------------------------

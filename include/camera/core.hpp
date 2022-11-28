@@ -37,6 +37,7 @@ struct Camera {
     // These are set by the update method
     glm::mat4 view;
     glm::mat4 projection;
+    glm::mat4 vp;
 };
 
 #endif // CAMERA_CORE_HPP

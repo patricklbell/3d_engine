@@ -25,6 +25,8 @@
 
 #include "assimp/material.h"
 #include "assimp/types.h"
+
+#include "serialize.hpp"
 #include "texture.hpp"
 #include "assets.hpp"
 #include "graphics.hpp"
@@ -60,17 +62,14 @@ Material *default_material;
 void initDefaultMaterial(AssetManager &asset_manager){
     default_material = new Material;
    
-    default_material->t_albedo    = asset_manager.getColorTexture(glm::vec4(1,0,1,1), GL_RGB);
-    default_material->t_normal    = asset_manager.getColorTexture(glm::vec4(0.5,0.5,1,1), GL_RGB);
-    default_material->t_metallic  = asset_manager.getColorTexture(glm::vec4(0), GL_RED);
-    default_material->t_roughness = asset_manager.getColorTexture(glm::vec4(1), GL_RED);
-    default_material->t_ambient   = asset_manager.getColorTexture(glm::vec4(1), GL_RGB);
+    default_material->type = MaterialType::PBR;
 
-    default_material->t_albedo->handle    = "DEFAULT:albedo";
-    default_material->t_normal->handle    = "DEFAULT:normal";
-    default_material->t_metallic->handle  = "DEFAULT:metallic";
-    default_material->t_roughness->handle = "DEFAULT:roughness";
-    default_material->t_ambient->handle   = "DEFAULT:ambient";
+    default_material->textures[TextureSlot::ALBEDO]     = asset_manager.getColorTexture(glm::vec4(1, 0, 1, 1),      GL_RGB);
+    default_material->textures[TextureSlot::NORMAL]     = asset_manager.getColorTexture(glm::vec4(0.5, 0.5, 1, 1),  GL_RGB);
+    default_material->textures[TextureSlot::ROUGHNESS]  = asset_manager.getColorTexture(glm::vec4(1),               GL_RED);
+
+    default_material->uniforms["albedo_mult"] = Uniform(glm::vec3(1));
+    default_material->uniforms["roughness_mult"] = Uniform(1.0f);
 }
 
 std::ostream &operator<<(std::ostream &os, const Texture &t) {
@@ -83,16 +82,19 @@ std::ostream &operator<<(std::ostream &os, const Texture &t) {
 }
 
 std::ostream &operator<<(std::ostream &os, const Material &m) {
-    if(m.t_albedo != nullptr) 
-        os << std::string("\tAlbedo: ")    << *m.t_albedo << std::string("\n");
-    if(m.t_ambient != nullptr) 
-        os << std::string("\tAmbient: ")   << *m.t_ambient << std::string("\n");
-    if(m.t_roughness != nullptr) 
-        os << std::string("\tRoughness: ") << *m.t_roughness << std::string("\n");
-    if(m.t_metallic != nullptr) 
-        os << std::string("\tMetallic: ")  << *m.t_metallic << std::string("\n");
-    if(m.t_normal != nullptr) 
-        os << std::string("\tNormal: ")    << *m.t_normal;
+    os << "Type: " << m.type << "\n";
+    if (m.textures.size()) {
+        os << "Textures: \n";
+        for (const auto& p : m.textures) {
+            os << "\t" << (uint64_t)p.first << " --> " << *p.second << "\n";
+        }
+    }
+    if (m.uniforms.size()) {
+        os << "Uniforms: \n";
+        for (const auto& p : m.uniforms) {
+            os << "\t" << p.first << "\n";
+        }
+    }
 
     return os;
 }
@@ -111,7 +113,7 @@ Mesh::~Mesh(){
 
     glDeleteVertexArrays(1, &vao);
 
-    free(materials);
+    delete[] materials;
     free(material_indices);
 
     free(indices);
@@ -127,82 +129,10 @@ Mesh::~Mesh(){
     free(draw_count);
 }
 
-constexpr uint16_t MESH_FILE_VERSION = 4U;
-constexpr uint16_t MESH_FILE_MAGIC   = 7543U;
-// For now dont worry about size of types on different platforms
-bool AssetManager::writeMeshFile(const Mesh *mesh, const std::string &path){
-    std::cout << "--------------------Save Mesh " << path << "--------------------\n";
-
-    FILE *f;
-    f=fopen(path.c_str(), "wb");
-
-    if (!f) {
-        std::cerr << "Error in writing mesh file to path " << path << ".\n";
-        return false;
-    }
-
-    fwrite(&MESH_FILE_MAGIC  , sizeof(MESH_FILE_MAGIC  ), 1, f);
-    fwrite(&MESH_FILE_VERSION, sizeof(MESH_FILE_VERSION), 1, f);
-
-    fwrite(&mesh->num_indices, sizeof(mesh->num_indices), 1, f);
-    fwrite(mesh->indices, sizeof(*mesh->indices), mesh->num_indices, f);
-
-    fwrite(&mesh->attributes, sizeof(mesh->attributes), 1, f);
-
-    fwrite(&mesh->num_vertices, sizeof(mesh->num_vertices), 1, f);
-    if(mesh->attributes & MESH_ATTRIBUTES_VERTICES)
-        fwrite(mesh->vertices, sizeof(*mesh->vertices), mesh->num_vertices, f);
-    if (mesh->attributes & MESH_ATTRIBUTES_NORMALS)
-        fwrite(mesh->normals , sizeof(*mesh->normals ), mesh->num_vertices, f);
-    if (mesh->attributes & MESH_ATTRIBUTES_TANGENTS)
-        fwrite(mesh->tangents, sizeof(*mesh->tangents), mesh->num_vertices, f);
-    if (mesh->attributes & MESH_ATTRIBUTES_UVS)
-        fwrite(mesh->uvs     , sizeof(*mesh->uvs     ), mesh->num_vertices, f);
-    if (mesh->attributes & MESH_ATTRIBUTES_BONES) {
-        fwrite(mesh->bone_ids, sizeof(*mesh->bone_ids), mesh->num_vertices, f);
-        fwrite(mesh->weights , sizeof(*mesh->weights ), mesh->num_vertices, f);
-    }
-    if (mesh->attributes & MESH_ATTRIBUTES_COLORS)
-        fwrite(mesh->colors, sizeof(*mesh->colors), mesh->num_vertices, f);
-
-    // Write materials as list of image paths
-    fwrite(&mesh->num_materials, sizeof(mesh->num_materials), 1, f);
-
-    const auto write_texture = [&f](Texture* tex) {
-        char is_color = tex->is_color;
-        fwrite(&is_color, sizeof(is_color), 1, f);
-        if (tex->is_color) {
-            fwrite(&tex->color, sizeof(tex->color), 1, f);
-        }
-        else {
-            if (tex->handle.size() > (uint8_t)-1) {
-                std::cerr << "Handle " << tex->handle << " is too long\n";
-            }
-            uint8_t len = tex->handle.size();
-            fwrite(&len, sizeof(len), 1, f);
-            fwrite(tex->handle.c_str(), len, 1, f);
-        }
-    };
-    for(int i = 0; i < mesh->num_materials; i++){
-        auto &mat = mesh->materials[i];
-
-        write_texture(mat.t_albedo);
-        write_texture(mat.t_normal);
-        write_texture(mat.t_ambient);
-        write_texture(mat.t_metallic);
-        write_texture(mat.t_roughness);
-    }
-
-    fwrite(&mesh->num_meshes, sizeof(mesh->num_meshes), 1, f);
-
-    // Write material indice ranges
-    fwrite(mesh->material_indices, sizeof(*mesh->material_indices), mesh->num_meshes, f);
-    fwrite(mesh->draw_start,       sizeof(*mesh->draw_start),       mesh->num_meshes, f);
-    fwrite(mesh->draw_count,       sizeof(*mesh->draw_count),       mesh->num_meshes, f);
-    fwrite(mesh->transforms,       sizeof(*mesh->transforms),       mesh->num_meshes, f);
-
-    fclose(f);
-    return true;
+// @note Without this the uniforms default destructor frees twice, at least thats what i think
+Material::~Material() {
+    textures.clear();
+    uniforms.clear();
 }
 
 static void createMeshVao(Mesh *mesh){
@@ -267,6 +197,23 @@ static void createMeshVao(Mesh *mesh){
     mesh->complete = true;
 }
 
+bool AssetManager::writeMeshFile(const Mesh* mesh, const std::string& path) {
+    std::cout << "--------------------Save Mesh " << path << "--------------------\n";
+
+    FILE* f;
+    f = fopen(path.c_str(), "wb");
+
+    if (!f) {
+        std::cerr << "Error in writing mesh file to path " << path << ".\n";
+        return false;
+    }
+
+    writeMesh(*mesh, f);
+
+    fclose(f);
+    return true;
+}
+
 bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
     std::cout << "----------------Loading Mesh File " << path << "----------------\n";
 
@@ -277,173 +224,10 @@ bool AssetManager::loadMeshFile(Mesh *mesh, const std::string &path){
         return false;
     }
 
-    std::remove_cv_t<decltype(MESH_FILE_MAGIC)> magic;
-    fread(&magic, sizeof(magic), 1, f);
-    if (magic != MESH_FILE_MAGIC) {
-        std::cerr << "Invalid mesh file magic, was " << magic << " expected " << MESH_FILE_MAGIC << ".\n";
-        return false;
-    }
-
-    std::remove_cv_t<decltype(MESH_FILE_VERSION)> version;
-    fread(&version, sizeof(version), 1, f);
-    if(version!=MESH_FILE_VERSION){
-        std::cerr << "Invalid mesh file version, was " << version << " expected " << MESH_FILE_VERSION << ".\n";
-        return false;
-    }
-
-    fread(&mesh->num_indices, sizeof(mesh->num_indices), 1, f);
-    std::cout << "Number of indices " << mesh->num_indices << ".\n";
-    mesh->indices = reinterpret_cast<decltype(mesh->indices)>(malloc(sizeof(*mesh->indices)*mesh->num_indices));
-    fread(mesh->indices, sizeof(*mesh->indices), mesh->num_indices, f);
-
-    fread(&mesh->attributes, sizeof(mesh->attributes), 1, f);
-
-    fread(&mesh->num_vertices, sizeof(mesh->num_vertices), 1, f);
-    std::cout << "Number of vertices " << mesh->num_vertices << ".\n";
-    // @todo allocate in one go and index into buffer
-    if (mesh->attributes & MESH_ATTRIBUTES_VERTICES) {
-        mesh->vertices = reinterpret_cast<decltype(mesh->vertices)>(malloc(sizeof(*mesh->vertices) * mesh->num_vertices));
-        fread(mesh->vertices, sizeof(*mesh->vertices), mesh->num_vertices, f);
-    }
-    if (mesh->attributes& MESH_ATTRIBUTES_NORMALS) {
-        mesh->normals = reinterpret_cast<decltype(mesh->normals)>(malloc(sizeof(*mesh->normals) * mesh->num_vertices));
-        fread(mesh->normals, sizeof(*mesh->normals), mesh->num_vertices, f);
-    }
-    if (mesh->attributes & MESH_ATTRIBUTES_TANGENTS) {
-        mesh->tangents = reinterpret_cast<decltype(mesh->tangents)>(malloc(sizeof(*mesh->tangents) * mesh->num_vertices));
-        fread(mesh->tangents, sizeof(*mesh->tangents), mesh->num_vertices, f);
-    }
-    if (mesh->attributes & MESH_ATTRIBUTES_UVS) {
-        mesh->uvs = reinterpret_cast<decltype(mesh->uvs)>(malloc(sizeof(*mesh->uvs) * mesh->num_vertices));
-        fread(mesh->uvs, sizeof(*mesh->uvs), mesh->num_vertices, f);
-    }
-    if (mesh->attributes & MESH_ATTRIBUTES_BONES) {
-        mesh->bone_ids = reinterpret_cast<decltype(mesh->bone_ids)>(malloc(sizeof(*mesh->bone_ids) * mesh->num_vertices));
-        fread(mesh->bone_ids, sizeof(*mesh->bone_ids), mesh->num_vertices, f);
-
-        mesh->weights = reinterpret_cast<decltype(mesh->weights)>(malloc(sizeof(*mesh->weights) * mesh->num_vertices));
-        fread(mesh->weights, sizeof(*mesh->weights), mesh->num_vertices, f);
-        std::cout << "Loaded bone ids and weight.\n";
-    }
-    if (mesh->attributes & MESH_ATTRIBUTES_COLORS) {
-        mesh->colors = reinterpret_cast<decltype(mesh->colors)>(malloc(sizeof(*mesh->colors) * mesh->num_vertices));
-        fread(mesh->colors, sizeof(*mesh->colors), mesh->num_vertices, f);
-    }
-
-    // @note this doesn't support embedded materials for binary formats that assimp loads
-    fread(&mesh->num_materials, sizeof(mesh->num_materials), 1, f);
-    mesh->materials = reinterpret_cast<decltype(mesh->materials)>(malloc(sizeof(*mesh->materials)*mesh->num_materials));
-
-#if DO_MULTITHREAD
-    using tpl_t = std::tuple<Texture**, ImageData*, Texture*>;
-    std::vector<tpl_t> texture_imagedata_default_list;
-#endif
-
-    const auto read_texture = [&f, 
-#if DO_MULTITHREAD
-        &texture_imagedata_default_list, 
-#endif
-        this](Texture* &tex, Texture *default_tex, GLenum format) {
-        char is_color;
-        fread(&is_color, sizeof(is_color), 1, f);
-        if (is_color) {
-            glm::vec4 color;
-            fread(&color, sizeof(color), 1, f);
-            tex = this->getColorTexture(color, format == GL_FALSE ? GL_RGB : format);
-        }
-        else {
-            uint8_t len;
-            fread(&len, sizeof(len), 1, f);
-            std::string path;
-            path.resize(len);
-            fread(&path[0], sizeof(char)*len, 1, f);
-
-            if (path == default_tex->handle) {
-                tex = default_tex;
-            }
-            else {
-                auto lu = getTexture(path);
-                if (lu != nullptr) {
-                    // Check if loaded texture contains enough channels
-                    if (getChannelsForFormat(lu->format) >= getChannelsForFormat(format)) {
-                        tex = lu;
-                        return;
-                    }
-                }
-
-                tex = createTexture(path);
-                tex->format = format;
-#if DO_MULTITHREAD 
-                auto img_data = new ImageData();
-                auto& tpl = texture_imagedata_default_list.emplace_back(tpl_t{ &tex, img_data, default_tex });
-#else
-                if (!this->loadTexture(tex, path, format))
-                    tex = default_tex;
-#endif
-            }
-        }
-    };
-    for(int i = 0; i < mesh->num_materials; ++i){
-        auto &mat = mesh->materials[i];
-
-        read_texture(mat.t_albedo, default_material->t_albedo, GL_FALSE);
-        read_texture(mat.t_normal, default_material->t_normal, GL_RGB);
-        read_texture(mat.t_ambient, default_material->t_ambient, GL_RED);
-        read_texture(mat.t_metallic, default_material->t_metallic, GL_RED);
-        read_texture(mat.t_roughness, default_material->t_roughness, GL_RED);
-
-        std::cout << "Material " << i << ": \n" << mat << "\n";
-    }
-
-#if DO_MULTITHREAD 
-    for (auto& tpl : texture_imagedata_default_list) {
-        auto& tex = *std::get<0>(tpl);
-        auto& img = std::get<1>(tpl);
-
-        global_thread_pool->queueJob(std::bind(loadImageData, img, tex->handle, getChannelsForFormat(tex->format), false, true));
-    }
-
-    // Block main thread until texture loading is finished
-    while(global_thread_pool->busy()){}
-
-    // Now transfer loaded data into actual textures
-    for (auto& tpl : texture_imagedata_default_list) {
-        auto& tex     = *std::get<0>(tpl);
-        auto& img     = std::get<1>(tpl);
-        auto& def_tex = std::get<2>(tpl);
-
-        if (tex->format == GL_FALSE) {
-            tex->format = getFormatForChannels(img->available_n);
-        }
-        tex->id = createGLTextureFromData(img, tex->format, GL_REPEAT);
-        tex->resolution = glm::vec2(img->x, img->y);
-        if (tex->id == GL_FALSE) {
-            tex = def_tex;
-        }
-        free(img);
-    }
-#endif
-    // Fill in alpha info
-    for (int i = 0; i < mesh->num_materials; ++i) {
-        auto& mat = mesh->materials[i];
-
-        mat.alpha = !mat.t_albedo->is_color && mat.t_albedo->format == GL_RGBA;
-    }
-
-    fread(&mesh->num_meshes, sizeof(mesh->num_meshes), 1, f);
-
-    mesh->material_indices = reinterpret_cast<decltype(mesh->material_indices)>(malloc(sizeof(*mesh->material_indices)*mesh->num_meshes));
-    mesh->draw_start       = reinterpret_cast<decltype(mesh->draw_start)      >(malloc(sizeof(*mesh->draw_start      )*mesh->num_meshes));
-    mesh->draw_count       = reinterpret_cast<decltype(mesh->draw_count)      >(malloc(sizeof(*mesh->draw_count      )*mesh->num_meshes));
-    mesh->transforms       = reinterpret_cast<decltype(mesh->transforms)      >(malloc(sizeof(*mesh->transforms      )*mesh->num_meshes));
-    fread(mesh->material_indices, sizeof(*mesh->material_indices), mesh->num_meshes, f);
-    fread(mesh->draw_start,       sizeof(*mesh->draw_start      ), mesh->num_meshes, f);
-    fread(mesh->draw_count,       sizeof(*mesh->draw_count      ), mesh->num_meshes, f);
-    fread(mesh->transforms,       sizeof(*mesh->transforms      ), mesh->num_meshes, f);
+    readMesh(*mesh, *this, f);
+    createMeshVao(mesh);
     
     fclose(f);
-
-    createMeshVao(mesh);
     return true;
 }
 
@@ -661,107 +445,151 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
 
     // Allocate arrays for each material 
     mesh->num_materials = scene->mNumMaterials;
-    mesh->materials = reinterpret_cast<decltype(mesh->materials)>(malloc(sizeof(*mesh->materials)*mesh->num_materials));
+    mesh->materials = new Material[mesh->num_materials];
 
     for (int i = 0; i < mesh->num_materials; ++i) {
         // Load material from assimp
         auto ai_mat = scene->mMaterials[i];
         auto& mat = mesh->materials[i];
 
-        if (!loadTextureFromAssimp(mat.t_albedo, ai_mat, scene, aiTextureType_BASE_COLOR, GL_FALSE)) {
-            // If base color isnt present assume diffuse is really an albedo
-            if (!loadTextureFromAssimp(mat.t_albedo, ai_mat, scene, aiTextureType_DIFFUSE, GL_FALSE)) {
-                aiColor4D col(1.f, 0.f, 1.f, 1.0f);
-                bool flag = true;
-                if (ai_mat->Get(AI_MATKEY_BASE_COLOR, col) != AI_SUCCESS) {
-                    if (ai_mat->Get(AI_MATKEY_COLOR_DIFFUSE, col) != AI_SUCCESS) {
-                        mat.t_albedo = default_material->t_albedo;
-                        flag = false;
-                    }
-                }
-                if(flag) {
-                    auto color = glm::vec3(col.r, col.g, col.b);
+        aiColor4D col(1.f, 0.f, 1.f, 1.0f); // Storage for getting colors from assimp
 
-                    aiColor3D emission_color;
-                    // @todo proper emissive color/texture
-                    if (ai_mat->Get(AI_MATKEY_COLOR_EMISSIVE, emission_color) == AI_SUCCESS) {
-                        auto ec = glm::vec3(emission_color.r, emission_color.g, emission_color.b);
-                        std::cout << "Emissive color is " << ec << "\n";
-                        if (glm::length(ec) > 1) {
-                            color *= ec;
-                        }
-                    }
-                    mat.t_albedo = getColorTexture(glm::vec4(color, 1.0), GL_RGB);
-                    mat.t_albedo->is_color = true;
-                    mat.t_albedo->color = glm::vec4(color, 1.0);
-                }
+        // For now assume everything with base color is PBR, use assimp flags in future
+        if (loadTextureFromAssimp(mat.textures[TextureSlot::ALBEDO], ai_mat, scene, aiTextureType_BASE_COLOR, GL_FALSE)) {
+            mat.type = MaterialType::PBR;
+        } else {
+            if (ai_mat->Get(AI_MATKEY_BASE_COLOR, col) == AI_SUCCESS) {
+                mat.type = MaterialType::PBR;
+                mat.textures[TextureSlot::ALBEDO] = getColorTexture(glm::vec4(col.r, col.g, col.b, col.a), GL_RGB);
             }
-        }
-        if (!mat.t_albedo->is_color && mat.t_albedo->format == GL_RGBA) {
-            mat.alpha = true;
-        }
-
-        if (!loadTextureFromAssimp(mat.t_ambient, ai_mat, scene, aiTextureType_AMBIENT_OCCLUSION, GL_RED)) {
-            mat.t_ambient = default_material->t_ambient;
-        }
-
-        if (!loadTextureFromAssimp(mat.t_metallic, ai_mat, scene, aiTextureType_METALNESS, GL_RED)) {
-            if (!loadTextureFromAssimp(mat.t_metallic, ai_mat, scene, aiTextureType_REFLECTION, GL_RED)) {
-                if (!loadTextureFromAssimp(mat.t_metallic, ai_mat, scene, aiTextureType_SPECULAR, GL_RED)) {
-                    float shininess;
-                    if (ai_mat->Get(AI_MATKEY_SHININESS_STRENGTH, shininess) != AI_SUCCESS) {
-                        mat.t_metallic = default_material->t_metallic;
-                    }
-                    else {
-                        shininess = glm::clamp(shininess, 0.0f, 1.0f);
-                        auto color = glm::vec3(shininess);
-                        mat.t_metallic = getColorTexture(glm::vec4(color, 1.0), GL_RED);
-                        mat.t_metallic->is_color = true;
-                        mat.t_metallic->color = glm::vec4(color, 1.0);
-                    }
-                }
-            }
-        }
-
-        if (!loadTextureFromAssimp(mat.t_roughness, ai_mat, scene, aiTextureType_DIFFUSE_ROUGHNESS, GL_RED)) {
-            if (!loadTextureFromAssimp(mat.t_roughness, ai_mat, scene, aiTextureType_SHININESS, GL_RED)) {
-                float roughness;
-                if (ai_mat->Get(AI_MATKEY_SHININESS, roughness) != AI_SUCCESS || roughness == 0.0f) { // note this is a hacky solution
-                    mat.t_roughness = default_material->t_roughness;
+            else {
+                // Try and load Blinn Phong material
+                if (loadTextureFromAssimp(mat.textures[TextureSlot::DIFFUSE], ai_mat, scene, aiTextureType_DIFFUSE, GL_FALSE)) {
+                    mat.type = MaterialType::BLINN_PHONG;
                 }
                 else {
-                    roughness = glm::clamp(roughness, 0.0f, 1.0f);
-                    auto color = glm::vec3(roughness);
-                    mat.t_roughness = getColorTexture(glm::vec4(color, 1.0), GL_RED);
-                    mat.t_roughness->is_color = true;
-                    mat.t_roughness->color = glm::vec4(color, 1.0);
+                    if (ai_mat->Get(AI_MATKEY_COLOR_DIFFUSE, col) == AI_SUCCESS) {
+                        mat.type = MaterialType::BLINN_PHONG;
+                        mat.textures[TextureSlot::DIFFUSE] = getColorTexture(glm::vec4(col.r, col.g, col.b, col.a), GL_RGB);
+                    }
                 }
             }
         }
 
-        // @note Since mtl files specify normals as bump maps assume all bump maps are really normals
-        if (!loadTextureFromAssimp(mat.t_normal, ai_mat, scene, aiTextureType_NORMALS, GL_RGB, true)) {
-            if (!loadTextureFromAssimp(mat.t_normal, ai_mat, scene, aiTextureType_HEIGHT, GL_RGB, true)) {
-                mat.t_normal = default_material->t_normal;
+        if (mat.type & MaterialType::PBR) {
+            // Alpha clip if there is an alpha channel in albedo, again could be done with flag
+            if (mat.textures[TextureSlot::ALBEDO] && getChannelsForFormat(mat.textures[TextureSlot::ALBEDO]->format) == ImageChannels::RGBA) {
+                mat.type = (MaterialType::Type)(mat.type | MaterialType::ALPHA_CLIP);
             }
+
+            if (!loadTextureFromAssimp(mat.textures[TextureSlot::ROUGHNESS], ai_mat, scene, aiTextureType_DIFFUSE_ROUGHNESS, GL_RED)) {
+                if (ai_mat->Get(AI_MATKEY_ROUGHNESS_FACTOR, col) == AI_SUCCESS && (col.r + col.g + col.b > 0) && col.a > 0) {
+                    mat.type = MaterialType::PBR;
+                    mat.textures[TextureSlot::ALBEDO] = getColorTexture(glm::vec4(col.r, col.g, col.b, col.a), GL_RED);
+                }
+            }
+
+            if (!loadTextureFromAssimp(mat.textures[TextureSlot::METAL], ai_mat, scene, aiTextureType_METALNESS, GL_RED)) {
+                if (ai_mat->Get(AI_MATKEY_METALLIC_FACTOR, col) == AI_SUCCESS && (col.r + col.g + col.b > 0) && col.a > 0) {
+                    mat.textures[TextureSlot::METAL] = getColorTexture(glm::vec4(col.r, col.g, col.b, col.a), GL_RED);
+                    mat.type = (MaterialType::Type)(mat.type | MaterialType::METALLIC);
+                }
+            } else { mat.type = (MaterialType::Type)(mat.type | MaterialType::METALLIC); }
+        }
+        else if (mat.type & MaterialType::BLINN_PHONG) {
+            // Alpha clip if there is an alpha channel in albedo, again could be done with flag
+            if (mat.textures[TextureSlot::DIFFUSE] && getChannelsForFormat(mat.textures[TextureSlot::DIFFUSE]->format) == ImageChannels::RGBA) {
+                mat.type = (MaterialType::Type)(mat.type | MaterialType::ALPHA_CLIP);
+            }
+
+            if (!loadTextureFromAssimp(mat.textures[TextureSlot::SPECULAR], ai_mat, scene, aiTextureType_SPECULAR, GL_RED)) {
+                if (ai_mat->Get(AI_MATKEY_SPECULAR_FACTOR, col) == AI_SUCCESS && col.r > 0) {
+                    mat.textures[TextureSlot::SPECULAR] = getColorTexture(glm::vec4(col.r, col.g, col.b, col.a), GL_RED);
+                }
+            }
+            if (!loadTextureFromAssimp(mat.textures[TextureSlot::SHININESS], ai_mat, scene, aiTextureType_SHININESS, GL_RED)) { // @todo conversion function from linear to exponent
+                if (ai_mat->Get(AI_MATKEY_SHININESS_STRENGTH, col) == AI_SUCCESS && col.r > 0) {
+                    mat.textures[TextureSlot::SHININESS] = getColorTexture(glm::vec4(col.r, col.g, col.b, col.a), GL_RED);
+                }
+            }
+        } else {
+            mat = *default_material; // @note!! this copies the uniform pointers which could be stale so default material must never be destroyed
+        }
+
+        // Emission
+        // I don't know what the difference between emission_color and emissive for ASSIMP, @note emissive intensity should probably be loaded as well
+        if (!loadTextureFromAssimp(mat.textures[TextureSlot::EMISSIVE], ai_mat, scene, aiTextureType_EMISSIVE, GL_FALSE)) {
+            if (!loadTextureFromAssimp(mat.textures[TextureSlot::EMISSIVE], ai_mat, scene, aiTextureType_EMISSION_COLOR, GL_FALSE)) {
+                if (ai_mat->Get(AI_MATKEY_COLOR_EMISSIVE, col) == AI_SUCCESS && (col.r + col.g + col.b > 0) && col.a > 0) {
+                    mat.textures[TextureSlot::EMISSIVE] = getColorTexture(glm::vec4(col.r, col.g, col.b, col.a), GL_RGB);
+                    mat.type = (MaterialType::Type)(mat.type | MaterialType::EMISSIVE);
+                }
+            } else { mat.type = (MaterialType::Type)(mat.type | MaterialType::EMISSIVE); }
+        } else { mat.type = (MaterialType::Type)(mat.type | MaterialType::EMISSIVE); }
+
+        // Baked Lightmaps or Ambient Occlusion
+        if (loadTextureFromAssimp(mat.textures[TextureSlot::GI], ai_mat, scene, aiTextureType_LIGHTMAP, GL_RGB)) {
+            mat.type = (MaterialType::Type)(mat.type | MaterialType::LIGHTMAPPED);
+        }
+        else {
+            if (loadTextureFromAssimp(mat.textures[TextureSlot::AO], ai_mat, scene, aiTextureType_AMBIENT_OCCLUSION, GL_RED)) {
+                mat.type = (MaterialType::Type)(mat.type | MaterialType::AO);
+            }
+        }
+
+        // Normals
+        // @note Since mtl files specify normals as bump maps assume all bump maps are really normals
+        if (!loadTextureFromAssimp(mat.textures[TextureSlot::NORMAL], ai_mat, scene, aiTextureType_NORMALS, GL_RGB, true)) {
+            if (!loadTextureFromAssimp(mat.textures[TextureSlot::NORMAL], ai_mat, scene, aiTextureType_HEIGHT, GL_RGB, true)) {
+                mat.textures[TextureSlot::NORMAL] = default_material->textures[TextureSlot::NORMAL];
+            }
+        }
+
+        // Remove any null pointers from value initializer of std unordered map
+        for (auto& it = mat.textures.cbegin(); it != mat.textures.cend();) {
+            if (!it->second) {
+                mat.textures.erase(it++);    // or "it = m.erase(it)" since C++11
+            } else {
+                ++it;
+            }
+        }
+
+        // Add some uniforms for modifying certain material types
+        if (mat.type & MaterialType::PBR) {
+            mat.uniforms["albedo_mult"] = Uniform(glm::vec3(1));
+            mat.uniforms["roughness_mult"] = Uniform(1.0f);
+        }
+        if (mat.type & MaterialType::BLINN_PHONG) {
+            mat.uniforms["diffuse_mult"] = Uniform(glm::vec3(1));
+            mat.uniforms["specular_mult"] = Uniform(1.0f);
+            mat.uniforms["shininess_mult"] = Uniform(1.0f);
+        }
+        if (mat.type & MaterialType::EMISSIVE) {
+            mat.uniforms["emissive_mult"] = Uniform(glm::vec3(1));
+        }
+        if (mat.type & MaterialType::LIGHTMAPPED || mat.type & MaterialType::AO) {
+            mat.uniforms["ambient_mult"] = Uniform(1.0f);
+        }
+        if (mat.type & MaterialType::METALLIC) {
+            mat.uniforms["metal_mult"] = Uniform(1.0f);
         }
 
         std::cout << "Material " << i << ": \n" << mat << "\n";
     }
 
     // Allocate arrays for each mesh 
-    mesh->num_meshes = ai_meshes.size();
-    std::cout << "Number of meshes is " << mesh->num_meshes << "\n";
-    mesh->draw_start = reinterpret_cast<decltype(mesh->draw_start)>(malloc(sizeof(*mesh->draw_start) * mesh->num_meshes));
-    mesh->draw_count = reinterpret_cast<decltype(mesh->draw_count)>(malloc(sizeof(*mesh->draw_count) * mesh->num_meshes));
-    mesh->transforms = reinterpret_cast<decltype(mesh->transforms)>(malloc(sizeof(*mesh->transforms) * mesh->num_meshes));
+    mesh->num_submeshes = ai_meshes.size();
+    std::cout << "Number of meshes is " << mesh->num_submeshes << "\n";
+    mesh->draw_start = reinterpret_cast<decltype(mesh->draw_start)>(malloc(sizeof(*mesh->draw_start) * mesh->num_submeshes));
+    mesh->draw_count = reinterpret_cast<decltype(mesh->draw_count)>(malloc(sizeof(*mesh->draw_count) * mesh->num_submeshes));
+    mesh->transforms = reinterpret_cast<decltype(mesh->transforms)>(malloc(sizeof(*mesh->transforms) * mesh->num_submeshes));
 
-    mesh->material_indices = reinterpret_cast<decltype(mesh->material_indices)>(malloc(sizeof(*mesh->material_indices) * mesh->num_meshes));
+    mesh->material_indices = reinterpret_cast<decltype(mesh->material_indices)>(malloc(sizeof(*mesh->material_indices) * mesh->num_submeshes));
 
     mesh->attributes = (MeshAttributes)(MESH_ATTRIBUTES_VERTICES | MESH_ATTRIBUTES_NORMALS | MESH_ATTRIBUTES_TANGENTS | MESH_ATTRIBUTES_UVS | MESH_ATTRIBUTES_COLORS);
     mesh->num_indices  = 0;
     mesh->num_vertices = 0;
-	for (int i = 0; i < mesh->num_meshes; ++i) {
+	for (int i = 0; i < mesh->num_submeshes; ++i) {
 		const aiMesh* ai_mesh = ai_meshes[i]; 
 
 		mesh->draw_start[i] = mesh->num_indices;
@@ -827,7 +655,7 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
     }
 
     int vertices_offset = 0, indices_offset = 0;
-    for (int j = 0; j < mesh->num_meshes; ++j) {
+    for (int j = 0; j < mesh->num_submeshes; ++j) {
         const aiMesh* ai_mesh = ai_meshes[j];
 
 		for(unsigned int i=0; i<ai_mesh->mNumVertices; i++){
@@ -1116,7 +944,7 @@ bool AssetManager::loadAnimatedMeshAssimp(AnimatedMesh* animesh, Mesh *mesh, con
     std::unordered_map<std::string, uint64_t> node_name_id_map;
 
     uint64_t vertex_offset = 0;
-    for (int i = 0; i < mesh->num_meshes; ++i) {
+    for (int i = 0; i < mesh->num_submeshes; ++i) {
         auto& ai_mesh = ai_meshes[i];
 
         extractBoneWeightsFromAiMesh(animesh, mesh, ai_mesh, scene, node_name_id_map, vertex_offset);
@@ -1138,7 +966,7 @@ bool AssetManager::loadAnimatedMeshAssimp(AnimatedMesh* animesh, Mesh *mesh, con
     // Bake global transform into mesh transforms
     //auto mesh_transform = aiMat4x4ToGlm(scene->mRootNode->mTransformation);
     //mesh_transform *= animated_to_static;
-    //for (int i = 0; i < mesh->num_meshes; ++i) {
+    //for (int i = 0; i < mesh->num_submeshes; ++i) {
     //    mesh->transforms[i] = mesh->transforms[i] * mesh_transform;
     //}
 
@@ -1592,6 +1420,7 @@ bool AssetManager::loadTexture(Texture *tex, const std::string &path, GLenum for
     auto texture_id = loadImage(path, tex->resolution, format, wrap, floating, trilinear);
     tex->id = texture_id;
     tex->format = format;
+    tex->complete = true;
 
     if(texture_id == GL_FALSE) return false;
     return true;
@@ -1625,31 +1454,33 @@ Audio* AssetManager::createAudio(const std::string& handle) {
 
 // These returns nullptr if the asset doesn't exist
 
-Mesh* AssetManager::getMesh(const std::string &path) {
-    auto lu = handle_mesh_map.find(path);
+Mesh* AssetManager::getMesh(const std::string &path) const {
+    const auto& lu = handle_mesh_map.find(path);
     if(lu == handle_mesh_map.end()) return nullptr;
-    else                             return &lu->second;
+    else                             return (Mesh*)&lu->second;
 }
 
-AnimatedMesh* AssetManager::getAnimatedMesh(const std::string& path) {
-    auto lu = handle_animated_mesh_map.find(path);
+AnimatedMesh* AssetManager::getAnimatedMesh(const std::string& path) const {
+    const auto& lu = handle_animated_mesh_map.find(path);
     if (lu == handle_animated_mesh_map.end()) return nullptr;
-    else                             return &lu->second;
+    else                                      return (AnimatedMesh*)&lu->second;
 }
 
-Texture* AssetManager::getTexture(const std::string &path) {
-    auto lu = handle_texture_map.find(path);
+Texture* AssetManager::getTexture(const std::string &path) const {
+    const auto& lu = handle_texture_map.find(path);
     if(lu == handle_texture_map.end()) return nullptr;
-    else                             return &lu->second;
+    else                               return (Texture*)&lu->second;
 }
 
 Texture* AssetManager::getColorTexture(const glm::vec4& col, GLint format) {
-    auto lu = color_texture_map.find(col);
+    const auto& lu = color_texture_map.find(col);
     if (lu == color_texture_map.end()) {
         auto tex = &color_texture_map.try_emplace(col).first->second;
         tex->id = create1x1TextureFloat(col, format);
         tex->is_color = true;
         tex->color = col;
+        tex->format = format;
+        tex->complete = true;
         return tex;
     } else {
         return &lu->second;

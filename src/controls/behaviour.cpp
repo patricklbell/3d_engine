@@ -60,7 +60,7 @@ Entity* pickEntityWithMouse(Camera& camera, EntityManager& entity_manager) {
                 const auto p1 = mesh->vertices[mesh->indices[j]];
                 const auto p2 = mesh->vertices[mesh->indices[j + 1]];
                 const auto p3 = mesh->vertices[mesh->indices[j + 2]];
-                for (int k = 0; k < mesh->num_meshes; k++) {
+                for (int k = 0; k < mesh->num_submeshes; k++) {
                     auto trans = mesh->transforms[k] * g_trans;
                     glm::vec3 triangle[3] = {
                         glm::vec3(trans * glm::vec4(p1, 1.0)),

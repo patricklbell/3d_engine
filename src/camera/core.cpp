@@ -41,6 +41,9 @@ bool Camera::update() {
         projection_updated = false;
         update = true;
     }
+    if (update) {
+        vp = projection * view;
+    }
 
     return update;
 }

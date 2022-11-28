@@ -150,61 +150,6 @@ static void writeBoneMatricesUbo(const std::array<glm::mat4, MAX_BONES>& final_b
     glBindBuffer(GL_UNIFORM_BUFFER, 0);
 }
 
-inline static void drawMeshMat(const Shader& s, const Mesh* mesh, const glm::mat4& g_model_rot_scl, const glm::mat4& g_model_pos, const glm::mat4& vp, const Texture* ao = nullptr) {
-    glBindVertexArray(mesh->vao);
-    for (int j = 0; j < mesh->num_meshes; ++j) {
-        // Since the mesh transforms encode scale this will mess up global translation so we apply translation after
-        auto model = g_model_pos * mesh->transforms[j] * g_model_rot_scl;
-        auto mvp = vp * model;
-        glUniformMatrix4fv(s.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
-        glUniformMatrix4fv(s.uniform("model"), 1, GL_FALSE, &model[0][0]);
-
-        auto& mat = mesh->materials[mesh->material_indices[j]];
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, mat.t_albedo->id);
-        glUniform1i(s.uniform("is_alpha_clipped"), (int)mat.alpha);
-        if (mat.alpha) {
-            glDisable(GL_CULL_FACE);
-            glEnable(GL_SAMPLE_ALPHA_TO_COVERAGE);
-        }
-
-        glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_2D, mat.t_normal->id);
-
-        glActiveTexture(GL_TEXTURE2);
-        glBindTexture(GL_TEXTURE_2D, mat.t_metallic->id);
-
-        glActiveTexture(GL_TEXTURE3);
-        glBindTexture(GL_TEXTURE_2D, mat.t_roughness->id);
-
-        glActiveTexture(GL_TEXTURE4);
-        if (ao != nullptr)
-            glBindTexture(GL_TEXTURE_2D, ao->id);
-        else
-            glBindTexture(GL_TEXTURE_2D, mat.t_ambient->id);
-
-        // Bind VAO and draw
-        glDrawElements(mesh->draw_mode, mesh->draw_count[j], mesh->draw_type, (GLvoid*)(sizeof(*mesh->indices) * mesh->draw_start[j]));
-
-        if (mat.alpha) {
-            glEnable(GL_CULL_FACE);
-            glDisable(GL_SAMPLE_ALPHA_TO_COVERAGE);
-        }
-    }
-}
-
-inline static void drawMeshShadow(const Shader& s, const Mesh* mesh, const glm::mat4& g_model_rot_scl, const glm::mat4& g_model_pos) {
-    glBindVertexArray(mesh->vao);
-    for (int j = 0; j < mesh->num_meshes; ++j) {
-        // Since the mesh transforms encode scale this will mess up global translation so we apply translation after
-        auto model = g_model_pos * mesh->transforms[j] * g_model_rot_scl;
-        glUniformMatrix4fv(s.uniform("model"), 1, GL_FALSE, &model[0][0]);
-
-        // Bind VAO and draw
-        glDrawElements(mesh->draw_mode, mesh->draw_count[j], mesh->draw_type, (GLvoid*)(sizeof(*mesh->indices) * mesh->draw_start[j]));
-    }
-}
-
 static glm::mat4x4 getShadowMatrixFromFrustrum(const Camera& camera, double near_plane, double far_plane) {
     // Make shadow's view target the center of the camera frustrum by averaging frustrum corners
     // maybe you can just calculate from view direction and near and far
@@ -352,118 +297,6 @@ void initShadowFbo() {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
     initShadowVpsUbo();
-}
-
-// Since shadow buffer wont need to be bound otherwise just combine these operations
-void bindDrawShadowMap(const EntityManager& entity_manager) {
-    writeShadowVpsUbo();
-
-    glBindFramebuffer(GL_FRAMEBUFFER, shadow_fbo);
-    glViewport(0, 0, shadow_size, shadow_size);
-
-    // Make shadow line up with object by culling front (Peter Panning)
-    // @note face culling wont work with certain techniques i.e. grass
-    //glEnable(GL_CULL_FACE);
-    //glCullFace(GL_FRONT);
-    glDisable(GL_CULL_FACE);
-
-    glDepthMask(GL_TRUE);
-    glEnable(GL_DEPTH_TEST);
-    //glDepthFunc(GL_LESS); 
-
-    //glDisable(GL_BLEND);
-    glClear(GL_DEPTH_BUFFER_BIT);
-
-    std::vector<AnimatedMeshEntity*> anim_mesh_entities;
-    std::vector<VegetationEntity*> vegetation_entities;
-
-    // 
-    // Draw normal static mesh entities
-    //
-    glUseProgram(Shaders::shadow.program());
-    for (int i = 0; i < ENTITY_COUNT; ++i) {
-        if (entity_manager.entities[i] == nullptr) continue;
-
-        auto m_e = reinterpret_cast<MeshEntity*>(entity_manager.entities[i]);
-        if (!(entityInherits(m_e->type, MESH_ENTITY)) || m_e->mesh == nullptr || !m_e->casts_shadow) continue;
-        if (entityInherits(m_e->type, ANIMATED_MESH_ENTITY)) {
-            auto a_e = (AnimatedMeshEntity*)m_e;
-            if (playing || a_e->draw_animated) {
-                anim_mesh_entities.push_back(a_e);
-                continue;
-            }
-        }
-        if (entityInherits(m_e->type, VEGETATION_ENTITY)) {
-            vegetation_entities.push_back((VegetationEntity*)m_e);
-            continue;
-        }
-
-        auto g_model_rot_scl = glm::mat4_cast(m_e->rotation) * glm::mat4x4(m_e->scale);
-        auto g_model_pos = glm::translate(glm::mat4x4(1.0), m_e->position);
-        drawMeshShadow(Shaders::shadow, m_e->mesh, g_model_rot_scl, g_model_pos);
-    }
-
-    // 
-    // Draw animated PBR mesh entities, same as static with some extra uniforms
-    //
-
-    if (anim_mesh_entities.size() > 0) {
-        Shaders::shadow.set_macro("ANIMATED_BONES", true);
-
-        glUseProgram(Shaders::shadow.program());
-        for (const auto& a_e : anim_mesh_entities) {
-            if (a_e->animesh == nullptr) continue;
-
-            writeBoneMatricesUbo(a_e->final_bone_matrices);
-
-            auto g_model_rot_scl = glm::mat4_cast(a_e->rotation) * glm::mat4x4(a_e->scale);
-            auto g_model_pos = glm::translate(glm::mat4x4(1.0), a_e->position);
-            drawMeshShadow(Shaders::shadow, a_e->mesh, g_model_rot_scl, g_model_pos);
-        }
-
-        Shaders::shadow.set_macro("ANIMATED_BONES", false);
-    }
-
-    if (vegetation_entities.size() > 0) {
-        glDisable(GL_CULL_FACE);
-        glEnable(GL_SAMPLE_ALPHA_TO_COVERAGE);
-        Shaders::shadow.set_macro("VEGETATION", true, false);
-        Shaders::shadow.set_macro("ALPHA_CLIP", true);
-
-        glUseProgram(Shaders::shadow.program());
-
-        const auto wind_direction_planar = glm::normalize(glm::vec2(wind_direction.x, wind_direction.z));
-        glUniform2fv(Shaders::shadow.uniform("wind_direction"), 1, &wind_direction_planar[0]);
-        glUniform1f(Shaders::shadow.uniform("wind_strength"), wind_strength);
-
-        for (const auto& v_e : vegetation_entities) {
-            if (v_e->texture == nullptr) continue;
-
-            auto model = createModelMatrix(v_e->position, v_e->rotation, v_e->scale);
-            glUniformMatrix4fv(Shaders::shadow.uniform("model"), 1, GL_FALSE, &model[0][0]);
-
-            glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, v_e->texture->id);
-
-            auto& mesh = v_e->mesh;
-            glBindVertexArray(mesh->vao);
-            for (int j = 0; j < mesh->num_meshes; ++j) {
-                // @note that this will break for models which have transforms
-                // Bind VAO and draw
-                glDrawElements(mesh->draw_mode, mesh->draw_count[j], mesh->draw_type, (GLvoid*)(sizeof(*mesh->indices) * mesh->draw_start[j]));
-            }
-        }
-
-        Shaders::shadow.set_macro("VEGETATION", false, false);
-        Shaders::shadow.set_macro("ALPHA_CLIP", false);
-        glEnable(GL_CULL_FACE);
-        glDisable(GL_SAMPLE_ALPHA_TO_COVERAGE);
-    }
-
-    glCullFace(GL_BACK);
-    // Reset bound framebuffer and return to original viewport
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glViewport(0, 0, window_width, window_height);
 }
 
 // Precomputes brdf geometry function for different roughnesses and directions
@@ -1008,7 +841,7 @@ void initGraphics(AssetManager& asset_manager) {
     line_cube.draw_start[0] = 0;
     line_cube.draw_count[0] = sizeof(line_cube_vertices) / (2.0 * sizeof(*line_cube_vertices));
 
-    asset_manager.loadMeshFile(&water_grid, "data/mesh/water_grid.mesh");
+    asset_manager.loadMeshAssimp(&water_grid, "data/models/water_grid.obj");
     simplex_gradient = asset_manager.createTexture("data/textures/2d_simplex_gradient_seamless.png");
     asset_manager.loadTexture(simplex_gradient, "data/textures/2d_simplex_gradient_seamless.png", GL_RGB, GL_REPEAT);
     simplex_value = asset_manager.createTexture("data/textures/2d_simplex_value_seamless.png");
@@ -1171,28 +1004,198 @@ void drawSkybox(const Texture* skybox, const Camera &camera) {
     glEnable(GL_CULL_FACE);
 }
 
-void drawEntitiesHdr(const EntityManager& entity_manager, const Texture* skybox, const Texture* irradiance_map, const Texture* prefiltered_specular_map, const Camera& camera, const bool lightmapping) {
-    glDepthMask(GL_TRUE);
-    glEnable(GL_DEPTH_TEST);
+void createRenderQueue(RenderQueue& q, const EntityManager& entity_manager, const bool lightmapping) {
+    q.opaque_items.clear();
+    q.transparent_items.clear();
+    q.water = nullptr;
 
-    if (lightmapping) {
-        glDisable(GL_CULL_FACE);
+    for (int i = 0; i < ENTITY_COUNT; ++i) {
+        if (entity_manager.entities[i] == nullptr) continue;
+        auto m_e = reinterpret_cast<MeshEntity*>(entity_manager.entities[i]);
+        if (!(entityInherits(m_e->type, MESH_ENTITY)) || m_e->mesh == nullptr) continue;
+
+        RenderItem ri;
+        ri.mesh = m_e->mesh;
+        ri.state = (RenderState::Type)(RenderState::DEPTH_READ | RenderState::DEPTH_WRITE);
+
+        if (entityInherits(m_e->type, ANIMATED_MESH_ENTITY)) {
+            auto a_e = (AnimatedMeshEntity*)m_e;
+            if (playing || a_e->draw_animated) {
+                ri.bone_matrices = &a_e->final_bone_matrices;
+            }
+        }
+        if (entityInherits(m_e->type, VEGETATION_ENTITY)) {
+            ri.state = (RenderState::Type)(ri.state | RenderState::ALPHA_COVERAGE);
+            ri.vegetation = true;
+        }
+        else {
+            ri.state = (RenderState::Type)(ri.state | RenderState::BACK_CULL);
+        }
+
+        const auto& mesh = *m_e->mesh;
+        q.opaque_items.reserve(q.opaque_items.size() + mesh.num_submeshes);
+        for (uint64_t i = 0; i < mesh.num_submeshes; i++) {
+            // @todo frustrum culling, occlusion culling
+            // @todo sorting by vao, material, texture similarity
+            auto& sri = q.opaque_items.emplace_back(ri);
+            sri.submesh_i = i;
+            sri.model = glm::translate(mesh.transforms[sri.submesh_i], m_e->position) * glm::mat4_cast(m_e->rotation) * glm::mat4x4(m_e->scale);
+
+            const auto& lu = m_e->overidden_materials.find(i); // @note using the submesh index is intentional as it allows any part of a meshes material to be overriden
+            if (lu == m_e->overidden_materials.end()) {
+                sri.mat = &m_e->mesh->materials[mesh.material_indices[i]];
+            }
+            else {
+                sri.mat = &lu->second;
+            }
+
+            if (sri.mat->type == MaterialType::NONE) {
+                std::cerr << "Empty material on entity id: " << m_e->id.i << ", skipping\n";
+                q.opaque_items.erase(q.opaque_items.end() - 1);
+            }
+        }
+    }
+    if (!lightmapping && entity_manager.water != NULLID) {
+        q.water = (WaterEntity*)entity_manager.getEntity(entity_manager.water);
+    }
+}
+
+static void updateRenderState(RenderState::Type& current, RenderState::Type desired) {
+    auto enable  = (current ^ desired) & desired;
+    auto disable = (current ^ desired) & current;
+
+    if (enable) {
+        if (enable | RenderState::FRONT_CULL) {
+            glCullFace(GL_FRONT);
+            glEnable(GL_CULL_FACE);
+        }
+        if (enable | RenderState::BACK_CULL) {
+            glCullFace(GL_BACK);
+            glEnable(GL_CULL_FACE);
+        }
+        if (enable | RenderState::ALPHA_COVERAGE) {
+            glEnable(GL_SAMPLE_ALPHA_TO_COVERAGE);
+        }
+        if (enable | RenderState::DEPTH_READ) {
+            glEnable(GL_DEPTH_TEST);
+        }
+        if (enable | RenderState::DEPTH_WRITE) {
+            glDepthMask(GL_TRUE);
+        }
+    }
+    if (disable) {
+        if (disable | RenderState::FRONT_CULL || disable | RenderState::BACK_CULL) {
+            glDisable(GL_CULL_FACE);
+        }
+        if (disable | RenderState::ALPHA_COVERAGE) {
+            glDisable(GL_SAMPLE_ALPHA_TO_COVERAGE);
+        }
+        if (disable | RenderState::DEPTH_READ) {
+            glDisable(GL_DEPTH_TEST);
+        }
+        if (disable | RenderState::DEPTH_WRITE) {
+            glDepthMask(GL_FALSE);
+        }
+    }
+
+    current = desired;
+}
+
+static void drawRenderItem(const RenderItem& ri, const glm::mat4x4* vp, GLuint& vao, GLuint& program, RenderState::Type& state, const bool shadow=false) {
+    const auto& mesh = *ri.mesh;
+    if (mesh.vao != vao) {
+        glBindVertexArray(mesh.vao);
+        vao = vao;
+    }
+
+    const auto& mat = *ri.mat;
+    Shader& s = shadow ? Shaders::shadow : Shaders::unified;
+
+    // Do back face culling instead of front to reduce peter-panning for shadows
+    if (shadow && ri.state & RenderState::BACK_CULL) {
+        updateRenderState(state, (RenderState::Type)(ri.state ^ RenderState::BACK_CULL | RenderState::FRONT_CULL));
     }
     else {
-        // @note face culling wont work with certain techniques i.e. grass
-        glCullFace(GL_BACK);
-        glEnable(GL_CULL_FACE);
+        updateRenderState(state, ri.state);
     }
 
+    // Determine shader program from macros, @todo move to render queue construction, 
+    // in future this could also be a LUT from material type
+    if (!shadow) {
+        s.set_macro("PBR", mat.type & MaterialType::PBR, false);
+        s.set_macro("METALLIC", mat.type & MaterialType::METALLIC, false);
+        s.set_macro("EMISSIVE", mat.type & MaterialType::EMISSIVE, false);
+        s.set_macro("GLOBAL_ILLUMINATION", mat.type & MaterialType::LIGHTMAPPED, false);
+        s.set_macro("AO", mat.type & MaterialType::AO, false);
+    }
 
-    // @todo in future entities should probably stored as vectors so you can traverse easily
-    std::vector<AnimatedMeshEntity*> anim_mesh_entities;
-    std::vector<VegetationEntity*> vegetation_entities;
+    s.set_macro("ALPHA_CLIP", mat.type & MaterialType::ALPHA_CLIP, false);
+    s.set_macro("ANIMATED_BONES", ri.bone_matrices, false);
+    s.set_macro("VEGETATION", ri.vegetation, false);
 
-    auto vp = camera.projection * camera.view;
+    // @note !!IMPORTANT this is needed to set correct shader
+    s.activate_macros();
 
+    if (s.program() != program) {
+        glUseProgram(s.program());
+        program = s.program();
+    }
+
+    if (ri.vegetation) {
+        glUniform2f(s.uniform("wind_direction"), wind_direction.x, wind_direction.y);
+        glUniform1f(s.uniform("wind_strength"), 3.0);
+    }
+
+    // Setup material uniforms and textures, skip if we are drawing a shadow,
+    // the texture ids could be found in render queue step
+    if (!shadow) {
+        for (const auto& p : mat.textures) {
+            const auto& binding = p.first;
+            const auto& tex = p.second;
+
+            glActiveTexture(GL_TEXTURE0 + (uint64_t)binding);
+            glBindTexture(GL_TEXTURE_2D, tex->id);
+        }
+
+        for (const auto& p : mat.uniforms) {
+            auto& name = p.first;
+            auto& uniform = p.second;
+
+            uniform.bind(s.uniform(name));
+        }
+    } else if (mat.type & MaterialType::ALPHA_CLIP) { // Need to bind clip texture for shadows
+        const auto& lu = mat.textures.find(TextureSlot::ALPHA_CLIP);
+        if (lu != mat.textures.end()) {
+            const auto& binding = lu->first;
+            const auto& tex = lu->second;
+
+            glActiveTexture(GL_TEXTURE0 + (uint64_t)binding);
+            glBindTexture(GL_TEXTURE_2D, tex->id);
+        }
+    }
+
+    // Setup transforms
+    glUniformMatrix4fv(s.uniform("model"), 1, GL_FALSE, &ri.model[0][0]);
+    if (!shadow) {
+        auto mvp = *vp * ri.model;
+        glUniformMatrix4fv(s.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
+    }
+
+    // If bone animated write bone matrices
+    if (ri.bone_matrices) {
+        writeBoneMatricesUbo(*ri.bone_matrices);
+    }
+
+    glDrawElements(mesh.draw_mode, mesh.draw_count[ri.submesh_i], mesh.draw_type, (GLvoid*)(sizeof(*mesh.indices) * mesh.draw_start[ri.submesh_i]));
+}
+
+void drawRenderQueue(const RenderQueue& q, const Texture* skybox, const Texture* irradiance_map, const Texture* prefiltered_specular_map, const Camera& camera) {
+    RenderState::Type bound_state = RenderState::ALL; // Assume everything has been enabled
+    updateRenderState(bound_state, RenderState::NONE); // Then disable everything
+    GLuint bound_vao = GL_FALSE, bound_program = GL_FALSE;
+
+    // Bind shared resources
     writeSharedUbo(camera);
-
     if (do_shadows) {
         glActiveTexture(GL_TEXTURE5);
         glBindTexture(GL_TEXTURE_2D_ARRAY, shadow_buffer);
@@ -1215,179 +1218,60 @@ void drawEntitiesHdr(const EntityManager& entity_manager, const Texture* skybox,
         glBindTexture(GL_TEXTURE_3D, accumulated_volumetric_volume);
     }
 
-    // 
-    // Draw normal static PBR mesh entities
-    //
     Shaders::unified.set_macro("SHADOWS", do_shadows);
     Shaders::unified.set_macro("VOLUMETRICS", do_volumetrics);
 
-    glUseProgram(Shaders::unified.program());
-    for (int i = 0; i < ENTITY_COUNT; ++i) {
-        if (entity_manager.entities[i] == nullptr) continue;
-
-        auto m_e = reinterpret_cast<MeshEntity*>(entity_manager.entities[i]);
-        if (entityInherits(m_e->type, ANIMATED_MESH_ENTITY)) {
-            if (lightmapping) 
-                continue;
-
-            auto a_e = (AnimatedMeshEntity*)m_e;
-            if (playing || a_e->draw_animated) {
-                anim_mesh_entities.push_back(a_e);
-                continue;
-            }
-        }
-        if (!lightmapping && entityInherits(m_e->type, VEGETATION_ENTITY)) {
-            if (lightmapping)
-                continue;
-
-            vegetation_entities.push_back((VegetationEntity*)m_e);
-            continue;
-        }
-        if (!(entityInherits(m_e->type, MESH_ENTITY)) || m_e->mesh == nullptr) continue;
-
-        // Material multipliers
-        glUniform3fv(Shaders::unified.uniform("albedo_mult"), 1, &m_e->albedo_mult[0]);
-        glUniform1f(Shaders::unified.uniform("roughness_mult"), m_e->roughness_mult);
-        glUniform1f(Shaders::unified.uniform("metal_mult"),     m_e->metal_mult);
-        glUniform1f(Shaders::unified.uniform("ao_mult"),        m_e->ao_mult);
-
-        auto g_model_rot_scl = glm::mat4_cast(m_e->rotation) * glm::mat4x4(m_e->scale);
-        auto g_model_pos     = glm::translate(glm::mat4x4(1.0), m_e->position);
-        drawMeshMat(Shaders::unified, m_e->mesh, g_model_rot_scl, g_model_pos, vp, m_e->do_lightmap ? m_e->lightmap: nullptr);
-    }
-
-    // 
-    // Draw animated PBR mesh entities, same as static with some extra uniforms
-    //
-    if (!lightmapping && anim_mesh_entities.size() > 0) {
-        Shaders::unified.set_macro("ANIMATED_BONES", true);
-        
-        glUseProgram(Shaders::unified.program());
-        for (const auto &a_e : anim_mesh_entities) {
-            if (a_e->animesh == nullptr) continue;
-
-            writeBoneMatricesUbo(a_e->final_bone_matrices);
-
-            // Material multipliers
-            // @editor Colour model according to animation blend state
-            if (editor::debug_animations) {
-                switch (a_e->blend_state)
-                {
-                case AnimatedMeshEntity::BlendState::PREVIOUS:
-                    glUniform3f(Shaders::unified.uniform("albedo_mult"), 0, 0, 1);
-                    break;
-                case AnimatedMeshEntity::BlendState::NEXT:
-                    glUniform3f(Shaders::unified.uniform("albedo_mult"), 1, 0, 0);
-                    break;
-                default:
-                    glUniform3fv(Shaders::unified.uniform("albedo_mult"), 1, &a_e->albedo_mult[0]);
-                    break;
-                }
-            } else {
-                glUniform3fv(Shaders::unified.uniform("albedo_mult"), 1, &a_e->albedo_mult[0]);
-            }
-            glUniform1f(Shaders::unified.uniform("roughness_mult"), a_e->roughness_mult);
-            glUniform1f(Shaders::unified.uniform("metal_mult"), a_e->metal_mult);
-            glUniform1f(Shaders::unified.uniform("ao_mult"), a_e->ao_mult);
-
-            auto g_model_rot_scl = glm::mat4_cast(a_e->rotation) * glm::mat4x4(a_e->scale);
-            auto g_model_pos = glm::translate(glm::mat4x4(1.0), a_e->position);
-            drawMeshMat(Shaders::unified, a_e->mesh, g_model_rot_scl, g_model_pos, vp);
-        }
-
-        Shaders::unified.set_macro("ANIMATED_BONES", false);
-    }
-
-    // 
-    // Draw vegetation/alpha clipped quads
-    // @todo instanced rendering
-    //
-    if(!lightmapping && vegetation_entities.size() > 0) {
-        glDisable(GL_CULL_FACE);
-        glEnable(GL_SAMPLE_ALPHA_TO_COVERAGE);
-        Shaders::vegetation.set_macro("SHADOWS", do_shadows);
-        Shaders::vegetation.set_macro("VOLUMETRICS", do_volumetrics);
-
-        glUseProgram(Shaders::vegetation.program());
-        glUniform2f(Shaders::vegetation.uniform("wind_direction"), wind_direction.x, wind_direction.y);
-        glUniform1f(Shaders::vegetation.uniform("wind_strength"), 3.0);
-
-        for (const auto &v_e : vegetation_entities) {
-            if(v_e->texture == nullptr) continue;
-
-            auto model = createModelMatrix(v_e->position, v_e->rotation, v_e->scale);
-            auto mvp   = vp * model;
-            glUniformMatrix4fv(Shaders::vegetation.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
-            glUniformMatrix4fv(Shaders::vegetation.uniform("model"), 1, GL_FALSE, &model[0][0]);
-
-            glActiveTexture(GL_TEXTURE0);
-            glBindTexture(GL_TEXTURE_2D, v_e->texture->id);
-
-            auto &mesh = v_e->mesh;
-            glBindVertexArray(mesh->vao);
-            for (int j = 0; j < mesh->num_meshes; ++j) {
-                glActiveTexture(GL_TEXTURE1);
-                glBindTexture(GL_TEXTURE_2D, mesh->materials[j].t_normal->id);
-
-                // @note that this will break for models which have transforms
-                // Bind VAO and draw
-                glDrawElements(mesh->draw_mode, mesh->draw_count[j], mesh->draw_type, (GLvoid*)(sizeof(*mesh->indices) * mesh->draw_start[j]));
-            }
-        }
-
-        glDisable(GL_SAMPLE_ALPHA_TO_COVERAGE);
-        glEnable(GL_CULL_FACE);
+    for (const auto& ri : q.opaque_items) {
+        drawRenderItem(ri, &camera.vp, bound_vao, bound_program, bound_state);
     }
 
     drawSkybox(skybox, camera);
-    if (!lightmapping && entity_manager.water != NULLID) {
-        auto water = (WaterEntity*)entity_manager.getEntity(entity_manager.water);
-        if (water != nullptr) {
-            Shaders::water.set_macro("SHADOWS", do_shadows);
-            Shaders::water.set_macro("VOLUMETRICS", do_volumetrics);
 
-            glUseProgram(Shaders::water.program());
-            // @debug the geometry shader and tesselation
-            //glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-
-            if (do_msaa) {
-                resolveMultisampleHdrBuffer();
-                bindHdr();
-            }
-
-            glActiveTexture(GL_TEXTURE0);
-            if (do_msaa)
-                glBindTexture(GL_TEXTURE_2D, hdr_buffer_resolve_multisample);
-            else
-                glBindTexture(GL_TEXTURE_2D, hdr_buffer);
-            // Copy depth buffer
-            glActiveTexture(GL_TEXTURE1);
-            glBindTexture(GL_TEXTURE_2D, hdr_depth_copy);
-            if(!do_msaa) // resolving copies depth already
-                glCopyTextureSubImage2D(hdr_depth_copy, 0, 0, 0, 0, 0, window_width, window_height);
-            glActiveTexture(GL_TEXTURE2);
-            glBindTexture(GL_TEXTURE_2D, simplex_gradient->id);
-            glActiveTexture(GL_TEXTURE3);
-            glBindTexture(GL_TEXTURE_2D, simplex_value->id);
-            glActiveTexture(GL_TEXTURE4);
-            glBindTexture(GL_TEXTURE_2D, water_collider_buffers[water_collider_final_fbo]);
+    for (const auto& ri : q.transparent_items) {
+        drawRenderItem(ri, &camera.vp, bound_vao, bound_program, bound_state);
+    }
     
-            auto model = createModelMatrix(water->position, glm::quat(), water->scale);
-            auto mvp = vp * model;
-            glUniformMatrix4fv(Shaders::water.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
-            glUniformMatrix4fv(Shaders::water.uniform("model"), 1, GL_FALSE, &model[0][0]);
-            glUniform4fv(Shaders::water.uniform("shallow_color"), 1, &water->shallow_color[0]);
-            glUniform4fv(Shaders::water.uniform("deep_color"), 1, &water->deep_color[0]);
-            glUniform4fv(Shaders::water.uniform("foam_color"), 1, &water->foam_color[0]);
+    // @todo integrate with transparent render queue
+    if (q.water) {
+        Shaders::water.set_macro("SHADOWS", do_shadows);
+        Shaders::water.set_macro("VOLUMETRICS", do_volumetrics);
+        updateRenderState(bound_state, RenderState::NONE);
 
-            if (water_grid.complete) {
-                glBindVertexArray(water_grid.vao);
-                glDrawElements(water_grid.draw_mode, water_grid.draw_count[0], water_grid.draw_type, 
-                               (GLvoid*)(sizeof(*water_grid.indices)*water_grid.draw_start[0]));
-            }
+        glUseProgram(Shaders::water.program());
+        if (do_msaa) {
+            resolveMultisampleHdrBuffer();
+            bindHdr();
+        }
 
-            //glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-            glDepthFunc(GL_LESS);
+        glActiveTexture(GL_TEXTURE0);
+        if (do_msaa)
+            glBindTexture(GL_TEXTURE_2D, hdr_buffer_resolve_multisample);
+        else
+            glBindTexture(GL_TEXTURE_2D, hdr_buffer);
+        // Copy depth buffer
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, hdr_depth_copy);
+        if(!do_msaa) // resolving copies depth already
+            glCopyTextureSubImage2D(hdr_depth_copy, 0, 0, 0, 0, 0, window_width, window_height);
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, simplex_gradient->id);
+        glActiveTexture(GL_TEXTURE3);
+        glBindTexture(GL_TEXTURE_2D, simplex_value->id);
+        glActiveTexture(GL_TEXTURE4);
+        glBindTexture(GL_TEXTURE_2D, water_collider_buffers[water_collider_final_fbo]);
+    
+        auto model = createModelMatrix(q.water->position, glm::quat(), q.water->scale);
+        auto mvp = camera.vp * model;
+        glUniformMatrix4fv(Shaders::water.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
+        glUniformMatrix4fv(Shaders::water.uniform("model"), 1, GL_FALSE, &model[0][0]);
+        glUniform4fv(Shaders::water.uniform("shallow_color"), 1, &q.water->shallow_color[0]);
+        glUniform4fv(Shaders::water.uniform("deep_color"), 1, &q.water->deep_color[0]);
+        glUniform4fv(Shaders::water.uniform("foam_color"), 1, &q.water->foam_color[0]);
+
+        if (water_grid.complete) {
+            glBindVertexArray(water_grid.vao);
+            glDrawElements(water_grid.draw_mode, water_grid.draw_count[0], water_grid.draw_type, 
+                            (GLvoid*)(sizeof(*water_grid.indices)*water_grid.draw_start[0]));
         }
     }
     
@@ -1396,12 +1280,33 @@ void drawEntitiesHdr(const EntityManager& entity_manager, const Texture* skybox,
     }
 }
 
+// Since shadow buffer wont need to be bound otherwise just combine these operations
+void drawRenderQueueShadows(const RenderQueue& q) {
+    // @todo make these global and persistant/renderer class
+    RenderState::Type bound_state = RenderState::ALL; // Assume everything has been enabled
+    updateRenderState(bound_state, RenderState::NONE); // Then disable everything
+    GLuint bound_vao = GL_FALSE, bound_program = GL_FALSE;
+
+    glBindFramebuffer(GL_FRAMEBUFFER, shadow_fbo);
+    glViewport(0, 0, shadow_size, shadow_size);
+    glClear(GL_DEPTH_BUFFER_BIT);
+
+    writeShadowVpsUbo();
+
+    // Only calculate shadows for opaque objects, @todo partial shadows with transparency?
+    for (const auto& ri : q.opaque_items) {
+        drawRenderItem(ri, nullptr, bound_vao, bound_program, bound_state, true);
+    }
+
+    // Reset bound framebuffer and return to original viewport
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glViewport(0, 0, window_width, window_height);
+}
+
 void bindBackbuffer(){
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-// @todo there is aliasing between objects and the skybox, this could probably be fixed
-// by binding the raw multisampled texture and blending edges based on depth coverage 
 void drawPost(Texture *skybox, const Camera &camera){
     // Draw screen space quad so clearing is unnecessary
     //glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
