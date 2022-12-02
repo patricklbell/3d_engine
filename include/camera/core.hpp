@@ -3,18 +3,18 @@
 
 #include <glm/glm.hpp>
 
+struct Frustrum {
+    float near_plane = 0.01f, far_plane = 100.0f;
+    float fov = glm::radians(45.0f);
+    float aspect_ratio = 1.0; // width / height
+};
+
 struct Camera {
     enum TYPE : uint8_t {
         TRACKBALL = 0,
         SHOOTER = 1,
         STATIC = 2,
     } state;
-
-    struct Frustrum {
-        float near_plane = 0.01f, far_plane = 100.0f;
-        float fov = glm::radians(45.0f);
-        float aspect_ratio = 1.0; // width / height
-    };
 
     Camera(Frustrum _frustrum = Frustrum(), glm::vec3 _position = glm::vec3(3.0));
     void set_frustrum(Frustrum _frustrum = Frustrum());

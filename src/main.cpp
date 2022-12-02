@@ -183,7 +183,7 @@ int main() {
     sun_color = 5.0f*glm::vec3(0.941, 0.933, 0.849);
 
     {
-        Camera::Frustrum frustrum;
+        Frustrum frustrum;
         frustrum.aspect_ratio = (float)window_width / (float)window_height;
 
         Cameras::editor_camera.set_frustrum(frustrum);

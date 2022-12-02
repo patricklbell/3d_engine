@@ -5,7 +5,7 @@
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 
-#include <Camera/core.hpp>
+#include <camera/core.hpp>
 
 #include "assets.hpp"
 #include "renderer.hpp"

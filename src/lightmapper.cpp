@@ -109,7 +109,7 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 	initHdrFbo();
 
 	// Not a real camera, just so shader uniforms are correct
-	Camera::Frustrum frustrum;
+	Frustrum frustrum;
 	frustrum.near_plane = 0.01f;
 	frustrum.far_plane = 100.0f;
 	Camera camera(frustrum);
@@ -311,4 +311,5 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 	}
 
 	updateShadowVP(*camera_ptr);
+  return true;
 }

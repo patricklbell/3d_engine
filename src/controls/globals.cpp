@@ -9,12 +9,12 @@ namespace Controls {
 	State game;
 	State editor;
 
-    glm::dvec2 scroll_offset;
-    bool scrolled;
-    glm::dvec2 mouse_position;
-    glm::dvec2 delta_mouse_position;
+  glm::dvec2 scroll_offset;
+  bool scrolled;
+  glm::dvec2 mouse_position;
+  glm::dvec2 delta_mouse_position;
 
-	static void windowScrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
+	void windowScrollCallback(GLFWwindow* window, double xoffset, double yoffset) {
 		if (scroll_offset.x != xoffset || scroll_offset.y != yoffset) scrolled = true;
 		else scrolled = false;
 
