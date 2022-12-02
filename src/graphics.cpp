@@ -14,6 +14,7 @@
 #include <shader/globals.hpp>
 
 #include "graphics.hpp"
+#include "renderer.hpp"
 #include "assets.hpp"
 #include "utilities.hpp"
 #include "globals.hpp"
@@ -26,6 +27,9 @@ int    window_height;
 bool   window_resized;
 
 namespace graphics {
+    // 
+    // Bloom
+    //
     bool do_bloom = true;
     GLuint bloom_fbo = {GL_FALSE};
     std::vector<BloomMipInfo> bloom_mip_infos;
@@ -212,6 +216,7 @@ static glm::mat4x4 getShadowMatrixFromFrustrum(const Camera& camera, double near
     //max_z = glm::floor(max_z / max_world_units_per_texel) * max_world_units_per_texel;
 
     const auto shadow_projection = glm::ortho(min_x, max_x, min_y, max_y, min_z, max_z);
+    //const auto shadow_projection = glm::ortho(min_x, max_x, min_y, max_y, -max_z, -min_z);
     //const auto shadow_projection = glm::ortho(50.0f, -50.0f, 50.0f, -50.0f, camera.near_plane, camera.frustrum.far_plane);
     return shadow_projection * shadow_view;
 }
@@ -320,9 +325,9 @@ void initBRDFLut(AssetManager& asset_manager) {
     glBindFramebuffer(GL_FRAMEBUFFER, FBO);
     glBindRenderbuffer(GL_RENDERBUFFER, RBO);
 
-    glUseProgram(Shaders::generate_brdf_lut.program());
+    gl_state.bind_program(Shaders::generate_brdf_lut.program());
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, brdf_lut->id, 0);
-    glViewport(0, 0, brdf_lut->resolution.x, brdf_lut->resolution.y);
+    gl_state.bind_viewport(brdf_lut->resolution.x, brdf_lut->resolution.y);
 
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     drawQuad();
@@ -353,13 +358,11 @@ void initWaterColliderFbo() {
 
 void bindDrawWaterColliderMap(const EntityManager& entity_manager, WaterEntity* water) {
     glBindFramebuffer(GL_FRAMEBUFFER, water_collider_fbos[0]);
-    glViewport(0, 0, WATER_COLLIDER_SIZE, WATER_COLLIDER_SIZE);
+    gl_state.bind_viewport(WATER_COLLIDER_SIZE, WATER_COLLIDER_SIZE);
 
     // Render entities only when they intersect water plane
-    glUseProgram(Shaders::plane_projection.program());
-    glDisable(GL_DEPTH_TEST);
-    glDepthMask(GL_TRUE);
-    glDisable(GL_CULL_FACE);
+    gl_state.bind_program(Shaders::plane_projection.program());
+    gl_state.set_flags(GlFlags::DEPTH_WRITE);
 
     glClearColor(0, 0, 0, 1);
     glClear(GL_COLOR_BUFFER_BIT);
@@ -378,32 +381,30 @@ void bindDrawWaterColliderMap(const EntityManager& entity_manager, WaterEntity* 
 
         auto& mesh = m_e->mesh;
         for (int j = 0; j < mesh->num_materials; ++j) {
-            glBindVertexArray(mesh->vao);
+            gl_state.bind_vao(mesh->vao);
             glDrawElements(mesh->draw_mode, mesh->draw_count[j], mesh->draw_type, (GLvoid*)(sizeof(GLubyte) * mesh->draw_start[j]));
         }
     }
-    // Reset gl state to expected degree
-    glEnable(GL_CULL_FACE);
-    glEnable(GL_DEPTH_TEST);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glViewport(0, 0, window_width, window_height);
+
+    gl_state.bind_viewport(window_width, window_height);
 }
 void distanceTransformWaterFbo(WaterEntity* water) {
     constexpr uint64_t num_steps = nextPowerOf2(WATER_COLLIDER_SIZE, WATER_COLLIDER_SIZE) - 2.0;
 
-    glUseProgram(Shaders::jump_flood.program());
+    gl_state.set_flags(GlFlags::NONE);
+    gl_state.bind_program(Shaders::jump_flood.program());
+
     glUniform1f(Shaders::jump_flood.uniform("num_steps"), num_steps);
     glUniform2f(Shaders::jump_flood.uniform("resolution"), WATER_COLLIDER_SIZE, WATER_COLLIDER_SIZE);
 
-    glViewport(0, 0, WATER_COLLIDER_SIZE, WATER_COLLIDER_SIZE);
-    for (int step = 0; step <= num_steps; step++)
-    {
+    gl_state.bind_viewport(WATER_COLLIDER_SIZE, WATER_COLLIDER_SIZE);
+    for (int step = 0; step <= num_steps; step++) {
         // Last iteration convert jfa to distance transform
         if (step != num_steps) {
             glUniform1f(Shaders::jump_flood.uniform("step"), step);
         }
         else {
-            glUseProgram(Shaders::jfa_to_distance.program());
+            gl_state.bind_program(Shaders::jfa_to_distance.program());
             glUniform2f(Shaders::jfa_to_distance.uniform("dimensions"), water->scale[0][0], water->scale[2][2]);
         }
 
@@ -415,14 +416,12 @@ void distanceTransformWaterFbo(WaterEntity* water) {
         drawQuad();
     }
 
-
     glBindTexture(GL_TEXTURE_2D, water_collider_buffers[(num_steps + 1) % 2]);
     glGenerateMipmap(GL_TEXTURE_2D);
     water_collider_final_fbo = (num_steps + 1) % 2;
 
-    glUseProgram(Shaders::gaussian_blur.program());
-    for (unsigned int i = 0; i < 2; i++)
-    {
+    gl_state.bind_program(Shaders::gaussian_blur.program());
+    for (unsigned int i = 0; i < 2; i++) {
         glBindFramebuffer(GL_FRAMEBUFFER, water_collider_fbos[(num_steps + i) % 2]);
 
         glUniform1i(Shaders::gaussian_blur.uniform("horizontal"), (int)i);
@@ -432,8 +431,9 @@ void distanceTransformWaterFbo(WaterEntity* water) {
 
         drawQuad();
     }
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glViewport(0, 0, window_width, window_height);
+    
+    // Reset viewport
+    gl_state.bind_viewport(window_width, window_height);
 }
 
 void clearBloomFbo() {
@@ -635,7 +635,7 @@ void computeVolumetrics(uint64_t frame_i, const Camera& camera) {
 
     // Convert fog volumes, for now just a global fog, into camera fitted color&density 3D texture
     auto& vi = Shaders::volumetric_integration;
-    glUseProgram(vi.program());
+    gl_state.bind_program(vi.program());
 
     if (playing) {
         glUniform1f(vi.uniform("anisotropy"), Game::fog_properties.anisotropy);
@@ -671,7 +671,7 @@ void computeVolumetrics(uint64_t frame_i, const Camera& camera) {
 
     // Raymarch through fog volume to accumulate scattering and transmission
     auto& vr = Shaders::volumetric_raymarch;
-    glUseProgram(vr.program());
+    gl_state.bind_program(vr.program());
 
     glUniform3iv(vr.uniform("vol_size"), 1, &VOLUMETRIC_RESOLUTION[0]);
 
@@ -697,7 +697,7 @@ void initGraphics(AssetManager& asset_manager) {
     GLuint quad_vbo;
     glGenBuffers(1, &quad_vbo);
 
-    glBindVertexArray(quad.vao);
+    gl_state.bind_vao(quad.vao);
     glBindBuffer(GL_ARRAY_BUFFER, quad_vbo);
 
     glBufferData(GL_ARRAY_BUFFER, sizeof(quad_vertices), &quad_vertices, GL_STATIC_DRAW);
@@ -707,7 +707,6 @@ void initGraphics(AssetManager& asset_manager) {
     glEnableVertexAttribArray(1);
 
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
-    glBindVertexArray(0);
 
     quad.draw_count = (GLint*)malloc(sizeof(GLint));
     quad.draw_start = (GLint*)malloc(sizeof(GLint));
@@ -765,15 +764,13 @@ void initGraphics(AssetManager& asset_manager) {
     GLuint cube_vbo;
     glGenBuffers(1, &cube_vbo);
 
-    glBindVertexArray(cube.vao);
+    gl_state.bind_vao(cube.vao);
     glBindBuffer(GL_ARRAY_BUFFER, cube_vbo);
 
     glBufferData(GL_ARRAY_BUFFER, sizeof(cube_vertices), &cube_vertices, GL_STATIC_DRAW);
 
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
-
-    glBindVertexArray(0);
 
     cube.draw_count = (GLint*)malloc(sizeof(GLint));
     cube.draw_start = (GLint*)malloc(sizeof(GLint));
@@ -823,15 +820,13 @@ void initGraphics(AssetManager& asset_manager) {
     GLuint line_cube_vbo;
     glGenBuffers(1, &line_cube_vbo);
 
-    glBindVertexArray(line_cube.vao);
+    gl_state.bind_vao(line_cube.vao);
     glBindBuffer(GL_ARRAY_BUFFER, line_cube_vbo);
 
     glBufferData(GL_ARRAY_BUFFER, sizeof(line_cube_vertices), &line_cube_vertices, GL_STATIC_DRAW);
 
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
-
-    glBindVertexArray(0);
 
     line_cube.draw_count = (GLint*)malloc(sizeof(GLint));
     line_cube.draw_start = (GLint*)malloc(sizeof(GLint));
@@ -869,15 +864,15 @@ void initGraphics(AssetManager& asset_manager) {
 }
 
 void drawCube() {
-    glBindVertexArray(cube.vao);
+    gl_state.bind_vao(cube.vao);
     glDrawArrays(cube.draw_mode, cube.draw_start[0], cube.draw_count[0]);
 }
 void drawLineCube() {
-    glBindVertexArray(line_cube.vao);
+    gl_state.bind_vao(line_cube.vao);
     glDrawArrays(line_cube.draw_mode, line_cube.draw_start[0], line_cube.draw_count[0]);
 }
 void drawQuad() {
-    glBindVertexArray(quad.vao);
+    gl_state.bind_vao(quad.vao);
     glDrawArrays(quad.draw_mode, quad.draw_start[0], quad.draw_count[0]);
 }
 
@@ -896,11 +891,12 @@ double calculateExposureFromLuma(double L) {
 
 void blurBloomFbo(double dt) {
     glBindFramebuffer(GL_FRAMEBUFFER, bloom_fbo);
+    gl_state.set_flags(GlFlags::NONE); // Some unecessary calls
 
     // 
     // Progressively downsample screen texture
     //
-    glUseProgram(Shaders::downsample.program());
+    gl_state.bind_program(Shaders::downsample.program());
     glUniform2f(Shaders::downsample.uniform("resolution"), window_width, window_height);
 
     glActiveTexture(GL_TEXTURE0);
@@ -910,7 +906,7 @@ void blurBloomFbo(double dt) {
     for (int i = 0; i < bloom_mip_infos.size(); ++i) {
         const auto& mip = bloom_mip_infos[i];
 
-        glViewport(0, 0, mip.size.x, mip.size.y);
+        gl_state.bind_viewport(mip.size.x, mip.size.y);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mip.texture, 0);
 
         int is_mip0 = i == bloom_mip_infos.size() - 1;
@@ -943,26 +939,27 @@ void blurBloomFbo(double dt) {
     // Upscale and blur progressively back to half resolution
     //
     // Enable additive blending
-    glEnable(GL_BLEND);
+    gl_state.add_flags(GlFlags::BLEND);
     glBlendFunc(GL_ONE, GL_ONE);
     glBlendEquation(GL_FUNC_ADD);
 
-    glUseProgram(Shaders::blur_upsample.program());
+    gl_state.bind_program(Shaders::blur_upsample.program());
+    gl_state.bind_program(Shaders::blur_upsample.program());
     for (int i = bloom_mip_infos.size() - 1; i > 0; i--) {
         const auto& mip = bloom_mip_infos[i];
         const auto& next_mip = bloom_mip_infos[i - 1];
 
         glBindTexture(GL_TEXTURE_2D, mip.texture);
 
-        glViewport(0, 0, next_mip.size.x, next_mip.size.y);
+        gl_state.bind_viewport(next_mip.size.x, next_mip.size.y);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, next_mip.texture, 0);
 
         drawQuad();
     }
 
-    glDisable(GL_BLEND);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glViewport(0, 0, window_width, window_height);
+    gl_state.bind_viewport(window_width, window_height);
+    gl_state.remove_flags(GlFlags::BLEND); // @todo removing kind of defeats the point of gl_state but blending will break everything so its best to disable immediately
 }
 
 void bindHdr() {
@@ -970,7 +967,7 @@ void bindHdr() {
 }
 
 void clearFramebuffer() {
-    glDepthMask(GL_TRUE);
+    gl_state.add_flags(GlFlags::DEPTH_WRITE);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 }
 
@@ -981,15 +978,12 @@ static void resolveMultisampleHdrBuffer() {
 }
 
 void drawSkybox(const Texture* skybox, const Camera &camera) {
-    glDepthMask(GL_TRUE);
-    glEnable(GL_DEPTH_TEST);
-    // Since skybox shader writes maximum depth of 1.0, for skybox to always be we
-    // need to adjust depth func
-	glDepthFunc(GL_LEQUAL); 
-    glDisable(GL_CULL_FACE);
+    gl_state.set_flags(GlFlags::DEPTH_READ | GlFlags::DEPTH_WRITE);
+    glDepthFunc(GL_LEQUAL);
 
     Shaders::skybox.set_macro("VOLUMETRICS", do_volumetrics);
-    glUseProgram(Shaders::skybox.program());
+    gl_state.bind_program(Shaders::skybox.program());
+
     auto untranslated_view = glm::mat4(glm::mat3(camera.view));
     auto untranslated_view_projection = camera.projection * untranslated_view;
     glUniformMatrix4fv(Shaders::skybox.uniform("untranslated_view_projection"), 1, GL_FALSE, &untranslated_view_projection[0][0]);
@@ -999,9 +993,7 @@ void drawSkybox(const Texture* skybox, const Camera &camera) {
 
     drawCube();
 
-    // Revert state which is unexpected
-	glDepthFunc(GL_LESS); 
-    glEnable(GL_CULL_FACE);
+    glDepthFunc(GL_LESS);
 }
 
 void createRenderQueue(RenderQueue& q, const EntityManager& entity_manager, const bool lightmapping) {
@@ -1016,7 +1008,7 @@ void createRenderQueue(RenderQueue& q, const EntityManager& entity_manager, cons
 
         RenderItem ri;
         ri.mesh = m_e->mesh;
-        ri.state = (RenderState::Type)(RenderState::DEPTH_READ | RenderState::DEPTH_WRITE);
+        ri.flags = GlFlags::DEPTH_READ | GlFlags::DEPTH_WRITE;
 
         if (entityInherits(m_e->type, ANIMATED_MESH_ENTITY)) {
             auto a_e = (AnimatedMeshEntity*)m_e;
@@ -1025,11 +1017,10 @@ void createRenderQueue(RenderQueue& q, const EntityManager& entity_manager, cons
             }
         }
         if (entityInherits(m_e->type, VEGETATION_ENTITY)) {
-            ri.state = (RenderState::Type)(ri.state | RenderState::ALPHA_COVERAGE);
-            ri.vegetation = true;
+            ri.flags = ri.flags | GlFlags::ALPHA_COVERAGE;
         }
         else {
-            ri.state = (RenderState::Type)(ri.state | RenderState::BACK_CULL);
+            ri.flags = ri.flags | GlFlags::CULL;
         }
 
         const auto& mesh = *m_e->mesh;
@@ -1039,13 +1030,12 @@ void createRenderQueue(RenderQueue& q, const EntityManager& entity_manager, cons
             // @todo sorting by vao, material, texture similarity
             auto& sri = q.opaque_items.emplace_back(ri);
             sri.submesh_i = i;
-            sri.model = glm::translate(mesh.transforms[sri.submesh_i], m_e->position) * glm::mat4_cast(m_e->rotation) * glm::mat4x4(m_e->scale);
+            sri.model = glm::translate(mesh.transforms[sri.submesh_i], m_e->position) * mesh.transforms[i] * glm::mat4_cast(m_e->rotation) * glm::mat4x4(m_e->scale);
 
             const auto& lu = m_e->overidden_materials.find(i); // @note using the submesh index is intentional as it allows any part of a meshes material to be overriden
             if (lu == m_e->overidden_materials.end()) {
                 sri.mat = &m_e->mesh->materials[mesh.material_indices[i]];
-            }
-            else {
+            } else {
                 sri.mat = &lu->second;
             }
 
@@ -1060,67 +1050,21 @@ void createRenderQueue(RenderQueue& q, const EntityManager& entity_manager, cons
     }
 }
 
-static void updateRenderState(RenderState::Type& current, RenderState::Type desired) {
-    auto enable  = (current ^ desired) & desired;
-    auto disable = (current ^ desired) & current;
-
-    if (enable) {
-        if (enable | RenderState::FRONT_CULL) {
-            glCullFace(GL_FRONT);
-            glEnable(GL_CULL_FACE);
-        }
-        if (enable | RenderState::BACK_CULL) {
-            glCullFace(GL_BACK);
-            glEnable(GL_CULL_FACE);
-        }
-        if (enable | RenderState::ALPHA_COVERAGE) {
-            glEnable(GL_SAMPLE_ALPHA_TO_COVERAGE);
-        }
-        if (enable | RenderState::DEPTH_READ) {
-            glEnable(GL_DEPTH_TEST);
-        }
-        if (enable | RenderState::DEPTH_WRITE) {
-            glDepthMask(GL_TRUE);
-        }
-    }
-    if (disable) {
-        if (disable | RenderState::FRONT_CULL || disable | RenderState::BACK_CULL) {
-            glDisable(GL_CULL_FACE);
-        }
-        if (disable | RenderState::ALPHA_COVERAGE) {
-            glDisable(GL_SAMPLE_ALPHA_TO_COVERAGE);
-        }
-        if (disable | RenderState::DEPTH_READ) {
-            glDisable(GL_DEPTH_TEST);
-        }
-        if (disable | RenderState::DEPTH_WRITE) {
-            glDepthMask(GL_FALSE);
-        }
-    }
-
-    current = desired;
-}
-
-static void drawRenderItem(const RenderItem& ri, const glm::mat4x4* vp, GLuint& vao, GLuint& program, RenderState::Type& state, const bool shadow=false) {
-    const auto& mesh = *ri.mesh;
-    if (mesh.vao != vao) {
-        glBindVertexArray(mesh.vao);
-        vao = vao;
-    }
-
-    const auto& mat = *ri.mat;
-    Shader& s = shadow ? Shaders::shadow : Shaders::unified;
-
-    // Do back face culling instead of front to reduce peter-panning for shadows
-    if (shadow && ri.state & RenderState::BACK_CULL) {
-        updateRenderState(state, (RenderState::Type)(ri.state ^ RenderState::BACK_CULL | RenderState::FRONT_CULL));
+static void drawRenderItem(const RenderItem& ri, const glm::mat4x4* vp, const bool shadow=false) {
+    if (shadow) { // Get rid of culling if we are drawing a shadow, its sometimes suggested to use front face culling but this doesn't seem to work well
+        gl_state.set_flags(ri.flags & (~GlFlags::CULL));
     }
     else {
-        updateRenderState(state, ri.state);
+        gl_state.set_flags(ri.flags);
     }
-
+    
+    Shader& s = shadow ? Shaders::shadow : Shaders::unified;
     // Determine shader program from macros, @todo move to render queue construction, 
     // in future this could also be a LUT from material type
+    const auto& mat = *ri.mat;
+    s.set_macro("ANIMATED_BONES", ri.bone_matrices, false);
+    s.set_macro("ALPHA_CLIP", mat.type & MaterialType::ALPHA_CLIP, false);
+    s.set_macro("VEGETATION", mat.type & MaterialType::VEGETATION, false);
     if (!shadow) {
         s.set_macro("PBR", mat.type & MaterialType::PBR, false);
         s.set_macro("METALLIC", mat.type & MaterialType::METALLIC, false);
@@ -1128,23 +1072,8 @@ static void drawRenderItem(const RenderItem& ri, const glm::mat4x4* vp, GLuint& 
         s.set_macro("GLOBAL_ILLUMINATION", mat.type & MaterialType::LIGHTMAPPED, false);
         s.set_macro("AO", mat.type & MaterialType::AO, false);
     }
-
-    s.set_macro("ALPHA_CLIP", mat.type & MaterialType::ALPHA_CLIP, false);
-    s.set_macro("ANIMATED_BONES", ri.bone_matrices, false);
-    s.set_macro("VEGETATION", ri.vegetation, false);
-
-    // @note !!IMPORTANT this is needed to set correct shader
-    s.activate_macros();
-
-    if (s.program() != program) {
-        glUseProgram(s.program());
-        program = s.program();
-    }
-
-    if (ri.vegetation) {
-        glUniform2f(s.uniform("wind_direction"), wind_direction.x, wind_direction.y);
-        glUniform1f(s.uniform("wind_strength"), 3.0);
-    }
+    s.activate_macros(); // @note !!IMPORTANT!! this is needed to set correct shader
+    gl_state.bind_program(s.program());
 
     // Setup material uniforms and textures, skip if we are drawing a shadow,
     // the texture ids could be found in render queue step
@@ -1163,7 +1092,7 @@ static void drawRenderItem(const RenderItem& ri, const glm::mat4x4* vp, GLuint& 
 
             uniform.bind(s.uniform(name));
         }
-    } else if (mat.type & MaterialType::ALPHA_CLIP) { // Need to bind clip texture for shadows
+    } else if (mat.type & MaterialType::ALPHA_CLIP) { // Only need to bind clip texture for shadows
         const auto& lu = mat.textures.find(TextureSlot::ALPHA_CLIP);
         if (lu != mat.textures.end()) {
             const auto& binding = lu->first;
@@ -1174,11 +1103,15 @@ static void drawRenderItem(const RenderItem& ri, const glm::mat4x4* vp, GLuint& 
         }
     }
 
-    // Setup transforms
+    // Setup transforms and other uniforms
     glUniformMatrix4fv(s.uniform("model"), 1, GL_FALSE, &ri.model[0][0]);
-    if (!shadow) {
+    if (!shadow && vp) {
         auto mvp = *vp * ri.model;
         glUniformMatrix4fv(s.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
+    }
+    if (mat.type & MaterialType::VEGETATION) {
+        glUniform2f(s.uniform("wind_direction"), wind_direction.x, wind_direction.y);
+        glUniform1f(s.uniform("wind_strength"), 3.0);
     }
 
     // If bone animated write bone matrices
@@ -1186,14 +1119,12 @@ static void drawRenderItem(const RenderItem& ri, const glm::mat4x4* vp, GLuint& 
         writeBoneMatricesUbo(*ri.bone_matrices);
     }
 
+    const auto& mesh = *ri.mesh;
+    gl_state.bind_vao(mesh.vao);
     glDrawElements(mesh.draw_mode, mesh.draw_count[ri.submesh_i], mesh.draw_type, (GLvoid*)(sizeof(*mesh.indices) * mesh.draw_start[ri.submesh_i]));
 }
 
 void drawRenderQueue(const RenderQueue& q, const Texture* skybox, const Texture* irradiance_map, const Texture* prefiltered_specular_map, const Camera& camera) {
-    RenderState::Type bound_state = RenderState::ALL; // Assume everything has been enabled
-    updateRenderState(bound_state, RenderState::NONE); // Then disable everything
-    GLuint bound_vao = GL_FALSE, bound_program = GL_FALSE;
-
     // Bind shared resources
     writeSharedUbo(camera);
     if (do_shadows) {
@@ -1222,22 +1153,23 @@ void drawRenderQueue(const RenderQueue& q, const Texture* skybox, const Texture*
     Shaders::unified.set_macro("VOLUMETRICS", do_volumetrics);
 
     for (const auto& ri : q.opaque_items) {
-        drawRenderItem(ri, &camera.vp, bound_vao, bound_program, bound_state);
+        drawRenderItem(ri, &camera.vp);
     }
 
     drawSkybox(skybox, camera);
 
     for (const auto& ri : q.transparent_items) {
-        drawRenderItem(ri, &camera.vp, bound_vao, bound_program, bound_state);
+        drawRenderItem(ri, &camera.vp);
     }
     
     // @todo integrate with transparent render queue
     if (q.water) {
+        gl_state.set_flags(GlFlags::NONE);
+
         Shaders::water.set_macro("SHADOWS", do_shadows);
         Shaders::water.set_macro("VOLUMETRICS", do_volumetrics);
-        updateRenderState(bound_state, RenderState::NONE);
 
-        glUseProgram(Shaders::water.program());
+        gl_state.bind_program(Shaders::water.program());
         if (do_msaa) {
             resolveMultisampleHdrBuffer();
             bindHdr();
@@ -1269,7 +1201,7 @@ void drawRenderQueue(const RenderQueue& q, const Texture* skybox, const Texture*
         glUniform4fv(Shaders::water.uniform("foam_color"), 1, &q.water->foam_color[0]);
 
         if (water_grid.complete) {
-            glBindVertexArray(water_grid.vao);
+            gl_state.bind_vao(water_grid.vao);
             glDrawElements(water_grid.draw_mode, water_grid.draw_count[0], water_grid.draw_type, 
                             (GLvoid*)(sizeof(*water_grid.indices)*water_grid.draw_start[0]));
         }
@@ -1282,39 +1214,40 @@ void drawRenderQueue(const RenderQueue& q, const Texture* skybox, const Texture*
 
 // Since shadow buffer wont need to be bound otherwise just combine these operations
 void drawRenderQueueShadows(const RenderQueue& q) {
-    // @todo make these global and persistant/renderer class
-    RenderState::Type bound_state = RenderState::ALL; // Assume everything has been enabled
-    updateRenderState(bound_state, RenderState::NONE); // Then disable everything
-    GLuint bound_vao = GL_FALSE, bound_program = GL_FALSE;
-
     glBindFramebuffer(GL_FRAMEBUFFER, shadow_fbo);
-    glViewport(0, 0, shadow_size, shadow_size);
+    gl_state.add_flags(GlFlags::DEPTH_WRITE);
+    gl_state.bind_viewport(shadow_size, shadow_size);
     glClear(GL_DEPTH_BUFFER_BIT);
 
     writeShadowVpsUbo();
 
     // Only calculate shadows for opaque objects, @todo partial shadows with transparency?
     for (const auto& ri : q.opaque_items) {
-        drawRenderItem(ri, nullptr, bound_vao, bound_program, bound_state, true);
+        drawRenderItem(ri, nullptr, true);
     }
 
-    // Reset bound framebuffer and return to original viewport
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glViewport(0, 0, window_width, window_height);
+    gl_state.bind_viewport(window_width, window_height);
 }
 
 void bindBackbuffer(){
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
+enum class Test : uint64_t {
+    NONE = 0,
+    CULL = 1 << 0,
+    
+};
+
 void drawPost(Texture *skybox, const Camera &camera){
     // Draw screen space quad so clearing is unnecessary
     //glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-    glDepthMask(GL_FALSE);
-    glDisable(GL_DEPTH_TEST);
+
+    gl_state.remove_flags(GlFlags::DEPTH_READ | GlFlags::DEPTH_READ);
 
     Shaders::post.set_macro("BLOOM", do_bloom);
-    glUseProgram(Shaders::post.program());
+    gl_state.bind_program(Shaders::post.program());
 
     glUniform2f(Shaders::post.uniform("resolution"), window_width, window_height);
     glUniform1f(Shaders::post.uniform("exposure"), exposure);
@@ -1384,12 +1317,12 @@ void convoluteIrradianceFromCubemap(Texture *in_tex, Texture *out_tex, GLint for
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
-    glUseProgram(Shaders::diffuse_convolution.program());
+    gl_state.bind_program(Shaders::diffuse_convolution.program());
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_CUBE_MAP, in_tex->id);
 
-    glViewport(0, 0, out_tex->resolution.x, out_tex->resolution.y);
+    gl_state.bind_viewport(out_tex->resolution.x, out_tex->resolution.y);
     glBindFramebuffer(GL_FRAMEBUFFER, FBO);
     for (unsigned int i = 0; i < 6; ++i) {
         auto vp = projection * glm::mat4(glm::mat3(views[i])); // removes translation @speed
@@ -1444,7 +1377,7 @@ void convoluteSpecularFromCubemap(Texture* in_tex, Texture* out_tex, GLint forma
 
     glGenerateMipmap(GL_TEXTURE_CUBE_MAP); // Since we store different roughnesses in mip maps
 
-    glUseProgram(Shaders::specular_convolution.program());
+    gl_state.bind_program(Shaders::specular_convolution.program());
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_CUBE_MAP, in_tex->id);
@@ -1453,7 +1386,7 @@ void convoluteSpecularFromCubemap(Texture* in_tex, Texture* out_tex, GLint forma
 
     glm::ivec2 mip_resolution = out_tex->resolution;
     for (unsigned int mip = 0; mip < MAX_SPECULAR_MIP; ++mip) {
-        glViewport(0, 0, mip_resolution.x, mip_resolution.y);
+        gl_state.bind_viewport(mip_resolution.x, mip_resolution.y);
         
         float roughness = (float)mip / (float)(MAX_SPECULAR_MIP - 1);
         glUniform1f(Shaders::specular_convolution.uniform("roughness"), roughness);

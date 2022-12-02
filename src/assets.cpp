@@ -61,15 +61,19 @@ glm::quat aiQuatToGlm(const aiQuaternion& q) {
 Material *default_material;
 void initDefaultMaterial(AssetManager &asset_manager){
     default_material = new Material;
-   
-    default_material->type = MaterialType::PBR;
 
     default_material->textures[TextureSlot::ALBEDO]     = asset_manager.getColorTexture(glm::vec4(1, 0, 1, 1),      GL_RGB);
     default_material->textures[TextureSlot::NORMAL]     = asset_manager.getColorTexture(glm::vec4(0.5, 0.5, 1, 1),  GL_RGB);
     default_material->textures[TextureSlot::ROUGHNESS]  = asset_manager.getColorTexture(glm::vec4(1),               GL_RED);
+    default_material->textures[TextureSlot::METAL]      = asset_manager.getColorTexture(glm::vec4(0),               GL_RED);
+    default_material->textures[TextureSlot::SHININESS]  = asset_manager.getColorTexture(glm::vec4(20.0),            GL_R16F);
+    default_material->textures[TextureSlot::SPECULAR]   = asset_manager.getColorTexture(glm::vec4(0.5),             GL_R16F);
+    default_material->textures[TextureSlot::AO]         = asset_manager.getColorTexture(glm::vec4(0.5),             GL_RED);
+    default_material->textures[TextureSlot::GI]         = asset_manager.getColorTexture(glm::vec4(0.5),             GL_RGB);
+    default_material->textures[TextureSlot::EMISSIVE]   = asset_manager.getColorTexture(glm::vec4(0),               GL_RGB);
 
-    default_material->uniforms["albedo_mult"] = Uniform(glm::vec3(1));
-    default_material->uniforms["roughness_mult"] = Uniform(1.0f);
+    default_material->uniforms.emplace("albedo_mult", glm::vec3(1));
+    default_material->uniforms.emplace("roughness_mult", 1.0f);
 }
 
 std::ostream &operator<<(std::ostream &os, const Texture &t) {
@@ -482,10 +486,10 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
                 mat.type = (MaterialType::Type)(mat.type | MaterialType::ALPHA_CLIP);
             }
 
+            mat.textures[TextureSlot::ROUGHNESS] = default_material->textures[TextureSlot::ROUGHNESS]; // Required for material
             if (!loadTextureFromAssimp(mat.textures[TextureSlot::ROUGHNESS], ai_mat, scene, aiTextureType_DIFFUSE_ROUGHNESS, GL_RED)) {
                 if (ai_mat->Get(AI_MATKEY_ROUGHNESS_FACTOR, col) == AI_SUCCESS && (col.r + col.g + col.b > 0) && col.a > 0) {
-                    mat.type = MaterialType::PBR;
-                    mat.textures[TextureSlot::ALBEDO] = getColorTexture(glm::vec4(col.r, col.g, col.b, col.a), GL_RED);
+                    mat.textures[TextureSlot::ROUGHNESS] = getColorTexture(glm::vec4(col.r, col.g, col.b, col.a), GL_RED);
                 }
             }
 
@@ -502,11 +506,14 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
                 mat.type = (MaterialType::Type)(mat.type | MaterialType::ALPHA_CLIP);
             }
 
+            mat.textures[TextureSlot::SPECULAR] = default_material->textures[TextureSlot::SPECULAR]; // Required for material
             if (!loadTextureFromAssimp(mat.textures[TextureSlot::SPECULAR], ai_mat, scene, aiTextureType_SPECULAR, GL_RED)) {
                 if (ai_mat->Get(AI_MATKEY_SPECULAR_FACTOR, col) == AI_SUCCESS && col.r > 0) {
                     mat.textures[TextureSlot::SPECULAR] = getColorTexture(glm::vec4(col.r, col.g, col.b, col.a), GL_RED);
                 }
             }
+
+            mat.textures[TextureSlot::SHININESS] = default_material->textures[TextureSlot::SHININESS]; // Required for material
             if (!loadTextureFromAssimp(mat.textures[TextureSlot::SHININESS], ai_mat, scene, aiTextureType_SHININESS, GL_RED)) { // @todo conversion function from linear to exponent
                 if (ai_mat->Get(AI_MATKEY_SHININESS_STRENGTH, col) == AI_SUCCESS && col.r > 0) {
                     mat.textures[TextureSlot::SHININESS] = getColorTexture(glm::vec4(col.r, col.g, col.b, col.a), GL_RED);
@@ -556,22 +563,22 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
 
         // Add some uniforms for modifying certain material types
         if (mat.type & MaterialType::PBR) {
-            mat.uniforms["albedo_mult"] = Uniform(glm::vec3(1));
-            mat.uniforms["roughness_mult"] = Uniform(1.0f);
+            mat.uniforms.emplace("albedo_mult", glm::vec3(1));
+            mat.uniforms.emplace("roughness_mult", 1.0f);
         }
         if (mat.type & MaterialType::BLINN_PHONG) {
-            mat.uniforms["diffuse_mult"] = Uniform(glm::vec3(1));
-            mat.uniforms["specular_mult"] = Uniform(1.0f);
-            mat.uniforms["shininess_mult"] = Uniform(1.0f);
+            mat.uniforms.emplace("diffuse_mult", glm::vec3(1));
+            mat.uniforms.emplace("specular_mult", 1.0f);
+            mat.uniforms.emplace("shininess_mult", 1.0f);
         }
         if (mat.type & MaterialType::EMISSIVE) {
-            mat.uniforms["emissive_mult"] = Uniform(glm::vec3(1));
+            mat.uniforms.emplace("emissive_mult", glm::vec3(1));
         }
         if (mat.type & MaterialType::LIGHTMAPPED || mat.type & MaterialType::AO) {
-            mat.uniforms["ambient_mult"] = Uniform(1.0f);
+            mat.uniforms.emplace("ambient_mult", 1.0f);
         }
         if (mat.type & MaterialType::METALLIC) {
-            mat.uniforms["metal_mult"] = Uniform(1.0f);
+            mat.uniforms.emplace("metal_mult", 1.0f);
         }
 
         std::cout << "Material " << i << ": \n" << mat << "\n";
@@ -713,7 +720,7 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
         indices_offset += ai_mesh->mNumFaces*3;
     }
 
-    if(mesh->tangents == NULL)
+    if (mesh->uvs == NULL)
         return parameterizeAndPackMesh(mesh);
 
     return true;

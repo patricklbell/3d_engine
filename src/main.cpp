@@ -134,7 +134,9 @@ int main() {
     glfwSwapInterval(0);
 
     // Configure gl global state
-    glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);  
+    glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);
+    glEnable(GL_SCISSOR_TEST);
+    glCullFace(GL_BACK);
 
     GL_version = std::string((char*)glGetString(GL_VERSION));
     GL_vendor = std::string((char*)glGetString(GL_VENDOR));
@@ -212,9 +214,11 @@ int main() {
     //soloud.setPan(handle1, -0.2f);              // Set pan; -1 is left, 1 is right
     //soloud.setRelativePlaySpeed(handle1, 1.0f); // Play a bit slower; 1.0f is normal
 
-     //level_path = "data/levels/lightmap_test.level";
-     //loadLevel(*entity_manager, asset_manager, level_path, Cameras::level_camera);
-     //Cameras::editor_camera = Cameras::level_camera;
+    //level_path = "data/levels/lightmap_test.level";
+    //loadLevel(*entity_manager, asset_manager, level_path, Cameras::level_camera);
+    Cameras::level_camera.set_position(glm::vec3(1, 1, 0));
+    Cameras::level_camera.set_target(glm::vec3(0));
+    Cameras::editor_camera = Cameras::level_camera;
 
 #ifndef NDEBUG 
     checkGLError("Pre-loop");
@@ -248,8 +252,8 @@ int main() {
             }
         }
         
-        if (window_resized){
-            glViewport(0, 0, window_width, window_height);
+        if (window_resized) {
+            gl_state.bind_viewport(window_width, window_height);
             float r = (float)window_width / (float)window_height;
             Cameras::level_camera.set_aspect_ratio(r);
             Cameras::game_camera.set_aspect_ratio(r);
@@ -282,13 +286,12 @@ int main() {
 
         // Update entity states and animations
         entity_manager->tickAnimatedMeshes(true_dt);
-        if(playing)
+        if (playing)
             updateGameEntities(true_dt, entity_manager);
 
-        // Update camera and shadow projections if either the camera changes or it needs updating
-        if (camera.update() || old_camera_ptr != camera_ptr) {
+        // Update camera and shadow projections if either the camera changed or it needs updating
+        if (camera.update() || old_camera_ptr != camera_ptr)
             updateShadowVP(camera);
-        }
 
         // 
         // Draw entities
@@ -304,21 +307,18 @@ int main() {
         clearFramebuffer();
         drawRenderQueue(render_queue, graphics::environment.skybox, graphics::environment.skybox_irradiance, graphics::environment.skybox_specular, camera);
 
-        if (graphics::do_bloom) {
+        if (graphics::do_bloom)
             blurBloomFbo(true_dt);
-        }
         bindBackbuffer();
         drawPost(graphics::environment.skybox, camera);
 
         // 
         // Draw guis
         //
-        if (!playing) {
+        if (!playing)
             drawEditorGui(*entity_manager, asset_manager);
-        }
-        else {
+        else
             drawGameGui(*entity_manager, asset_manager);
-        }
 
         // Swap backbuffer with front buffer
         glfwSwapBuffers(window);
@@ -340,8 +340,7 @@ int main() {
         checkGLError("Main loop");
 #endif
         frame_num++;
-    } // Check if the ESC key was pressed or the window was closed
-    while(!Controls::editor.isAction("exit") && glfwWindowShouldClose(window) == 0);
+    } while (!Controls::editor.isAction("exit") && !glfwWindowShouldClose(window));
 
     cleanup();
     return false;

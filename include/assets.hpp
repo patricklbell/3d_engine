@@ -5,6 +5,7 @@
 #include <vector>
 #include <list>
 #include <unordered_map>
+#include <map>
 #include <set>
 
 // Include GLEW
@@ -79,7 +80,7 @@ struct Mesh {
     GLint*          draw_count = nullptr;
 
     GLenum          draw_mode = GL_TRIANGLES;
-    GLenum          draw_type = GL_UNSIGNED_INT; // For now these won't work, but in future this could save memory
+    GLenum          draw_type = GL_UNSIGNED_INT;
 
     GLuint          indices_vbo     = GL_FALSE;
     GLuint 	        vertices_vbo    = GL_FALSE;
@@ -289,8 +290,8 @@ enum class TextureSlot : uint64_t {
 
     // BLINN PHONG
     DIFFUSE     = 0,
-    SPECULAR    = 2,
-    SHININESS   = 3,
+    SHININESS   = 2,
+    SPECULAR    = 3,
 
     AO          = 4,
     GI          = 4,
@@ -334,12 +335,14 @@ struct Uniform {
         new (data) GLint(val);
     }
     Uniform(void* _data, Type _type) 
-        : data(_data), type(_type) 
-    {
+    { // We used placement new so we can also pass a pre allocated buffer
+        data = _data;
+        type = _type;
     }
     Uniform()
-        : data(nullptr), type(Type::NONE) // Use placement new so we can also pass a pre allocated buffer
     {
+        data = nullptr;
+        type = Type::NONE;
     }
 
     void bind(GLint loc) const {
@@ -356,7 +359,7 @@ struct Uniform {
             break;
         case Uniform::Type::FLOAT:
             glUniform1fv(loc, 1, (GLfloat*)data);
-            break;
+            break;  
         case Uniform::Type::INT:
             glUniform1iv(loc, 1, (GLint*)data);
             break;
@@ -379,6 +382,19 @@ struct Uniform {
 
     ~Uniform() {
         free(data);
+    }
+
+    // Copy constructor shouldn't be called by map, @check this
+    Uniform& operator=(const Uniform& u) {
+        data = malloc(size(u.type));
+        memcpy(data, u.data, size(u.type));
+        type = u.type;
+        return *this;
+    };
+    Uniform(const Uniform& u) {
+        data = malloc(size(u.type));
+        memcpy(data, u.data, size(u.type));
+        type = u.type;
     }
 
     void* data = nullptr;

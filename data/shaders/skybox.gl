@@ -9,7 +9,7 @@ void main()
 {
     texcoords = in_position;
     gl_Position = untranslated_view_projection * vec4(in_position, 1.0);
-    // @optimize? because part of multiplication is not needed
+    // Makes depth infinite @optimize? because part of multiplication is not needed
     gl_Position.z = gl_Position.w;
 }
 #end

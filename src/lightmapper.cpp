@@ -255,7 +255,7 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 				new_mat.textures[TextureSlot::GI] = lightmap;
 				// @hardcoded IDK whether to use uniform bindings or just a static map, this will do for now
 				if (new_mat.uniforms.find("ambient_mult") == new_mat.uniforms.end()) {
-					new_mat.uniforms["ambient_mult"] = Uniform(1.0f);
+					new_mat.uniforms.emplace("ambient_mult", 1.0f);
 				}
 
 				m_e->overidden_materials[submesh_i] = new_mat;

@@ -78,8 +78,8 @@ void main() {
 #end
 #begin FRAGMENT
 
-#macro VOLUMETRICS          1
-#macro PBR                  1
+#macro VOLUMETRICS          0
+#macro PBR                  0
 #macro AO                   0
 #macro GLOBAL_ILLUMINATION  0
 #macro EMISSIVE             0
@@ -119,11 +119,12 @@ uniform float ambient_mult;
 
 #else // PBR
 
+// see for default values: https://knowledge.autodesk.com/support/maya/learn-explore/caas/CloudHelp/cloudhelp/2016/ENU/Maya/files/GUID-3EDEB1B3-4E48-485A-9714-9998F6E4944D-htm.html
 layout(binding = 0) uniform sampler2D diffuse_map;
 uniform vec3 diffuse_mult;
-layout(binding = 3) uniform sampler2D specular_map;
+layout(binding = 3) uniform sampler2D specular_map; // For now this just multiplies the diffuse so material is more like a plastic than a metal
 uniform float specular_mult;
-layout(binding = 2) uniform sampler2D shininess_map;
+layout(binding = 2) uniform sampler2D shininess_map; // Cosine power
 uniform float shininess_mult;
 
 #endif // PBR
@@ -138,7 +139,7 @@ void main() {
 
     vec4 albedo_alpha = texture(albedo_map, texcoord);
 #if ALPHA_CLIP
-    if(albedo_alpha.a < 0.25)
+    if(albedo_alpha.a < 0.5)
         discard;
 #endif
     vec3 albedo = albedo_mult*albedo_alpha.rgb;
@@ -147,7 +148,7 @@ void main() {
 
     vec4 diffuse_alpha = texture(diffuse_map, texcoord);
 #if ALPHA_CLIP
-    if(diffuse_alpha.a < 0.25)
+    if(diffuse_alpha.a < 0.5)
         discard;
 #endif
 
@@ -213,13 +214,19 @@ void main() {
 #endif
 
     vec3 hdr_color = brdfSchlickGGX(position, normal, albedo, metallic, roughness, -sun_direction, sun_color, camera_position, ambient);
+
 #else // PBR
 
-    float specular_int = specular_mult *texture(specular_map, texcoord).r; 
-    float specular_exp = shininess_mult*texture(shininess_map, texcoord).r; 
-    
-    vec3 hdr_color = diffuse * calcDirectionalLight(position, normal, sun_direction, sun_color, camera_position, specular_int, specular_exp);
-    hdr_color *= ambient;
+    float specular = specular_mult *texture(specular_map, texcoord).r; 
+    float shininess = shininess_mult*texture(shininess_map, texcoord).r; 
+
+    vec3 hdr_color = blinnPhongLighting(position, normal, sun_direction, sun_color, camera_position, 
+#if GLOBAL_ILLUMINATION
+    ambient,
+#else
+    diffuse*ambient,
+#endif
+    diffuse, diffuse*specular, shininess);
 
 #endif // PBR
 

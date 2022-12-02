@@ -32,6 +32,7 @@
 #include <camera/globals.hpp>
 #include <shader/globals.hpp>
 
+#include "renderer.hpp"
 #include "editor.hpp"
 #include "utilities.hpp"
 #include "graphics.hpp"
@@ -1168,7 +1169,7 @@ bool editorRotationGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, const C
     }
     const bool active = selected_ring != -1;
 
-    glDepthMask(GL_TRUE);
+    gl_state.add_flags(GlFlags::DEPTH_WRITE);
     glClear(GL_DEPTH_BUFFER_BIT);
     
     if(active){
@@ -1289,7 +1290,7 @@ bool editorTranslationGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, Came
         pos += trans;
     }
 
-    glDepthMask(GL_TRUE);
+    gl_state.add_flags(GlFlags::DEPTH_WRITE);
     glClear(GL_DEPTH_BUFFER_BIT);
     
     for (int i = 0; i < 3; ++i) {
@@ -1376,7 +1377,7 @@ bool editorScalingGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, Camera &
         scl[2][2] += scale.z;
     }
 
-    glDepthMask(GL_TRUE);
+    gl_state.add_flags(GlFlags::DEPTH_WRITE);
     glClear(GL_DEPTH_BUFFER_BIT);
     
     for (int i = 0; i < 3; ++i) {
@@ -1395,13 +1396,13 @@ bool editorScalingGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, Camera &
 
 
 void drawWaterDebug(WaterEntity* w, const Camera &camera, bool flash = false){
+    gl_state.set_flags(GlFlags::CULL | GlFlags::DEPTH_READ);
+
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-    glDisable(GL_CULL_FACE);
-    glDisable(GL_DEPTH_TEST);
     glEnable(GL_LINE_SMOOTH);
     glLineWidth(1.0);
 
-    glUseProgram(Shaders::debug.program());
+    gl_state.bind_program(Shaders::debug.program());
     auto mvp = camera.projection * camera.view * createModelMatrix(w->position, glm::quat(), w->scale);
     glUniformMatrix4fv(Shaders::debug.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
     glUniformMatrix4fv(Shaders::debug.uniform("model"), 1, GL_FALSE, &w->position[0]);
@@ -1412,24 +1413,21 @@ void drawWaterDebug(WaterEntity* w, const Camera &camera, bool flash = false){
     glUniform1f(Shaders::debug.uniform("flashing"), flash ? 1.0: 0.0);
 
     if (graphics::water_grid.complete) {
-        glBindVertexArray(graphics::water_grid.vao);
+        gl_state.bind_vao(graphics::water_grid.vao);
         glDrawElements(graphics::water_grid.draw_mode, graphics::water_grid.draw_count[0], graphics::water_grid.draw_type, (GLvoid*)(sizeof(GLubyte)*graphics::water_grid.draw_start[0]));
     }
    
-    glEnable(GL_CULL_FACE);
-    glEnable(GL_DEPTH_TEST);
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 }
 
 void drawMeshCube(const glm::vec3 &pos, const glm::quat &rot, const glm::mat3x3 &scl, const Camera &camera){
-    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-    glDisable(GL_CULL_FACE);
-    glDisable(GL_DEPTH_TEST);
-    glEnable(GL_LINE_SMOOTH);
-    // Displays in renderdoc texture view but not in application?
-    //glLineWidth(200.0);
+    gl_state.set_flags(GlFlags::CULL | GlFlags::DEPTH_READ);
 
-    glUseProgram(Shaders::debug.program());
+    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    glEnable(GL_LINE_SMOOTH);
+    glLineWidth(1.0);
+
+    gl_state.bind_program(Shaders::debug.program());
     auto mvp = camera.projection * camera.view * createModelMatrix(pos, rot, scl);
     glUniformMatrix4fv(Shaders::debug.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
     glUniformMatrix4fv(Shaders::debug.uniform("model"), 1, GL_FALSE, &pos[0]);
@@ -1441,13 +1439,17 @@ void drawMeshCube(const glm::vec3 &pos, const glm::quat &rot, const glm::mat3x3 
 
     drawCube();
 
-    glEnable(GL_CULL_FACE);
-    glEnable(GL_DEPTH_TEST);
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 }
 
 void drawFrustrum(Camera &drawn_camera, const Camera& camera) {
-    glUseProgram(Shaders::debug.program());
+    gl_state.set_flags(GlFlags::CULL | GlFlags::DEPTH_READ);
+
+    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    glEnable(GL_LINE_SMOOTH);
+    glLineWidth(1.0);
+
+    gl_state.bind_program(Shaders::debug.program());
     // Transform into drawn camera's view space, then into world space
     auto projection = glm::perspective(drawn_camera.frustrum.fov, drawn_camera.frustrum.aspect_ratio, drawn_camera.frustrum.near_plane, 2.0f);
     auto model = glm::inverse(projection*drawn_camera.view);
@@ -1467,7 +1469,7 @@ void drawMeshWireframe(const Mesh &mesh, const glm::mat4& g_model_rot_scl, const
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     glEnable(GL_LINE_SMOOTH);
 
-    glUseProgram(Shaders::debug.program());
+    gl_state.bind_program(Shaders::debug.program());
     glUniform4f(Shaders::debug.uniform("color"), 1.0, 1.0, 1.0, 1.0);
     glUniform4f(Shaders::debug.uniform("color_flash_to"), 1.0, 0.0, 1.0, 1.0);
     glUniform1f(Shaders::debug.uniform("time"), glfwGetTime());
@@ -1476,7 +1478,7 @@ void drawMeshWireframe(const Mesh &mesh, const glm::mat4& g_model_rot_scl, const
 
     auto vp = camera.projection * camera.view;
 
-    glBindVertexArray(mesh.vao);
+    gl_state.bind_vao(mesh.vao);
     for (int j = 0; j < mesh.num_submeshes; ++j) {
         // Since the mesh transforms encode scale this will mess up global translation so we apply translation after
         auto model = g_model_pos * mesh.transforms[j] * g_model_rot_scl;
@@ -1491,17 +1493,13 @@ void drawMeshWireframe(const Mesh &mesh, const glm::mat4& g_model_rot_scl, const
 }
 
 void drawEditor3DRing(const glm::vec3 &position, const glm::vec3 &direction, const Camera &camera, const glm::vec4 &color, const glm::vec3 &scale, bool shaded){
-    glDepthMask(GL_TRUE);
-    glEnable(GL_DEPTH_TEST);
+    gl_state.set_flags(GlFlags::DEPTH_READ | GlFlags::DEPTH_READ | GlFlags::CULL | GlFlags::BLEND);
 
-    glEnable(GL_CULL_FACE);
     glEnablei(GL_BLEND, graphics::hdr_fbo);
-    glEnable(GL_BLEND);
-
     glBlendFunci(graphics::hdr_fbo, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);  
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);  
 
-    glUseProgram(Shaders::debug.program());
+    gl_state.bind_program(Shaders::debug.program());
 
     auto dir = glm::normalize(direction);
     // Why?
@@ -1522,24 +1520,18 @@ void drawEditor3DRing(const glm::vec3 &position, const glm::vec3 &direction, con
     glUniform4fv(Shaders::debug.uniform("color"), 1, &color[0]);
     glUniform1f(Shaders::debug.uniform("shaded"), shaded ? 1.0 : 0.0);
     glUniform1f(Shaders::debug.uniform("flashing"), 0);
-    glBindVertexArray(ring_mesh.vao);
+    gl_state.bind_vao(ring_mesh.vao);
     glDrawElements(ring_mesh.draw_mode, ring_mesh.draw_count[0], ring_mesh.draw_type, (GLvoid*)(sizeof(GLubyte)*ring_mesh.draw_start[0]));
-
-    glDisable(GL_BLEND);  
 }
 
 void drawEditor3DArrow(const glm::vec3 &position, const glm::vec3 &direction, const Camera &camera, const glm::vec4 &color, const glm::vec3 &scale, bool shaded, bool block){
-    glDepthMask(GL_TRUE);
-    glEnable(GL_DEPTH_TEST);
+    gl_state.set_flags(GlFlags::DEPTH_READ | GlFlags::DEPTH_READ | GlFlags::CULL | GlFlags::BLEND);
 
-    glEnable(GL_CULL_FACE);
     glEnablei(GL_BLEND, graphics::hdr_fbo);
-    glEnable(GL_BLEND);
-
     glBlendFunci(graphics::hdr_fbo, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);  
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);  
 
-    glUseProgram(Shaders::debug.program());
+    gl_state.bind_program(Shaders::debug.program());
 
     auto dir = glm::normalize(direction);
     // Why?
@@ -1561,20 +1553,19 @@ void drawEditor3DArrow(const glm::vec3 &position, const glm::vec3 &direction, co
     glUniform1f(Shaders::debug.uniform("shaded"), shaded ? 1.0 : 0.0);
     glUniform1f(Shaders::debug.uniform("flashing"), 0);
     if(!block){
-        glBindVertexArray(arrow_mesh.vao);
+        gl_state.bind_vao(arrow_mesh.vao);
         glDrawElements(arrow_mesh.draw_mode, arrow_mesh.draw_count[0], arrow_mesh.draw_type, (GLvoid*)(sizeof(GLubyte)*arrow_mesh.draw_start[0]));
     } else {
-        glBindVertexArray(block_arrow_mesh.vao);
+        gl_state.bind_vao(block_arrow_mesh.vao);
         glDrawElements(block_arrow_mesh.draw_mode, block_arrow_mesh.draw_count[0], block_arrow_mesh.draw_type, (GLvoid*)(sizeof(GLubyte)*block_arrow_mesh.draw_start[0]));
 
     }
-    glDisable(GL_BLEND);  
 }
 
 void drawColliders(const EntityManager &entity_manager, const Camera &camera) {
     glLineWidth(1);
 
-    glUseProgram(Shaders::debug.program());
+    gl_state.bind_program(Shaders::debug.program());
     glUniform4f(Shaders::debug.uniform("color"), 0.0, 1.0, 1.0, 0.2);
     glUniform1f(Shaders::debug.uniform("time"), glfwGetTime());
     glUniform1f(Shaders::debug.uniform("shaded"), 0.0);
@@ -2082,11 +2073,10 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
     // Rendering ImGUI
     ImGui::Render();
     auto &io = ImGui::GetIO();
-    glViewport(0, 0, (int)io.DisplaySize.x, (int)io.DisplaySize.y);
+    gl_state.bind_viewport(io.DisplaySize.x, io.DisplaySize.y);
     // This causes a stippling patern which looks bad since imgui seems to disable alpha entirely
-    glDisable(GL_SAMPLE_ALPHA_TO_COVERAGE);
+    gl_state.remove_flags(GlFlags::ALPHA_COVERAGE);
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-    glEnable(GL_SAMPLE_ALPHA_TO_COVERAGE);
 }
 
 void drawGameGui(EntityManager& entity_manager, AssetManager& asset_manager) {
@@ -2102,9 +2092,8 @@ void drawGameGui(EntityManager& entity_manager, AssetManager& asset_manager) {
     // Rendering ImGUI
     ImGui::Render();
     auto& io = ImGui::GetIO();
-    glViewport(0, 0, (int)io.DisplaySize.x, (int)io.DisplaySize.y);
+    gl_state.bind_viewport(io.DisplaySize.x, io.DisplaySize.y);
     // This causes a stippling patern which looks bad since imgui seems to disable alpha entirely
-    glDisable(GL_SAMPLE_ALPHA_TO_COVERAGE);
+    gl_state.remove_flags(GlFlags::ALPHA_COVERAGE);
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-    glEnable(GL_SAMPLE_ALPHA_TO_COVERAGE);
 }

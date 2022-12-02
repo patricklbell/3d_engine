@@ -245,9 +245,7 @@ void writeMaterial(const Material& mat, FILE* f) {
 
     static const auto write_uniform = [&f](const Uniform &u) {
         fwrite(&u.type, sizeof(u.type), 1, f);
-        uint64_t size = Uniform::size(u.type);
-        fwrite(&size, sizeof(size), 1, f);
-        fwrite(u.data, size, 1, f);
+        fwrite(u.data, Uniform::size(u.type), 1, f);
     };
 
     fwrite(&mat.type, sizeof(mat.type), 1, f);
@@ -314,13 +312,12 @@ void readMaterial(Material& mat, AssetManager& asset_manager, FILE* f) {
     static const auto read_uniform = [&f]() {
         Uniform::Type type;
         fread(&type, sizeof(type), 1, f);
-        uint64_t size;
-        fread(&size, sizeof(size), 1, f);
 
+        const auto& size = Uniform::size(type);
         void* data = malloc(size);
         fread(data, size, 1, f);
 
-        return Uniform(data, type);
+        return std::move(Uniform(data, type));
     };
 
     fread(&mat.type, sizeof(mat.type), 1, f);
@@ -339,7 +336,7 @@ void readMaterial(Material& mat, AssetManager& asset_manager, FILE* f) {
         std::string name;
 
         readString(name, f);
-        mat.uniforms[name] = read_uniform();
+        mat.uniforms.emplace(name, read_uniform());
     }
 }
 

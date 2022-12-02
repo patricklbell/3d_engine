@@ -19,9 +19,9 @@ bool Shader::ready() {
 	return active_program != GL_FALSE;
 }
 
-GLuint Shader::uniform(std::string_view name) const {
-	auto lu = uniforms.find(std::string(name));
-	if (lu == uniforms.end()) {
+GLuint Shader::uniform(std::string_view name) {
+	auto lu = programs_uniforms[active_hash].find(std::string(name));
+	if (lu == programs_uniforms[active_hash].end()) {
 		std::cerr << "Unknown uniform " << name << " for shader " << handle << "\n";
 		return GL_FALSE;
 	}
@@ -37,8 +37,8 @@ bool Shader::update_from_dependencies() {
 			clear_loaded();
 			macros.clear();
 			programs.clear();
-			uniforms.clear();
-			if (!load_file(dependencies[0].path)) return false; // First file is core
+			programs_uniforms.clear();
+			if (!load_file(handle)) return false; // First file is core
 			return compile();
 		}
 	}
@@ -96,8 +96,8 @@ static bool load_shader_chunk(std::ifstream &f, std::string &chunk,
 bool Shader::load_file(std::string_view path) {
 	std::ifstream f(path);
 	handle = path;
-	dependencies[std::string(path)].path = std::string(path);
-	dependencies[std::string(path)].last_write_time = std::filesystem::last_write_time(path);
+	dependencies[handle].path = handle;
+	dependencies[handle].last_write_time = std::filesystem::last_write_time(path);
 
 	std::cout << "Loading shader " << handle << "\n";
 
@@ -136,6 +136,8 @@ bool Shader::load_file(std::string_view path) {
 			break;
 		}
 	}
+
+	file_loaded = true;
 	return true;
 }
 
@@ -284,8 +286,8 @@ bool Shader::compile(std::string_view _prepend) {
 		glDeleteShader(id);
 	}
 
-	get_uniforms_from_program(program_id, uniforms);
 	const auto hash = compute_bitmap_hash(macros);
+	get_uniforms_from_program(program_id, programs_uniforms[hash]);
 	programs[hash] = program_id;
 	active_hash = hash;
 	active_program = program_id;
@@ -306,10 +308,6 @@ bool Shader::activate_macros() {
 
 	active_hash = hash;
 	active_program = program_lu->second;
-
-	// For now just overwrite uniforms @todo store uniforms for each hash if necessary
-	uniforms.clear();
-	get_uniforms_from_program(active_program, uniforms);
 
 	return false;
 }

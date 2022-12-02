@@ -20,7 +20,7 @@ struct Shader {
     }
     bool Shader::activate_macros(); // Returns true if recompile was necessary
     bool set_macro(std::string_view macro, bool value, bool activate = true);
-    GLuint uniform(std::string_view name) const;
+    GLuint uniform(std::string_view name);
 
     std::string handle = "";
 
@@ -42,7 +42,7 @@ private:
     std::unordered_map<std::string, FileDependency> dependencies;
     std::unordered_map<Type, std::string> type_to_chunk;
 
-    std::unordered_map<std::string, GLuint> uniforms;
+    std::unordered_map <uint64_t, std::unordered_map<std::string, GLuint>> programs_uniforms;
     std::string prepend = "";
     std::unordered_map<std::string, bool> macros;
     std::unordered_map<uint64_t, GLuint> programs;
