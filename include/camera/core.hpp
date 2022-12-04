@@ -4,7 +4,7 @@
 #include <glm/glm.hpp>
 
 struct Frustrum {
-    float near_plane = 0.01f, far_plane = 100.0f;
+    float near_plane = 0.1f, far_plane = 100.0f;
     float fov = glm::radians(45.0f);
     float aspect_ratio = 1.0; // width / height
 };

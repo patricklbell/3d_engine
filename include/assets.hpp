@@ -28,6 +28,8 @@
 
 #include <texture.hpp>
 
+#include "scoped_enum_flag.hpp"
+
 enum AssetType : char {
     MESH_ASSET = 0,
     ANIMATED_MESH_ASSET,
@@ -249,7 +251,8 @@ struct AssetManager {
 
     // @note that this function could cause you to "lose" a texture if the path is the same
     Texture* createTexture(const std::string &handle);
-    bool loadTextureFromAssimp(Texture *&tex, aiMaterial* mat, const aiScene* scene, aiTextureType texture_type, GLint internal_format=GL_RGBA, bool floating = false);
+    bool loadTextureFromAssimp(Texture *&tex, aiMaterial* mat, const aiScene* scene, aiTextureType texture_type, GLint internal_format=GL_FALSE, bool floating = false);
+    bool AssetManager::loadColorFromAssimp(Texture*& tex, aiMaterial* ai_mat, const char* pKey, unsigned int type, unsigned int idx, GLint format=GL_RGBA, bool floating=false);
     static bool loadTexture(Texture *tex, const std::string &path, GLenum format=GL_RGBA, const GLint wrap = GL_REPEAT, bool floating = false, bool trilinear = true);
     static bool loadCubemapTexture(Texture *tex, const std::array<std::string, FACE_NUM_FACES> &paths, GLenum format = GL_RGBA, const GLint wrap = GL_REPEAT, bool floating = false, bool trilinear = true);
 
@@ -265,19 +268,20 @@ struct AssetManager {
     void clear();
 };
 
-namespace MaterialType {
-    enum Type : uint64_t {
-        NONE        = 0,
-        PBR         = 1 << 0,
-        BLINN_PHONG = 1 << 1,
-        EMISSIVE    = 1 << 2,
-        METALLIC    = 1 << 3,
-        ALPHA_CLIP  = 1 << 4,
-        VEGETATION  = 1 << 5,
-        LIGHTMAPPED = 1 << 6,
-        AO          = 1 << 7,
-    };
-}
+
+enum class MaterialType : uint64_t {
+    NONE        = 0,
+    PBR         = 1 << 0,
+    BLINN_PHONG = 1 << 1,
+    EMISSIVE    = 1 << 2,
+    METALLIC    = 1 << 3,
+    ALPHA_CLIP  = 1 << 4,
+    VEGETATION  = 1 << 5,
+    LIGHTMAPPED = 1 << 6,
+    AO          = 1 << 7,
+    WATER       = 1 << 8,
+};
+SCOPED_ENUM_FLAG(MaterialType);
 
 enum class TextureSlot : uint64_t {
     NORMAL      = 1,
@@ -297,6 +301,29 @@ enum class TextureSlot : uint64_t {
     GI          = 4,
 
     EMISSIVE    = 4,
+
+    // Shadows
+    SHADOW_BUFFER = 5,
+    SHADOW_JITTER = 6,
+
+    // PBR Constants
+    ENV_IRRADIANCE  = 7,
+    ENV_SPECULAR    = 8,
+    BRDF_LUT        = 9,
+
+    // Volumetrics
+    VOLUMETRICS = 10,
+
+    // Transparent objects @todo, for now this is just water
+    // so the slots are pretty weird
+    SCREEN_COLOR        = 0,
+    SCREEN_DEPTH        = 1,
+    SIMPLEX_GRADIENT    = 2,
+    SIMPLEX_VALUE       = 3,
+    WATER_COLLIDER      = 4, // In future this could store fluid info, for now just a collider
+
+    BLOOM = 2,
+    SKYBOX = 3,
 };
 
 struct Uniform {
@@ -402,7 +429,7 @@ struct Uniform {
 };
 
 struct Material {
-    MaterialType::Type type = MaterialType::NONE;
+    MaterialType type = MaterialType::NONE;
     std::unordered_map<TextureSlot, Texture*> textures;
     std::unordered_map<std::string, Uniform> uniforms; // @note this string could be made into a binding location
 

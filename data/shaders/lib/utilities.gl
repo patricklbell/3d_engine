@@ -1,28 +1,27 @@
 #load lib/constants.gl
 
 float depthToDist(float d){
-  float z = 2.0*d - 1.0;
-  return 2.0*NEAR*FAR/(FAR + NEAR - z*(FAR - NEAR));
+  float z_ndc = 2.0*d - 1.0; // Convert from 0 -> 1 to NDC
+  return (2.0*NEAR*FAR) /(FAR + NEAR - z_ndc*(FAR - NEAR));
 }
 
 float distToDepth(float dist) {
-	float z = (-(2.0*NEAR*FAR / dist) - (FAR + NEAR)) / (NEAR - FAR);
-	return (z + 1.0) / 2.0; // Convert from NDC to 0 -> 1
+	float z_ndc = ((2.0*NEAR*FAR) / dist - (FAR + NEAR)) / (NEAR - FAR);
+	return (z_ndc + 1.0) / 2.0; // Convert from NDC to 0 -> 1
 }
 
-float ndcDepthToDist(float z){
-  return 2.0*NEAR*FAR/(FAR + NEAR - z*(FAR - NEAR));
+float linearToExponentialDistribution(float z) {
+    return pow(FAR / NEAR, z - 1);
 }
 
-float distToDepthNdc(float dist) {
-	float d = (-(2.0*NEAR*FAR / dist) - (FAR + NEAR)) / (NEAR - FAR);
-	return 2.0 - d;
+float exponentialToLinearDistribution(float z) {
+    return max(1 + log2(z) / log2(FAR / NEAR), 0.0);
 }
 
-float linearToExponentialDist(float z) {
-    return NEAR * pow(FAR / NEAR, z);
+float linearToDepth(float z_linear) {
+    return (1.0/z_linear - FAR/NEAR) / (1.0 - FAR/NEAR);
 }
 
-float exponentialToLinearDist(float z) {
-    return log2(z / NEAR) / log2(FAR / NEAR);
+float depthToLinear(float z_exp) {
+    return 1.0 / (z_exp*(1 - FAR/NEAR) + FAR/NEAR);
 }

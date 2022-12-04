@@ -1395,7 +1395,8 @@ bool editorScalingGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, Camera &
 }
 
 
-void drawWaterDebug(WaterEntity* w, const Camera &camera, bool flash = false){
+void drawWaterDebug(WaterEntity* w, const Camera &camera, bool flash = false) {
+    bindBackbuffer();
     gl_state.set_flags(GlFlags::CULL | GlFlags::DEPTH_READ);
 
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
@@ -1403,7 +1404,7 @@ void drawWaterDebug(WaterEntity* w, const Camera &camera, bool flash = false){
     glLineWidth(1.0);
 
     gl_state.bind_program(Shaders::debug.program());
-    auto mvp = camera.projection * camera.view * createModelMatrix(w->position, glm::quat(), w->scale);
+    auto mvp = camera.vp * createModelMatrix(w->position, glm::quat(), w->scale);
     glUniformMatrix4fv(Shaders::debug.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
     glUniformMatrix4fv(Shaders::debug.uniform("model"), 1, GL_FALSE, &w->position[0]);
     glUniform4f(Shaders::debug.uniform("color"), 1.0, 1.0, 1.0, 1.0);
@@ -1421,6 +1422,7 @@ void drawWaterDebug(WaterEntity* w, const Camera &camera, bool flash = false){
 }
 
 void drawMeshCube(const glm::vec3 &pos, const glm::quat &rot, const glm::mat3x3 &scl, const Camera &camera){
+    bindBackbuffer();
     gl_state.set_flags(GlFlags::CULL | GlFlags::DEPTH_READ);
 
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
@@ -1428,7 +1430,7 @@ void drawMeshCube(const glm::vec3 &pos, const glm::quat &rot, const glm::mat3x3 
     glLineWidth(1.0);
 
     gl_state.bind_program(Shaders::debug.program());
-    auto mvp = camera.projection * camera.view * createModelMatrix(pos, rot, scl);
+    auto mvp = camera.vp * createModelMatrix(pos, rot, scl);
     glUniformMatrix4fv(Shaders::debug.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
     glUniformMatrix4fv(Shaders::debug.uniform("model"), 1, GL_FALSE, &pos[0]);
     glUniform4f(Shaders::debug.uniform("color"), 1.0, 1.0, 1.0, 1.0);
@@ -1443,17 +1445,17 @@ void drawMeshCube(const glm::vec3 &pos, const glm::quat &rot, const glm::mat3x3 
 }
 
 void drawFrustrum(Camera &drawn_camera, const Camera& camera) {
-    gl_state.set_flags(GlFlags::CULL | GlFlags::DEPTH_READ);
+    bindBackbuffer();
+    gl_state.set_flags(GlFlags::CULL);
 
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     glEnable(GL_LINE_SMOOTH);
-    glLineWidth(1.0);
 
     gl_state.bind_program(Shaders::debug.program());
     // Transform into drawn camera's view space, then into world space
     auto projection = glm::perspective(drawn_camera.frustrum.fov, drawn_camera.frustrum.aspect_ratio, drawn_camera.frustrum.near_plane, 2.0f);
     auto model = glm::inverse(projection*drawn_camera.view);
-    auto mvp = camera.projection * camera.view * model;
+    auto mvp = camera.vp * model;
     glUniformMatrix4fv(Shaders::debug.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
     glUniformMatrix4fv(Shaders::debug.uniform("model"), 1, GL_FALSE, &model[0][0]);
     glUniform4f(Shaders::debug.uniform("color"), 1.0, 0.0, 1.0, 0.8);
@@ -1463,9 +1465,14 @@ void drawFrustrum(Camera &drawn_camera, const Camera& camera) {
     glUniform1f(Shaders::debug.uniform("flashing"), 0.0);
 
     drawLineCube();
+
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 }
 
 void drawMeshWireframe(const Mesh &mesh, const glm::mat4& g_model_rot_scl, const glm::mat4& g_model_pos, const Camera &camera, bool flash = false){
+    bindBackbuffer();
+    gl_state.set_flags(GlFlags::CULL);
+
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     glEnable(GL_LINE_SMOOTH);
 
@@ -1476,13 +1483,11 @@ void drawMeshWireframe(const Mesh &mesh, const glm::mat4& g_model_rot_scl, const
     glUniform1f(Shaders::debug.uniform("shaded"), 0.0);
     glUniform1f(Shaders::debug.uniform("flashing"), flash ? 1.0: 0.0);
 
-    auto vp = camera.projection * camera.view;
-
     gl_state.bind_vao(mesh.vao);
     for (int j = 0; j < mesh.num_submeshes; ++j) {
         // Since the mesh transforms encode scale this will mess up global translation so we apply translation after
         auto model = g_model_pos * mesh.transforms[j] * g_model_rot_scl;
-        auto mvp = vp * model;
+        auto mvp = camera.vp * model;
         glUniformMatrix4fv(Shaders::debug.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
         glUniformMatrix4fv(Shaders::debug.uniform("model"), 1, GL_FALSE, &model[0][0]);
 
@@ -1493,6 +1498,7 @@ void drawMeshWireframe(const Mesh &mesh, const glm::mat4& g_model_rot_scl, const
 }
 
 void drawEditor3DRing(const glm::vec3 &position, const glm::vec3 &direction, const Camera &camera, const glm::vec4 &color, const glm::vec3 &scale, bool shaded){
+    bindBackbuffer();
     gl_state.set_flags(GlFlags::DEPTH_READ | GlFlags::DEPTH_READ | GlFlags::CULL | GlFlags::BLEND);
 
     glEnablei(GL_BLEND, graphics::hdr_fbo);
@@ -1513,7 +1519,7 @@ void drawEditor3DRing(const glm::vec3 &position, const glm::vec3 &direction, con
     auto scl   = glm::scale(glm::mat4x4(1.0), scale);
     glm::mat4x4 transform =  trans * rot * scl;
 
-    auto mvp = camera.projection * camera.view * transform;
+    auto mvp = camera.vp * transform;
     glUniformMatrix4fv(Shaders::debug.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
     glUniformMatrix4fv(Shaders::debug.uniform("model"), 1, GL_FALSE, &transform[0][0]);
     glUniform3fv(Shaders::debug.uniform("sun_direction"), 1, &sun_direction[0]);
@@ -1525,6 +1531,7 @@ void drawEditor3DRing(const glm::vec3 &position, const glm::vec3 &direction, con
 }
 
 void drawEditor3DArrow(const glm::vec3 &position, const glm::vec3 &direction, const Camera &camera, const glm::vec4 &color, const glm::vec3 &scale, bool shaded, bool block){
+    bindBackbuffer();
     gl_state.set_flags(GlFlags::DEPTH_READ | GlFlags::DEPTH_READ | GlFlags::CULL | GlFlags::BLEND);
 
     glEnablei(GL_BLEND, graphics::hdr_fbo);
@@ -1545,7 +1552,7 @@ void drawEditor3DArrow(const glm::vec3 &position, const glm::vec3 &direction, co
     auto scl   = glm::scale(glm::mat4x4(1.0), scale);
     glm::mat4x4 transform =  trans * rot * scl;
 
-    auto mvp = camera.projection * camera.view * transform;
+    auto mvp = camera.vp * transform;
     glUniformMatrix4fv(Shaders::debug.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
     glUniformMatrix4fv(Shaders::debug.uniform("model"), 1, GL_FALSE, &transform[0][0]);
     glUniform3fv(Shaders::debug.uniform("sun_direction"), 1, &sun_direction[0]);
@@ -1563,6 +1570,7 @@ void drawEditor3DArrow(const glm::vec3 &position, const glm::vec3 &direction, co
 }
 
 void drawColliders(const EntityManager &entity_manager, const Camera &camera) {
+    bindBackbuffer();
     glLineWidth(1);
 
     gl_state.bind_program(Shaders::debug.program());
@@ -1576,7 +1584,7 @@ void drawColliders(const EntityManager &entity_manager, const Camera &camera) {
         if (c == nullptr || !(entityInherits(c->type, COLLIDER_ENTITY))) continue;
     
         auto model = createModelMatrix(c->collider_position, c->collider_rotation, c->collider_scale);
-        auto mvp = camera.projection * camera.view * model;
+        auto mvp = camera.vp * model;
         glUniformMatrix4fv(Shaders::debug.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
         glUniformMatrix4fv(Shaders::debug.uniform("model"), 1, GL_FALSE, &model[0][0]);
         
@@ -1627,11 +1635,7 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
         Cameras::level_camera.update();
         drawFrustrum(Cameras::level_camera, Cameras::editor_camera);
     }
-    Camera *camera_ptr = &Cameras::editor_camera;
-    if (use_level_camera) {
-        camera_ptr = &Cameras::level_camera;
-    }
-    Camera& camera = *camera_ptr;
+    Camera& camera = *Cameras::get_active_camera();
     
     if (editor::draw_colliders) {
         drawColliders(entity_manager, camera);
@@ -1905,7 +1909,9 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
                 ImGui::Image(tex_water_collider, ImVec2(sidebar_w, sidebar_w));
 
                 if (ImGui::Button("Update", button_size)) {
-                    bindDrawWaterColliderMap(entity_manager, w_e);
+                    RenderQueue q;
+                    createRenderQueue(q, entity_manager);
+                    bindDrawWaterColliderMap(q, w_e);
                     distanceTransformWaterFbo(w_e);
                 }
             }

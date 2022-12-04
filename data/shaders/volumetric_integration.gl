@@ -14,6 +14,8 @@ layout(binding = 0) uniform sampler2D bluenoise_map;
 layout(binding = 1) uniform sampler3D prev_vol;
 
 uniform mat4 inv_vp; // Reproject from texture coordinates to world coordinates
+uniform mat4 prev_vp;
+uniform vec3 t1t2e1;
 
 // @todo make fog vols and global height based fog
 uniform float anisotropy; // How much effect the light direction has on the fogs visibility
@@ -25,8 +27,6 @@ uniform vec3 wind_direction;
 uniform float wind_strength;
 uniform float noise_amount;
 uniform float noise_scale;
-
-layout (binding = 2) uniform sampler2D simplex_value;
 
 // Noise functions
 // https://github.com/Unity-Technologies/VolumetricLighting/blob/master/Assets/VolumetricFog/Shaders/InjectLightingAndDensity.compute
@@ -66,9 +66,9 @@ float ScrollNoise(vec3 pos, float speed, float scale, vec3 dir, float amount, fl
 // -------------------------------------------------------------------------------------------
 
 // Henyey-Greenstein
-float phase_function(vec3 view, vec3 light, float g)
+float phase_function(vec3 V, vec3 light, float g)
 {
-    float cos_theta = dot(view, light);
+    float cos_theta = dot(V, light);
 
     float gsq = g * g;
     float denom  = 1.0 + gsq - 2.0 * g * cos_theta;
@@ -78,21 +78,42 @@ float phase_function(vec3 view, vec3 light, float g)
 }
 
 float sample_blue_noise(ivec3 coord) {
-    return texelFetch(bluenoise_map, coord.xy, 0).r; // Maybe jittering in z will matter
+    ivec2 tex_size = textureSize(bluenoise_map, 0);
+    return texelFetch(bluenoise_map, (coord.xy + coord.z) % tex_size, 0).r;
 }
 
-vec3 texel_to_world(vec3 texel, ivec3 texture_size, mat4 inverse_view_proj) {
-    vec3 uv = (texel + 0.5) / texture_size; // Offset texel and convert to 0 -> 1
+vec3 texel_to_world(vec3 texel, ivec3 texture_size) {
+    vec3 uvw = (texel + 0.5) / texture_size; // Offset texel and convert to 0 -> 1
 
-    float dist = linearToExponentialDist(uv.z); // Convert z from 0 -> 1 to near -> far
-    float depth = distToDepthNdc(dist); // Convert our exponential dist back to a depth value
+    uvw.z = linearToDepth(linearToExponentialDistribution(uvw.z)); // Get better precision by converting to an exponential depth, stil 0 -> 1
 
-    vec3 ndc =  vec3(uv.xy * 2.0 - 1.0, depth); // Convert uv to screen coordinates to get final NDC
+    vec3 ndc =  uvw * 2.0 - 1.0; // Convert uv to NDC, -1 -> 1
 
-    vec4 p = inverse_view_proj * vec4(ndc, 1.0);
-    if(p.w != 0.0)
-        return p.xyz / p.w; // Depth divide if we aren't too close
-    return p.xyz;
+    // Explains how to determine clipspace from ndc with a conventional projection matrix
+    // This might not be necessary but it should reduce some of the error
+    // https://www.khronos.org/opengl/wiki/Compute_eye_space_from_window_space
+    vec4 clip;
+    clip.w = t1t2e1.y / (ndc.z - t1t2e1.x / t1t2e1.z);
+    clip.xyz = ndc * clip.w;
+    
+    vec4 p = inv_vp * clip;
+    return p.xyz / p.w;
+}
+
+vec3 world_to_uvw(vec3 world, mat4 view_proj) {
+    vec4 p = view_proj * vec4(world, 1.0);
+    vec3 ndc = p.w > 0.0f ? p.xyz / p.w : p.xyz;
+
+    vec3 uv = (ndc + 1.0) / 2.0;
+    uv.z = exponentialToLinearDistribution(depthToLinear(uv.z));
+
+    return uv;
+}
+
+float sdBox( vec3 p, vec3 b )
+{
+  vec3 q = abs(p) - b;
+  return length(max(q,0.0)) + min(max(q.x,max(q.y,q.z)),0.0);
 }
 
 //#load lib/noise.gl
@@ -107,34 +128,35 @@ void main() {
 
         vec3 jittered_texel = vec3(coord);
         jittered_texel.z += jitter; // Jitter z coordinate, @todo check jittering other components
-        vec3 jittered_world_pos = texel_to_world(jittered_texel, vol_size, inv_vp);
+        vec3 jittered_world_pos = texel_to_world(jittered_texel, vol_size);
 
         // Get the view direction from the current voxel.
-        vec3 view = normalize(camera_position - jittered_world_pos);
-
-        // Density and coefficient estimation.
-        float thickness = view.z;
+        vec3 V = normalize(camera_position - jittered_world_pos);
         
-        vec3 lighting = sun_color*.4; // Set ambient fog color
+        vec3 lighting = sun_color*.4; // @todo Set ambient fog color
 
         // Add directional lighting
         {
             float visibility = 1.0 - shadowness(0.0, jittered_world_pos); // @todo @hardcoded good NdtoL to change bias
-            lighting += visibility * sun_color * phase_function(view, -sun_direction, anisotropy);
+            lighting += visibility * sun_color * phase_function(V, -sun_direction, anisotropy);
         }
 
         // ScrollNoise(warp, _WindSpeed, _NoiseFogScale, _WindDir, _NoiseFogAmount, -0.3, 8.0);
-        float calc_density = density * clamp(ScrollNoise(jittered_world_pos, wind_strength, noise_scale, wind_direction, noise_amount, -0.3, 8.0), 0.0, 1.0 - EPSILON);
+        float calc_density = density * clamp(ScrollNoise(jittered_world_pos, 3.0*wind_strength, noise_scale, wind_direction, noise_amount, -0.3, 8.0), 0.0, 1.0 - EPSILON);
 
         // RGB = Amount of in-scattered light, A = Density.
         vec4 color_density = vec4(lighting * calc_density, calc_density);
 
         // Temporal accumulation
         if (do_accumulation) { 
-            vec4 prev_color_density = textureLod(prev_vol, coord / float(vol_size), 0.0);
+            vec3 prev_uvw = world_to_uvw(jittered_world_pos, prev_vp);
 
-            // Blend with previous value, probably better techniques (eg motion vectors)
-            color_density = mix(prev_color_density, color_density, 0.5f);
+            if (all(greaterThanEqual(prev_uvw, vec3(0.0))) && all(lessThanEqual(prev_uvw, vec3(1.0)))) {
+                vec4 prev_color_density = textureLod(prev_vol, prev_uvw, 0.0);
+
+                // Blend with previous value, probably better techniques (eg motion vectors)
+                color_density = mix(prev_color_density, color_density, 0.05f);
+            }
         }
 
         imageStore(integrated_vol, coord, color_density);

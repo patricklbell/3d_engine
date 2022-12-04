@@ -266,15 +266,6 @@ int main() {
             }
         }
 
-        auto old_camera_ptr = camera_ptr;
-        camera_ptr = &Cameras::editor_camera;
-        if (playing) {
-            camera_ptr = &Cameras::game_camera;
-        }
-        else if (editor::use_level_camera) {
-            camera_ptr = &Cameras::level_camera;
-        }
-        Camera& camera = *camera_ptr;
 
         // Handle controls and inputs
         if (playing) {
@@ -288,6 +279,10 @@ int main() {
         entity_manager->tickAnimatedMeshes(true_dt);
         if (playing)
             updateGameEntities(true_dt, entity_manager);
+
+        auto old_camera_ptr = camera_ptr;
+        camera_ptr = Cameras::get_active_camera();
+        Camera& camera = *camera_ptr;
 
         // Update camera and shadow projections if either the camera changed or it needs updating
         if (camera.update() || old_camera_ptr != camera_ptr)
@@ -310,7 +305,7 @@ int main() {
         if (graphics::do_bloom)
             blurBloomFbo(true_dt);
         bindBackbuffer();
-        drawPost(graphics::environment.skybox, camera);
+        drawPost(camera);
 
         // 
         // Draw guis

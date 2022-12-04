@@ -334,7 +334,9 @@ bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const
         // @todo make better systems for determining when to update shadow map
         auto water = (WaterEntity*)entity_manager.getEntity(entity_manager.water);
         if (water != nullptr) {
-            bindDrawWaterColliderMap(entity_manager, water);
+            RenderQueue q;
+            createRenderQueue(q, entity_manager);
+            bindDrawWaterColliderMap(q, water);
             distanceTransformWaterFbo(water);
         }
         else {

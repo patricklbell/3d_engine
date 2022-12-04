@@ -22,16 +22,33 @@ enum class GlFlags : uint64_t {
 };
 SCOPED_ENUM_FLAG(GlFlags);
 
+enum class GlBufferFlags : uint64_t {
+    READ        = 1 << 0,
+    WRITE       = 1 << 1,
+    READ_WRITE  = READ | WRITE,
+};
+SCOPED_ENUM_FLAG(GlBufferFlags);
+
 struct GlState {
-    bool bind_vao(GLuint desired);
-    bool bind_program(GLuint desired);
+    bool bind_vao(GLuint to_bind);
+    bool bind_program(GLuint to_bind);
     bool bind_viewport(int x, int y, int w, int h);
     bool bind_viewport(int w, int h);
+    bool bind_texture(uint64_t slot, GLuint to_bind, GLenum type = GL_TEXTURE_2D);
+    bool bind_texture(TextureSlot slot, GLuint to_bind, GLenum type = GL_TEXTURE_2D);
+
+    void bind_framebuffer(GLuint to_bind, GlBufferFlags flags = GlBufferFlags::READ_WRITE);
+    bool bind_renderbuffer(GLuint to_bind);
 
     bool set_flags(GlFlags desired);
     bool add_flags(GlFlags add);
     bool remove_flags(GlFlags remove);
 
+    static constexpr int MAX_TEXTURE_SLOTS = 32;
+    GLuint textures[MAX_TEXTURE_SLOTS] = { GL_FALSE };
+    GLenum active_texture = GL_TEXTURE0;
+    GLuint read_framebuffer = GL_FALSE, write_framebuffer = GL_FALSE;
+    GLuint renderbuffer = GL_FALSE;
     GlFlags flags = GlFlags::ALL;
     GLuint vao = GL_FALSE;
     GLuint program = GL_FALSE;

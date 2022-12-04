@@ -52,16 +52,15 @@ vec4 textureTricubic(sampler3D tex, vec3 coord)
 #load lib/utilities.gl
 
 vec3 addInscatteredVolumetrics(vec3 color, vec3 frag_coord) {
-	float z = depthToDist(frag_coord.z);
-	float d = exponentialToLinearDist(z);
-	vec3 uv = vec3(frag_coord.xy / float(window_size), d);
+	float uv_z = exponentialToLinearDistribution(depthToLinear(frag_coord.z));
+	vec3 uv = vec3(frag_coord.xy / (window_size - 1.0), uv_z);
 
 #if TRICUBIC
-  vec4 scattered_light = textureTricubic(accumulated_volumetric_vol, uv);
+	vec4 scattered_light = textureTricubic(accumulated_volumetric_vol, uv);
 #else
 	vec4 scattered_light = texture(accumulated_volumetric_vol, uv);
 #endif
-  float transmittance = scattered_light.a;
+	float transmittance = scattered_light.a;
 
-  return color * transmittance + scattered_light.rgb; // @todo pbr energy
+	return color * transmittance + scattered_light.rgb; // @todo pbr energy
 }

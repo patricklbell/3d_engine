@@ -9,6 +9,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/detail/type_mat.hpp>
+#include <glm/gtc/matrix_access.hpp>
 
 #include <camera/core.hpp>
 #include <shader/globals.hpp>
@@ -277,10 +278,10 @@ void updateShadowVP(const Camera& camera) {
 
 void initShadowFbo() {
     glGenFramebuffers(1, &shadow_fbo);
-    glBindFramebuffer(GL_FRAMEBUFFER, shadow_fbo);
+    gl_state.bind_framebuffer(shadow_fbo);
 
     glGenTextures(1, &shadow_buffer);
-    glBindTexture(GL_TEXTURE_2D_ARRAY, shadow_buffer);
+    gl_state.bind_texture(0, shadow_buffer, GL_TEXTURE_2D_ARRAY);
     glTexImage3D(GL_TEXTURE_2D_ARRAY, 0, GL_DEPTH_COMPONENT16,
         shadow_size, shadow_size, SHADOW_CASCADE_NUM + 1, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_SHORT, NULL);
     glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -299,8 +300,6 @@ void initShadowFbo() {
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
         std::cerr << "Failed to create shadow fbo.\n";
 
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
     initShadowVpsUbo();
 }
 
@@ -315,15 +314,15 @@ void initBRDFLut(AssetManager& asset_manager) {
 
     // Create brdf_lut
     glGenTextures(1, &brdf_lut->id);
-    glBindTexture(GL_TEXTURE_2D, brdf_lut->id);
+    gl_state.bind_texture(0, brdf_lut->id);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RG16F, brdf_lut->resolution.x, brdf_lut->resolution.y, 0, GL_RG, GL_FLOAT, 0);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
-    glBindFramebuffer(GL_FRAMEBUFFER, FBO);
-    glBindRenderbuffer(GL_RENDERBUFFER, RBO);
+    gl_state.bind_framebuffer(FBO);
+    gl_state.bind_renderbuffer(RBO);
 
     gl_state.bind_program(Shaders::generate_brdf_lut.program());
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, brdf_lut->id, 0);
@@ -331,6 +330,8 @@ void initBRDFLut(AssetManager& asset_manager) {
 
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     drawQuad();
+
+    gl_state.bind_renderbuffer(GL_FALSE);
 }
 
 void initWaterColliderFbo() {
@@ -339,9 +340,9 @@ void initWaterColliderFbo() {
 
     static const GLuint attachments[] = { GL_COLOR_ATTACHMENT0 };
     for (unsigned int i = 0; i < 2; i++) {
-        glBindFramebuffer(GL_FRAMEBUFFER, water_collider_fbos[i]);
+        gl_state.bind_framebuffer(water_collider_fbos[i]);
         glDrawBuffers(1, attachments);
-        glBindTexture(GL_TEXTURE_2D, water_collider_buffers[i]);
+        gl_state.bind_texture(0, water_collider_buffers[i]);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, WATER_COLLIDER_SIZE, WATER_COLLIDER_SIZE, 0, GL_RGBA, GL_FLOAT, NULL);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -353,37 +354,30 @@ void initWaterColliderFbo() {
             std::cerr << "Water collider framebuffer not complete.\n";
         }
     }
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
-void bindDrawWaterColliderMap(const EntityManager& entity_manager, WaterEntity* water) {
-    glBindFramebuffer(GL_FRAMEBUFFER, water_collider_fbos[0]);
+void bindDrawWaterColliderMap(const RenderQueue& q, WaterEntity* water) {
+    gl_state.bind_framebuffer(water_collider_fbos[0]);
     gl_state.bind_viewport(WATER_COLLIDER_SIZE, WATER_COLLIDER_SIZE);
+
+    gl_state.add_flags(GlFlags::DEPTH_WRITE);
+    glClearColor(0, 0, 0, 1);
+    glClear(GL_COLOR_BUFFER_BIT);
 
     // Render entities only when they intersect water plane
     gl_state.bind_program(Shaders::plane_projection.program());
-    gl_state.set_flags(GlFlags::DEPTH_WRITE);
-
-    glClearColor(0, 0, 0, 1);
-    glClear(GL_COLOR_BUFFER_BIT);
 
     auto water_grid_scale = water->scale;
     // Remove y component of scale, shouldn't technically be necessary but helps with debugging
     water_grid_scale[1][1] = 1.0f;
     auto inv_water_grid = glm::inverse(createModelMatrix(water->position, glm::quat(), water_grid_scale));
-    for (int i = 0; i < ENTITY_COUNT; ++i) {
-        auto m_e = reinterpret_cast<MeshEntity*>(entity_manager.entities[i]);
-        if (m_e == nullptr || !entityInherits(m_e->type, MESH_ENTITY) || entityInherits(m_e->type, ANIMATED_MESH_ENTITY) || m_e->mesh == nullptr) continue;
-
-        auto model = createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
-        auto model_inv_water_grid = inv_water_grid * model;
+    for (const auto& ri : q.opaque_items) {
+        auto model_inv_water_grid = inv_water_grid * ri.model;
         glUniformMatrix4fv(Shaders::plane_projection.uniform("model"), 1, GL_FALSE, &model_inv_water_grid[0][0]);
 
-        auto& mesh = m_e->mesh;
-        for (int j = 0; j < mesh->num_materials; ++j) {
-            gl_state.bind_vao(mesh->vao);
-            glDrawElements(mesh->draw_mode, mesh->draw_count[j], mesh->draw_type, (GLvoid*)(sizeof(GLubyte) * mesh->draw_start[j]));
-        }
+        auto& mesh = *ri.mesh;
+        gl_state.bind_vao(mesh.vao);
+        glDrawElements(mesh.draw_mode, mesh.draw_count[ri.submesh_i], mesh.draw_type, (GLvoid*)(sizeof(GLubyte) * mesh.draw_start[ri.submesh_i]));
     }
 
     gl_state.bind_viewport(window_width, window_height);
@@ -394,11 +388,13 @@ void distanceTransformWaterFbo(WaterEntity* water) {
     gl_state.set_flags(GlFlags::NONE);
     gl_state.bind_program(Shaders::jump_flood.program());
 
-    glUniform1f(Shaders::jump_flood.uniform("num_steps"), num_steps);
+    glUniform1f(Shaders::jump_flood.uniform("num_steps"), (float)num_steps);
     glUniform2f(Shaders::jump_flood.uniform("resolution"), WATER_COLLIDER_SIZE, WATER_COLLIDER_SIZE);
 
     gl_state.bind_viewport(WATER_COLLIDER_SIZE, WATER_COLLIDER_SIZE);
     for (int step = 0; step <= num_steps; step++) {
+        gl_state.bind_framebuffer(water_collider_fbos[(step + 1) % 2]);
+
         // Last iteration convert jfa to distance transform
         if (step != num_steps) {
             glUniform1f(Shaders::jump_flood.uniform("step"), step);
@@ -407,27 +403,21 @@ void distanceTransformWaterFbo(WaterEntity* water) {
             gl_state.bind_program(Shaders::jfa_to_distance.program());
             glUniform2f(Shaders::jfa_to_distance.uniform("dimensions"), water->scale[0][0], water->scale[2][2]);
         }
-
-        glBindFramebuffer(GL_FRAMEBUFFER, water_collider_fbos[(step + 1) % 2]);
-
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, water_collider_buffers[step % 2]);
+        gl_state.bind_texture(0, water_collider_buffers[step % 2]);
 
         drawQuad();
     }
 
-    glBindTexture(GL_TEXTURE_2D, water_collider_buffers[(num_steps + 1) % 2]);
+    gl_state.bind_texture(0, water_collider_buffers[(num_steps + 1) % 2]);
     glGenerateMipmap(GL_TEXTURE_2D);
     water_collider_final_fbo = (num_steps + 1) % 2;
 
     gl_state.bind_program(Shaders::gaussian_blur.program());
     for (unsigned int i = 0; i < 2; i++) {
-        glBindFramebuffer(GL_FRAMEBUFFER, water_collider_fbos[(num_steps + i) % 2]);
+        gl_state.bind_framebuffer(water_collider_fbos[(num_steps + i) % 2]);
 
         glUniform1i(Shaders::gaussian_blur.uniform("horizontal"), (int)i);
-
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, water_collider_buffers[(num_steps + i + 1) % 2]);
+        gl_state.bind_texture(0, water_collider_buffers[(num_steps + i + 1) % 2]);
 
         drawQuad();
     }
@@ -449,7 +439,7 @@ void initBloomFbo(bool resize) {
     clearBloomFbo();
 
     glGenFramebuffers(1, &bloom_fbo);
-    glBindFramebuffer(GL_FRAMEBUFFER, bloom_fbo);
+    gl_state.bind_framebuffer(bloom_fbo);
 
     auto mip_size = glm::vec2(window_width, window_height);
     for (int i = 0; i < BLOOM_DOWNSAMPLES; ++i) {
@@ -459,7 +449,7 @@ void initBloomFbo(bool resize) {
         mip.size = mip_size;
 
         glGenTextures(1, &mip.texture);
-        glBindTexture(GL_TEXTURE_2D, mip.texture);
+        gl_state.bind_texture(0, mip.texture);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_R11F_G11F_B10F, mip_size.x, mip_size.y, 0, GL_RGB, GL_FLOAT, NULL);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -478,7 +468,6 @@ void initBloomFbo(bool resize) {
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
         std::cerr << "Bloom framebuffer not complete.\n";
     }
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 void initHdrFbo(bool resize) {
@@ -492,15 +481,15 @@ void initHdrFbo(bool resize) {
         glGenTextures(1, &hdr_buffer_resolve_multisample);
     }
 
-    glBindFramebuffer(GL_FRAMEBUFFER, hdr_fbo);
+    gl_state.bind_framebuffer(hdr_fbo);
 
     if (do_msaa) {
-        glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, hdr_buffer);
+        gl_state.bind_texture(0, hdr_buffer, GL_TEXTURE_2D_MULTISAMPLE);
         glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, MSAA_SAMPLES, GL_RGBA16F, window_width, window_height, GL_TRUE);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D_MULTISAMPLE, hdr_buffer, 0);
     }
     else {
-        glBindTexture(GL_TEXTURE_2D, hdr_buffer);
+        gl_state.bind_texture(0, hdr_buffer);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, window_width, window_height, 0, GL_RGBA, GL_FLOAT, NULL);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -518,12 +507,12 @@ void initHdrFbo(bool resize) {
 
     // Create actual depth texture, multisampled if necessary
     if (do_msaa) {
-        glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, hdr_depth);
+        gl_state.bind_texture(0, hdr_depth, GL_TEXTURE_2D_MULTISAMPLE);
         glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, MSAA_SAMPLES, GL_DEPTH24_STENCIL8, window_width, window_height, GL_TRUE);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D_MULTISAMPLE, hdr_depth, 0);
     }
     else {
-        glBindTexture(GL_TEXTURE_2D, hdr_depth);
+        gl_state.bind_texture(0, hdr_depth);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH24_STENCIL8, window_width, window_height, 0, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8, NULL);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -540,7 +529,7 @@ void initHdrFbo(bool resize) {
 
     // Create copy of depth texture which is sampled by water shader and/or msaa post processing
     // @fix if there is no water (and not msaa) this texture is unnecessary (and might be unnecessary anyway)
-    glBindTexture(GL_TEXTURE_2D, hdr_depth_copy);
+    gl_state.bind_texture(0, hdr_depth_copy);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH24_STENCIL8, window_width, window_height, 0, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8, NULL);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -549,12 +538,12 @@ void initHdrFbo(bool resize) {
 
     // Since we perform post processing on screen texture we need an intermediate fbo to resolve to
     if (do_msaa) {
-        glBindFramebuffer(GL_FRAMEBUFFER, hdr_fbo_resolve_multisample);
+        gl_state.bind_framebuffer(hdr_fbo_resolve_multisample);
 
-        glBindTexture(GL_TEXTURE_2D, hdr_depth_copy); // @note Might be redundant
+        gl_state.bind_texture(0, hdr_depth_copy); // @note Might be redundant
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, hdr_depth_copy, 0);
 
-        glBindTexture(GL_TEXTURE_2D, hdr_buffer_resolve_multisample);
+        gl_state.bind_texture(0, hdr_buffer_resolve_multisample);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, window_width, window_height, 0, GL_RGBA, GL_FLOAT, NULL);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -565,8 +554,6 @@ void initHdrFbo(bool resize) {
         if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
             std::cerr << "Hdr resolve framebuffer not complete, error code: " << glCheckFramebufferStatus(GL_FRAMEBUFFER) << ".\n";
     }
-
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 static void initSharedUbo() {
@@ -598,22 +585,22 @@ static void writeSharedUbo(const Camera& camera) {
 
 void initVolumetrics() {
     glGenTextures(1, &accumulated_volumetric_volume);
-    glBindTexture(GL_TEXTURE_3D, accumulated_volumetric_volume);
+    gl_state.bind_texture(0, accumulated_volumetric_volume, GL_TEXTURE_3D);
     glTexImage3D(GL_TEXTURE_3D, 0, GL_RGBA16F, VOLUMETRIC_RESOLUTION.x, VOLUMETRIC_RESOLUTION.y, VOLUMETRIC_RESOLUTION.z, 0, GL_RGBA, GL_HALF_FLOAT, NULL);
     glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    // We don't want to use volumetrics which we haven't calculated
+    // We don't want to volumetrics which we haven't calculated
     glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
 
     glGenTextures(NUM_TEMPORAL_VOLUMES, temporal_integration_volume);
     for (int i = 0; i < NUM_TEMPORAL_VOLUMES; ++i) {
-        glBindTexture(GL_TEXTURE_3D, temporal_integration_volume[i]);
+        gl_state.bind_texture(0, temporal_integration_volume[i], GL_TEXTURE_3D);
         glTexImage3D(GL_TEXTURE_3D, 0, GL_RGBA16F, VOLUMETRIC_RESOLUTION.x, VOLUMETRIC_RESOLUTION.y, VOLUMETRIC_RESOLUTION.z, 0, GL_RGBA, GL_HALF_FLOAT, NULL);
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        // We don't want to use volumetrics which we haven't calculated
+        // We don't want to volumetrics which we haven't calculated
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
@@ -624,14 +611,6 @@ void computeVolumetrics(uint64_t frame_i, const Camera& camera) {
     // @todo integrate with draw entities so we don't send ubo,
     // in future it would be better to have a system for write ubos easily and checking if something has changed
     writeSharedUbo(camera);
-
-    if (do_shadows) {
-        glActiveTexture(GL_TEXTURE5);
-        glBindTexture(GL_TEXTURE_2D_ARRAY, shadow_buffer);
-
-        glActiveTexture(GL_TEXTURE6);
-        glBindTexture(GL_TEXTURE_3D, jitter_texture->id);
-    }
 
     // Convert fog volumes, for now just a global fog, into camera fitted color&density 3D texture
     auto& vi = Shaders::volumetric_integration;
@@ -653,17 +632,23 @@ void computeVolumetrics(uint64_t frame_i, const Camera& camera) {
     glUniform3iv(vi.uniform("vol_size"), 1, &VOLUMETRIC_RESOLUTION[0]);
     glUniform3fv(vi.uniform("wind_direction"), 1, &wind_direction[0]);
     glUniform1f(vi.uniform("wind_strength"), wind_strength);
-
-    const auto inv_vp = glm::inverse(camera.projection * camera.view);
+    
+    const auto inv_vp = glm::inverse(camera.vp);
+    static auto prev_vp = camera.vp;
+    // https://www.khronos.org/opengl/wiki/Compute_eye_space_from_window_space
+    glUniform3f(vi.uniform("t1t2e1"), camera.projection[2][2], camera.projection[2][3], camera.projection[3][2]);
     glUniformMatrix4fv(vi.uniform("inv_vp"), 1, GL_FALSE, &inv_vp[0][0]);
+    glUniformMatrix4fv(vi.uniform("prev_vp"), 1, GL_FALSE, &prev_vp[0][0]);
+    prev_vp = camera.vp;
 
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, blue_noise_textures[frame_i % NUM_BLUE_NOISE_TEXTURES]->id);
-    glActiveTexture(GL_TEXTURE1);
-    glBindTexture(GL_TEXTURE_3D, temporal_integration_volume[(frame_i + 1) % NUM_TEMPORAL_VOLUMES]);
+    gl_state.bind_texture(0, blue_noise_textures[frame_i % NUM_BLUE_NOISE_TEXTURES]->id);
+    gl_state.bind_texture(1, temporal_integration_volume[(frame_i + 1) % NUM_TEMPORAL_VOLUMES], GL_TEXTURE_3D);
+    if (do_shadows) {
+        gl_state.bind_texture(5, shadow_buffer, GL_TEXTURE_2D_ARRAY);
+        gl_state.bind_texture(6, jitter_texture->id, GL_TEXTURE_3D);
+    }
 
-    glBindImageTexture(0, temporal_integration_volume[frame_i % NUM_TEMPORAL_VOLUMES], 0, GL_TRUE, 0, GL_WRITE_ONLY, GL_RGBA16F);
-
+    glBindImageTexture(0, temporal_integration_volume[frame_i % NUM_TEMPORAL_VOLUMES], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
     glm::ivec3 compute_size = glm::ceil(glm::fvec3(VOLUMETRIC_RESOLUTION) / glm::fvec3(VOLUMETRIC_LOCAL_SIZE));
     glDispatchCompute(compute_size.x, compute_size.y, compute_size.z);
 
@@ -675,11 +660,9 @@ void computeVolumetrics(uint64_t frame_i, const Camera& camera) {
 
     glUniform3iv(vr.uniform("vol_size"), 1, &VOLUMETRIC_RESOLUTION[0]);
 
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_3D, temporal_integration_volume[frame_i % NUM_TEMPORAL_VOLUMES]);
+    gl_state.bind_texture(0, temporal_integration_volume[frame_i % NUM_TEMPORAL_VOLUMES], GL_TEXTURE_3D);
 
-    glBindImageTexture(0, accumulated_volumetric_volume, 0, GL_TRUE, 0, GL_WRITE_ONLY, GL_RGBA16F);
-
+    glBindImageTexture(0, accumulated_volumetric_volume, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
     glDispatchCompute(compute_size.x, compute_size.y, 1);
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT); // @todo do other rendering steps while waiting
 }
@@ -890,7 +873,7 @@ double calculateExposureFromLuma(double L) {
 }
 
 void blurBloomFbo(double dt) {
-    glBindFramebuffer(GL_FRAMEBUFFER, bloom_fbo);
+    gl_state.bind_framebuffer(bloom_fbo);
     gl_state.set_flags(GlFlags::NONE); // Some unecessary calls
 
     // 
@@ -899,9 +882,10 @@ void blurBloomFbo(double dt) {
     gl_state.bind_program(Shaders::downsample.program());
     glUniform2f(Shaders::downsample.uniform("resolution"), window_width, window_height);
 
-    glActiveTexture(GL_TEXTURE0);
-    if(do_msaa) glBindTexture(GL_TEXTURE_2D, hdr_buffer_resolve_multisample);
-    else        glBindTexture(GL_TEXTURE_2D, hdr_buffer);
+    if(do_msaa) 
+        gl_state.bind_texture(0, hdr_buffer_resolve_multisample);
+    else        
+        gl_state.bind_texture(0, hdr_buffer);
 
     for (int i = 0; i < bloom_mip_infos.size(); ++i) {
         const auto& mip = bloom_mip_infos[i];
@@ -916,7 +900,7 @@ void blurBloomFbo(double dt) {
 
         // Set next iterations properties
         glUniform2fv(Shaders::downsample.uniform("resolution"), 1, &mip.size[0]);
-        glBindTexture(GL_TEXTURE_2D, mip.texture);
+        gl_state.bind_texture(0, mip.texture);
 
         // Extract luma from furthest downsample
         if (i == bloom_mip_infos.size() - 1) {
@@ -949,7 +933,7 @@ void blurBloomFbo(double dt) {
         const auto& mip = bloom_mip_infos[i];
         const auto& next_mip = bloom_mip_infos[i - 1];
 
-        glBindTexture(GL_TEXTURE_2D, mip.texture);
+        gl_state.bind_texture(0, mip.texture);
 
         gl_state.bind_viewport(next_mip.size.x, next_mip.size.y);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, next_mip.texture, 0);
@@ -957,13 +941,12 @@ void blurBloomFbo(double dt) {
         drawQuad();
     }
 
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
     gl_state.bind_viewport(window_width, window_height);
     gl_state.remove_flags(GlFlags::BLEND); // @todo removing kind of defeats the point of gl_state but blending will break everything so its best to disable immediately
 }
 
 void bindHdr() {
-    glBindFramebuffer(GL_FRAMEBUFFER, hdr_fbo);
+    gl_state.bind_framebuffer(hdr_fbo);
 }
 
 void clearFramebuffer() {
@@ -987,9 +970,7 @@ void drawSkybox(const Texture* skybox, const Camera &camera) {
     auto untranslated_view = glm::mat4(glm::mat3(camera.view));
     auto untranslated_view_projection = camera.projection * untranslated_view;
     glUniformMatrix4fv(Shaders::skybox.uniform("untranslated_view_projection"), 1, GL_FALSE, &untranslated_view_projection[0][0]);
-
-    glActiveTexture(GL_TEXTURE3);
-    glBindTexture(GL_TEXTURE_CUBE_MAP, skybox->id);
+    gl_state.bind_texture(TextureSlot::SKYBOX, skybox->id, GL_TEXTURE_CUBE_MAP);
 
     drawCube();
 
@@ -1011,6 +992,8 @@ void createRenderQueue(RenderQueue& q, const EntityManager& entity_manager, cons
         ri.flags = GlFlags::DEPTH_READ | GlFlags::DEPTH_WRITE;
 
         if (entityInherits(m_e->type, ANIMATED_MESH_ENTITY)) {
+            if (lightmapping) continue;
+
             auto a_e = (AnimatedMeshEntity*)m_e;
             if (playing || a_e->draw_animated) {
                 ri.bone_matrices = &a_e->final_bone_matrices;
@@ -1063,14 +1046,14 @@ static void drawRenderItem(const RenderItem& ri, const glm::mat4x4* vp, const bo
     // in future this could also be a LUT from material type
     const auto& mat = *ri.mat;
     s.set_macro("ANIMATED_BONES", ri.bone_matrices, false);
-    s.set_macro("ALPHA_CLIP", mat.type & MaterialType::ALPHA_CLIP, false);
-    s.set_macro("VEGETATION", mat.type & MaterialType::VEGETATION, false);
+    s.set_macro("ALPHA_CLIP", !!(mat.type & MaterialType::ALPHA_CLIP), false);
+    s.set_macro("VEGETATION", !!(mat.type & MaterialType::VEGETATION), false);
     if (!shadow) {
-        s.set_macro("PBR", mat.type & MaterialType::PBR, false);
-        s.set_macro("METALLIC", mat.type & MaterialType::METALLIC, false);
-        s.set_macro("EMISSIVE", mat.type & MaterialType::EMISSIVE, false);
-        s.set_macro("GLOBAL_ILLUMINATION", mat.type & MaterialType::LIGHTMAPPED, false);
-        s.set_macro("AO", mat.type & MaterialType::AO, false);
+        s.set_macro("PBR", !!(mat.type & MaterialType::PBR), false);
+        s.set_macro("METALLIC", !!(mat.type & MaterialType::METALLIC), false);
+        s.set_macro("EMISSIVE", !!(mat.type & MaterialType::EMISSIVE), false);
+        s.set_macro("GLOBAL_ILLUMINATION", !!(mat.type & MaterialType::LIGHTMAPPED), false);
+        s.set_macro("AO", !!(mat.type & MaterialType::AO), false);
     }
     s.activate_macros(); // @note !!IMPORTANT!! this is needed to set correct shader
     gl_state.bind_program(s.program());
@@ -1082,8 +1065,7 @@ static void drawRenderItem(const RenderItem& ri, const glm::mat4x4* vp, const bo
             const auto& binding = p.first;
             const auto& tex = p.second;
 
-            glActiveTexture(GL_TEXTURE0 + (uint64_t)binding);
-            glBindTexture(GL_TEXTURE_2D, tex->id);
+            gl_state.bind_texture(binding, tex->id);
         }
 
         for (const auto& p : mat.uniforms) {
@@ -1092,14 +1074,13 @@ static void drawRenderItem(const RenderItem& ri, const glm::mat4x4* vp, const bo
 
             uniform.bind(s.uniform(name));
         }
-    } else if (mat.type & MaterialType::ALPHA_CLIP) { // Only need to bind clip texture for shadows
+    } else if (!!(mat.type & MaterialType::ALPHA_CLIP)) { // Only need to bind clip texture for shadows
         const auto& lu = mat.textures.find(TextureSlot::ALPHA_CLIP);
         if (lu != mat.textures.end()) {
             const auto& binding = lu->first;
             const auto& tex = lu->second;
 
-            glActiveTexture(GL_TEXTURE0 + (uint64_t)binding);
-            glBindTexture(GL_TEXTURE_2D, tex->id);
+            gl_state.bind_texture(binding, tex->id);
         }
     }
 
@@ -1109,7 +1090,7 @@ static void drawRenderItem(const RenderItem& ri, const glm::mat4x4* vp, const bo
         auto mvp = *vp * ri.model;
         glUniformMatrix4fv(s.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
     }
-    if (mat.type & MaterialType::VEGETATION) {
+    if (!!(mat.type & MaterialType::VEGETATION)) {
         glUniform2f(s.uniform("wind_direction"), wind_direction.x, wind_direction.y);
         glUniform1f(s.uniform("wind_strength"), 3.0);
     }
@@ -1128,26 +1109,16 @@ void drawRenderQueue(const RenderQueue& q, const Texture* skybox, const Texture*
     // Bind shared resources
     writeSharedUbo(camera);
     if (do_shadows) {
-        glActiveTexture(GL_TEXTURE5);
-        glBindTexture(GL_TEXTURE_2D_ARRAY, shadow_buffer);
-
-        glActiveTexture(GL_TEXTURE6);
-        glBindTexture(GL_TEXTURE_3D, jitter_texture->id);
+        gl_state.bind_texture(TextureSlot::SHADOW_BUFFER, shadow_buffer, GL_TEXTURE_2D_ARRAY);
+        gl_state.bind_texture(TextureSlot::SHADOW_JITTER, jitter_texture->id, GL_TEXTURE_3D);
     }
-
-    glActiveTexture(GL_TEXTURE7);
-    glBindTexture(GL_TEXTURE_CUBE_MAP, irradiance_map->id);
-
-    glActiveTexture(GL_TEXTURE8);
-    glBindTexture(GL_TEXTURE_CUBE_MAP, prefiltered_specular_map->id);
-
-    glActiveTexture(GL_TEXTURE9);
-    glBindTexture(GL_TEXTURE_2D, brdf_lut->id);
-
     if (do_volumetrics) {
-        glActiveTexture(GL_TEXTURE10);
-        glBindTexture(GL_TEXTURE_3D, accumulated_volumetric_volume);
+        gl_state.bind_texture(TextureSlot::VOLUMETRICS, accumulated_volumetric_volume, GL_TEXTURE_3D);
     }
+
+    gl_state.bind_texture(TextureSlot::ENV_IRRADIANCE, irradiance_map->id, GL_TEXTURE_CUBE_MAP);
+    gl_state.bind_texture(TextureSlot::ENV_SPECULAR, prefiltered_specular_map->id, GL_TEXTURE_CUBE_MAP);
+    gl_state.bind_texture(TextureSlot::BRDF_LUT, brdf_lut->id);
 
     Shaders::unified.set_macro("SHADOWS", do_shadows);
     Shaders::unified.set_macro("VOLUMETRICS", do_volumetrics);
@@ -1173,24 +1144,19 @@ void drawRenderQueue(const RenderQueue& q, const Texture* skybox, const Texture*
         if (do_msaa) {
             resolveMultisampleHdrBuffer();
             bindHdr();
+            gl_state.bind_texture(TextureSlot::SCREEN_COLOR, hdr_buffer_resolve_multisample);
+        } else {
+            gl_state.bind_texture(TextureSlot::SCREEN_COLOR, hdr_buffer);
         }
 
-        glActiveTexture(GL_TEXTURE0);
-        if (do_msaa)
-            glBindTexture(GL_TEXTURE_2D, hdr_buffer_resolve_multisample);
-        else
-            glBindTexture(GL_TEXTURE_2D, hdr_buffer);
         // Copy depth buffer
-        glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_2D, hdr_depth_copy);
         if(!do_msaa) // resolving copies depth already
             glCopyTextureSubImage2D(hdr_depth_copy, 0, 0, 0, 0, 0, window_width, window_height);
-        glActiveTexture(GL_TEXTURE2);
-        glBindTexture(GL_TEXTURE_2D, simplex_gradient->id);
-        glActiveTexture(GL_TEXTURE3);
-        glBindTexture(GL_TEXTURE_2D, simplex_value->id);
-        glActiveTexture(GL_TEXTURE4);
-        glBindTexture(GL_TEXTURE_2D, water_collider_buffers[water_collider_final_fbo]);
+        gl_state.bind_texture(TextureSlot::SCREEN_DEPTH, hdr_depth_copy);
+
+        gl_state.bind_texture(TextureSlot::SIMPLEX_GRADIENT, simplex_gradient->id);
+        gl_state.bind_texture(TextureSlot::SIMPLEX_VALUE, simplex_value->id);
+        gl_state.bind_texture(TextureSlot::WATER_COLLIDER, water_collider_buffers[water_collider_final_fbo]);
     
         auto model = createModelMatrix(q.water->position, glm::quat(), q.water->scale);
         auto mvp = camera.vp * model;
@@ -1214,7 +1180,7 @@ void drawRenderQueue(const RenderQueue& q, const Texture* skybox, const Texture*
 
 // Since shadow buffer wont need to be bound otherwise just combine these operations
 void drawRenderQueueShadows(const RenderQueue& q) {
-    glBindFramebuffer(GL_FRAMEBUFFER, shadow_fbo);
+    gl_state.bind_framebuffer(shadow_fbo);
     gl_state.add_flags(GlFlags::DEPTH_WRITE);
     gl_state.bind_viewport(shadow_size, shadow_size);
     glClear(GL_DEPTH_BUFFER_BIT);
@@ -1226,12 +1192,11 @@ void drawRenderQueueShadows(const RenderQueue& q) {
         drawRenderItem(ri, nullptr, true);
     }
 
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
     gl_state.bind_viewport(window_width, window_height);
 }
 
 void bindBackbuffer(){
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    gl_state.bind_framebuffer(0);
 }
 
 enum class Test : uint64_t {
@@ -1240,11 +1205,11 @@ enum class Test : uint64_t {
     
 };
 
-void drawPost(Texture *skybox, const Camera &camera){
+void drawPost(const Camera &camera){
     // Draw screen space quad so clearing is unnecessary
     //glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    gl_state.remove_flags(GlFlags::DEPTH_READ | GlFlags::DEPTH_READ);
+    gl_state.remove_flags(GlFlags::DEPTH_READ | GlFlags::DEPTH_WRITE);
 
     Shaders::post.set_macro("BLOOM", do_bloom);
     gl_state.bind_program(Shaders::post.program());
@@ -1252,18 +1217,18 @@ void drawPost(Texture *skybox, const Camera &camera){
     glUniform2f(Shaders::post.uniform("resolution"), window_width, window_height);
     glUniform1f(Shaders::post.uniform("exposure"), exposure);
 
-    glActiveTexture(GL_TEXTURE0);
-    if (do_msaa) glBindTexture(GL_TEXTURE_2D, hdr_buffer_resolve_multisample);
-    else         glBindTexture(GL_TEXTURE_2D, hdr_buffer);
-
-    if (do_bloom) {
-        glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_2D, bloom_mip_infos[0].texture);
+    if (do_msaa) {
+        gl_state.bind_texture(TextureSlot::SCREEN_COLOR, hdr_buffer_resolve_multisample);
+    } else {
+        gl_state.bind_texture(TextureSlot::SCREEN_COLOR, hdr_buffer);
     }
 
-    glActiveTexture(GL_TEXTURE2);
-    if (do_msaa) glBindTexture(GL_TEXTURE_2D, hdr_depth_copy);
-    else         glBindTexture(GL_TEXTURE_2D, hdr_depth);
+    gl_state.bind_texture(TextureSlot::BLOOM, bloom_mip_infos[0].texture);
+
+    if (do_msaa) // The resolving step copies the depth
+        gl_state.bind_texture(TextureSlot::SCREEN_DEPTH, hdr_depth_copy);
+    else
+        gl_state.bind_texture(TextureSlot::SCREEN_DEPTH, hdr_depth);
 
     // @todo expose shader macro  values
     // Rudimentary fog
@@ -1275,9 +1240,6 @@ void drawPost(Texture *skybox, const Camera &camera){
     /*glActiveTexture(GL_TEXTURE6);
     glBindTexture(GL_TEXTURE_3D, jitter_texture->id);*/
     //glUniform3fv(post.uniform("camera_position"), 1, &camera.position[0]);
-
-    /*glActiveTexture(GL_TEXTURE3);
-    glBindTexture(GL_TEXTURE_CUBE_MAP, skybox->id);*/
 
     drawQuad();
 }
@@ -1291,8 +1253,8 @@ void convoluteIrradianceFromCubemap(Texture *in_tex, Texture *out_tex, GLint for
     glGenFramebuffers(1, &FBO);
     glGenRenderbuffers(1, &RBO);
 
-    glBindFramebuffer(GL_FRAMEBUFFER, FBO);
-    glBindRenderbuffer(GL_RENDERBUFFER, RBO);
+    gl_state.bind_framebuffer(FBO);
+    gl_state.bind_renderbuffer(RBO);
 
     static const glm::mat4 projection = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 10.0f);
     static const glm::mat4 views[] =
@@ -1305,9 +1267,11 @@ void convoluteIrradianceFromCubemap(Texture *in_tex, Texture *out_tex, GLint for
        glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3( 0.0f,  0.0f, -1.0f), glm::vec3(0.0f, -1.0f,  0.0f))
     };
 
+    gl_state.bind_texture(0, in_tex->id, GL_TEXTURE_CUBE_MAP);
+
     // Create output cubemap
     glGenTextures(1, &out_tex->id);
-    glBindTexture(GL_TEXTURE_CUBE_MAP, out_tex->id);
+    gl_state.bind_texture(1, out_tex->id, GL_TEXTURE_CUBE_MAP);
     for (unsigned int i = 0; i < 6; ++i) {
         glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, format, out_tex->resolution.x, out_tex->resolution.y, 0, GL_RGB, GL_FLOAT, nullptr);
     }
@@ -1319,13 +1283,10 @@ void convoluteIrradianceFromCubemap(Texture *in_tex, Texture *out_tex, GLint for
 
     gl_state.bind_program(Shaders::diffuse_convolution.program());
 
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_CUBE_MAP, in_tex->id);
-
     gl_state.bind_viewport(out_tex->resolution.x, out_tex->resolution.y);
-    glBindFramebuffer(GL_FRAMEBUFFER, FBO);
+    gl_state.bind_framebuffer(FBO);
     for (unsigned int i = 0; i < 6; ++i) {
-        auto vp = projection * glm::mat4(glm::mat3(views[i])); // removes translation @speed
+        auto vp = projection * glm::mat4(glm::mat3(views[i])); // removes translation
         glUniformMatrix4fv(Shaders::diffuse_convolution.uniform("vp"), 1, GL_FALSE, &vp[0][0]);
         
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, out_tex->id, 0);
@@ -1334,7 +1295,7 @@ void convoluteIrradianceFromCubemap(Texture *in_tex, Texture *out_tex, GLint for
         drawCube();
     }
 
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    gl_state.bind_framebuffer(GL_FALSE);
     glDeleteFramebuffers(1, &FBO);
     glDeleteRenderbuffers(1, &RBO);
 }
@@ -1349,8 +1310,8 @@ void convoluteSpecularFromCubemap(Texture* in_tex, Texture* out_tex, GLint forma
     glGenFramebuffers(1, &FBO);
     glGenRenderbuffers(1, &RBO);
 
-    glBindFramebuffer(GL_FRAMEBUFFER, FBO);
-    glBindRenderbuffer(GL_RENDERBUFFER, RBO);
+    gl_state.bind_framebuffer(FBO);
+    gl_state.bind_renderbuffer(RBO);
 
     static const glm::mat4 projection = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 10.0f);
     static const glm::mat4 views[] =
@@ -1363,9 +1324,11 @@ void convoluteSpecularFromCubemap(Texture* in_tex, Texture* out_tex, GLint forma
        glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3( 0.0f,  0.0f, -1.0f), glm::vec3(0.0f, -1.0f,  0.0f))
     };
 
+    gl_state.bind_texture(0, in_tex->id, GL_TEXTURE_CUBE_MAP);
+
     // Create output cubemap
     glGenTextures(1, &out_tex->id);
-    glBindTexture(GL_TEXTURE_CUBE_MAP, out_tex->id);
+    gl_state.bind_texture(1, out_tex->id, GL_TEXTURE_CUBE_MAP);
     for (unsigned int i = 0; i < 6; ++i) {
         glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, format, out_tex->resolution.x, out_tex->resolution.y, 0, GL_RGB, GL_FLOAT, nullptr);
     }
@@ -1379,8 +1342,6 @@ void convoluteSpecularFromCubemap(Texture* in_tex, Texture* out_tex, GLint forma
 
     gl_state.bind_program(Shaders::specular_convolution.program());
 
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_CUBE_MAP, in_tex->id);
     float texelSphericalArea = 4.0 * PI / (6.0 * in_tex->resolution[0] * in_tex->resolution[0]);
     glUniform1f(Shaders::specular_convolution.uniform("texelSphericalArea"), texelSphericalArea);
 
@@ -1405,7 +1366,7 @@ void convoluteSpecularFromCubemap(Texture* in_tex, Texture* out_tex, GLint forma
         mip_resolution /= 2; // Set resolution appropriate to mip
     }
 
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    gl_state.bind_framebuffer(GL_FALSE);
     glDeleteFramebuffers(1, &FBO);
     glDeleteRenderbuffers(1, &RBO);
 }
@@ -1433,7 +1394,8 @@ Texture *createJitter3DTexture(AssetManager &asset_manager, int size, int sample
     auto tex = asset_manager.createTexture("jitter");
 
     glGenTextures(1, &tex->id);
-    glBindTexture(GL_TEXTURE_3D, tex->id);
+
+    gl_state.bind_texture(0, tex->id, GL_TEXTURE_3D);
     glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_REPEAT);

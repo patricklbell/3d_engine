@@ -74,6 +74,8 @@ void initDefaultMaterial(AssetManager &asset_manager){
 
     default_material->uniforms.emplace("albedo_mult", glm::vec3(1));
     default_material->uniforms.emplace("roughness_mult", 1.0f);
+
+    default_material->type = MaterialType::PBR;
 }
 
 std::ostream &operator<<(std::ostream &os, const Texture &t) {
@@ -86,7 +88,7 @@ std::ostream &operator<<(std::ostream &os, const Texture &t) {
 }
 
 std::ostream &operator<<(std::ostream &os, const Material &m) {
-    os << "Type: " << m.type << "\n";
+    os << "Type: " << (uint64_t)m.type << "\n";
     if (m.textures.size()) {
         os << "Textures: \n";
         for (const auto& p : m.textures) {
@@ -456,91 +458,96 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
         auto ai_mat = scene->mMaterials[i];
         auto& mat = mesh->materials[i];
 
-        aiColor4D col(1.f, 0.f, 1.f, 1.0f); // Storage for getting colors from assimp
-
-        // For now assume everything with base color is PBR, use assimp flags in future
-        if (loadTextureFromAssimp(mat.textures[TextureSlot::ALBEDO], ai_mat, scene, aiTextureType_BASE_COLOR, GL_FALSE)) {
+        int shading_model;
+        ai_mat->Get(AI_MATKEY_SHADING_MODEL, shading_model);
+        if (shading_model == aiShadingMode_Blinn || shading_model == aiShadingMode_Phong) {
+            mat.type = MaterialType::BLINN_PHONG;
+        }
+        else if (shading_model == aiShadingMode_CookTorrance || shading_model == aiShadingMode_PBR_BRDF) {
             mat.type = MaterialType::PBR;
-        } else {
-            if (ai_mat->Get(AI_MATKEY_BASE_COLOR, col) == AI_SUCCESS) {
-                mat.type = MaterialType::PBR;
-                mat.textures[TextureSlot::ALBEDO] = getColorTexture(glm::vec4(col.r, col.g, col.b, col.a), GL_RGB);
-            }
-            else {
-                // Try and load Blinn Phong material
-                if (loadTextureFromAssimp(mat.textures[TextureSlot::DIFFUSE], ai_mat, scene, aiTextureType_DIFFUSE, GL_FALSE)) {
-                    mat.type = MaterialType::BLINN_PHONG;
-                }
-                else {
-                    if (ai_mat->Get(AI_MATKEY_COLOR_DIFFUSE, col) == AI_SUCCESS) {
-                        mat.type = MaterialType::BLINN_PHONG;
-                        mat.textures[TextureSlot::DIFFUSE] = getColorTexture(glm::vec4(col.r, col.g, col.b, col.a), GL_RGB);
+        }
+        else { // By default try to use pbr and see how it goes
+            mat.type = MaterialType::PBR;
+        }
+
+        if (!!(mat.type & MaterialType::PBR)) {
+            if (!loadTextureFromAssimp(mat.textures[TextureSlot::ALBEDO], ai_mat, scene, aiTextureType_BASE_COLOR, GL_FALSE)) {
+                if (!loadTextureFromAssimp(mat.textures[TextureSlot::ALBEDO], ai_mat, scene, aiTextureType_DIFFUSE, GL_FALSE)) {
+                    if (!loadColorFromAssimp(mat.textures[TextureSlot::ALBEDO], ai_mat, AI_MATKEY_BASE_COLOR, GL_RGB)) {
+                        if (!loadColorFromAssimp(mat.textures[TextureSlot::ALBEDO], ai_mat, AI_MATKEY_COLOR_DIFFUSE, GL_RGB)) { // Use diffuse as backup if textures were incorrectly labeled
+                            mat.textures[TextureSlot::ALBEDO] = default_material->textures[TextureSlot::ALBEDO];
+                        }
                     }
                 }
             }
-        }
 
-        if (mat.type & MaterialType::PBR) {
-            // Alpha clip if there is an alpha channel in albedo, again could be done with flag
+            // Alpha clip if there is an alpha channel in albedo, could be done with a flag on the material if assimp worked
             if (mat.textures[TextureSlot::ALBEDO] && getChannelsForFormat(mat.textures[TextureSlot::ALBEDO]->format) == ImageChannels::RGBA) {
-                mat.type = (MaterialType::Type)(mat.type | MaterialType::ALPHA_CLIP);
+                mat.type = mat.type | MaterialType::ALPHA_CLIP;
             }
-
-            mat.textures[TextureSlot::ROUGHNESS] = default_material->textures[TextureSlot::ROUGHNESS]; // Required for material
+            
             if (!loadTextureFromAssimp(mat.textures[TextureSlot::ROUGHNESS], ai_mat, scene, aiTextureType_DIFFUSE_ROUGHNESS, GL_RED)) {
-                if (ai_mat->Get(AI_MATKEY_ROUGHNESS_FACTOR, col) == AI_SUCCESS && (col.r + col.g + col.b > 0) && col.a > 0) {
-                    mat.textures[TextureSlot::ROUGHNESS] = getColorTexture(glm::vec4(col.r, col.g, col.b, col.a), GL_RED);
+                if (!loadColorFromAssimp(mat.textures[TextureSlot::ROUGHNESS], ai_mat, AI_MATKEY_ROUGHNESS_FACTOR, GL_RED)) {
+                    mat.textures[TextureSlot::ROUGHNESS] = default_material->textures[TextureSlot::ROUGHNESS]; // Required for material so add a backup
                 }
             }
 
             if (!loadTextureFromAssimp(mat.textures[TextureSlot::METAL], ai_mat, scene, aiTextureType_METALNESS, GL_RED)) {
-                if (ai_mat->Get(AI_MATKEY_METALLIC_FACTOR, col) == AI_SUCCESS && (col.r + col.g + col.b > 0) && col.a > 0) {
-                    mat.textures[TextureSlot::METAL] = getColorTexture(glm::vec4(col.r, col.g, col.b, col.a), GL_RED);
-                    mat.type = (MaterialType::Type)(mat.type | MaterialType::METALLIC);
+                loadColorFromAssimp(mat.textures[TextureSlot::METAL], ai_mat, AI_MATKEY_METALLIC_FACTOR, GL_RED);
+            }
+            if (mat.textures[TextureSlot::METAL]) {
+                mat.type = mat.type | MaterialType::METALLIC;
+            }
+        } else if (!!(mat.type & MaterialType::BLINN_PHONG)) {
+            if (!loadTextureFromAssimp(mat.textures[TextureSlot::DIFFUSE], ai_mat, scene, aiTextureType_DIFFUSE, GL_FALSE)) {
+                if (!loadTextureFromAssimp(mat.textures[TextureSlot::DIFFUSE], ai_mat, scene, aiTextureType_BASE_COLOR, GL_FALSE)) {
+                    if (!loadColorFromAssimp(mat.textures[TextureSlot::DIFFUSE], ai_mat, AI_MATKEY_COLOR_DIFFUSE, GL_RGB)) {
+                        if (!loadColorFromAssimp(mat.textures[TextureSlot::DIFFUSE], ai_mat, AI_MATKEY_BASE_COLOR, GL_RGB)) {  // Use base color as backup if textures were incorrectly labeled
+                            mat.textures[TextureSlot::DIFFUSE] = default_material->textures[TextureSlot::DIFFUSE];
+                        }
+                    }
                 }
-            } else { mat.type = (MaterialType::Type)(mat.type | MaterialType::METALLIC); }
-        }
-        else if (mat.type & MaterialType::BLINN_PHONG) {
+            }
+
             // Alpha clip if there is an alpha channel in albedo, again could be done with flag
             if (mat.textures[TextureSlot::DIFFUSE] && getChannelsForFormat(mat.textures[TextureSlot::DIFFUSE]->format) == ImageChannels::RGBA) {
-                mat.type = (MaterialType::Type)(mat.type | MaterialType::ALPHA_CLIP);
+                mat.type = mat.type | MaterialType::ALPHA_CLIP;
             }
 
-            mat.textures[TextureSlot::SPECULAR] = default_material->textures[TextureSlot::SPECULAR]; // Required for material
             if (!loadTextureFromAssimp(mat.textures[TextureSlot::SPECULAR], ai_mat, scene, aiTextureType_SPECULAR, GL_RED)) {
-                if (ai_mat->Get(AI_MATKEY_SPECULAR_FACTOR, col) == AI_SUCCESS && col.r > 0) {
-                    mat.textures[TextureSlot::SPECULAR] = getColorTexture(glm::vec4(col.r, col.g, col.b, col.a), GL_RED);
+                if (!loadColorFromAssimp(mat.textures[TextureSlot::SPECULAR], ai_mat, AI_MATKEY_SPECULAR_FACTOR, GL_RED)) {
+                    mat.textures[TextureSlot::SPECULAR] = default_material->textures[TextureSlot::SPECULAR]; // Required for material so add a backup
                 }
             }
 
-            mat.textures[TextureSlot::SHININESS] = default_material->textures[TextureSlot::SHININESS]; // Required for material
-            if (!loadTextureFromAssimp(mat.textures[TextureSlot::SHININESS], ai_mat, scene, aiTextureType_SHININESS, GL_RED)) { // @todo conversion function from linear to exponent
-                if (ai_mat->Get(AI_MATKEY_SHININESS_STRENGTH, col) == AI_SUCCESS && col.r > 0) {
-                    mat.textures[TextureSlot::SHININESS] = getColorTexture(glm::vec4(col.r, col.g, col.b, col.a), GL_RED);
+
+            if (!loadTextureFromAssimp(mat.textures[TextureSlot::SHININESS], ai_mat, scene, aiTextureType_SHININESS, GL_RED)) {
+                if (!loadColorFromAssimp(mat.textures[TextureSlot::SHININESS], ai_mat, AI_MATKEY_SHININESS_STRENGTH, GL_RED)) {
+                    mat.textures[TextureSlot::SHININESS] = default_material->textures[TextureSlot::SHININESS]; // Required for material so add a backup
                 }
             }
         } else {
-            mat = *default_material; // @note!! this copies the uniform pointers which could be stale so default material must never be destroyed
+            mat = *default_material;
         }
 
         // Emission
         // I don't know what the difference between emission_color and emissive for ASSIMP, @note emissive intensity should probably be loaded as well
         if (!loadTextureFromAssimp(mat.textures[TextureSlot::EMISSIVE], ai_mat, scene, aiTextureType_EMISSIVE, GL_FALSE)) {
             if (!loadTextureFromAssimp(mat.textures[TextureSlot::EMISSIVE], ai_mat, scene, aiTextureType_EMISSION_COLOR, GL_FALSE)) {
-                if (ai_mat->Get(AI_MATKEY_COLOR_EMISSIVE, col) == AI_SUCCESS && (col.r + col.g + col.b > 0) && col.a > 0) {
-                    mat.textures[TextureSlot::EMISSIVE] = getColorTexture(glm::vec4(col.r, col.g, col.b, col.a), GL_RGB);
-                    mat.type = (MaterialType::Type)(mat.type | MaterialType::EMISSIVE);
-                }
-            } else { mat.type = (MaterialType::Type)(mat.type | MaterialType::EMISSIVE); }
-        } else { mat.type = (MaterialType::Type)(mat.type | MaterialType::EMISSIVE); }
+                loadColorFromAssimp(mat.textures[TextureSlot::SHININESS], ai_mat, AI_MATKEY_COLOR_EMISSIVE, GL_RGB);
+            }
+        }
+        if (mat.textures[TextureSlot::EMISSIVE]) {
+            mat.type = mat.type | MaterialType::EMISSIVE;
+        }
 
         // Baked Lightmaps or Ambient Occlusion
         if (loadTextureFromAssimp(mat.textures[TextureSlot::GI], ai_mat, scene, aiTextureType_LIGHTMAP, GL_RGB)) {
-            mat.type = (MaterialType::Type)(mat.type | MaterialType::LIGHTMAPPED);
+            mat.type = mat.type | MaterialType::LIGHTMAPPED;
         }
         else {
             if (loadTextureFromAssimp(mat.textures[TextureSlot::AO], ai_mat, scene, aiTextureType_AMBIENT_OCCLUSION, GL_RED)) {
-                mat.type = (MaterialType::Type)(mat.type | MaterialType::AO);
+                mat.type = mat.type | MaterialType::AO;
             }
         }
 
@@ -562,22 +569,22 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
         }
 
         // Add some uniforms for modifying certain material types
-        if (mat.type & MaterialType::PBR) {
+        if (!!(mat.type & MaterialType::PBR)) {
             mat.uniforms.emplace("albedo_mult", glm::vec3(1));
             mat.uniforms.emplace("roughness_mult", 1.0f);
         }
-        if (mat.type & MaterialType::BLINN_PHONG) {
+        if (!!(mat.type & MaterialType::BLINN_PHONG)) {
             mat.uniforms.emplace("diffuse_mult", glm::vec3(1));
             mat.uniforms.emplace("specular_mult", 1.0f);
             mat.uniforms.emplace("shininess_mult", 1.0f);
         }
-        if (mat.type & MaterialType::EMISSIVE) {
+        if (!!(mat.type & MaterialType::EMISSIVE)) {
             mat.uniforms.emplace("emissive_mult", glm::vec3(1));
         }
-        if (mat.type & MaterialType::LIGHTMAPPED || mat.type & MaterialType::AO) {
+        if (!!(mat.type & MaterialType::LIGHTMAPPED) || !!(mat.type & MaterialType::AO)) {
             mat.uniforms.emplace("ambient_mult", 1.0f);
         }
-        if (mat.type & MaterialType::METALLIC) {
+        if (!!(mat.type & MaterialType::METALLIC)) {
             mat.uniforms.emplace("metal_mult", 1.0f);
         }
 
@@ -1421,6 +1428,15 @@ bool AssetManager::loadTextureFromAssimp(Texture *&tex, aiMaterial *mat, const a
         }
     }
 	return false;
+}
+
+bool AssetManager::loadColorFromAssimp(Texture*& tex, aiMaterial* ai_mat, const char* pKey, unsigned int type, unsigned int idx, GLint format, bool floating) {
+    aiColor4D col;
+    if (ai_mat->Get(pKey, type, idx, col) == AI_SUCCESS) {
+        tex = getColorTexture(glm::vec4(col.r, col.g, col.b, col.a), format);
+        return true;
+    }
+    return false;
 }
 
 bool AssetManager::loadTexture(Texture *tex, const std::string &path, GLenum format, const GLint wrap, bool floating, bool trilinear) {

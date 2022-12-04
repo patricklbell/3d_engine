@@ -1,19 +1,19 @@
 #include "renderer.hpp"
 
 GlState gl_state;
-bool GlState::bind_vao(GLuint desired) {
-    if (desired != vao) {
-        glBindVertexArray(desired);
-        vao = desired;
+bool GlState::bind_vao(GLuint to_bind) {
+    if (to_bind != vao) {
+        glBindVertexArray(to_bind);
+        vao = to_bind;
         return true;
     }
     return false;
 }
 
-bool GlState::bind_program(GLuint desired) {
-    if (desired != program) {
-        glUseProgram(desired);
-        program = desired;
+bool GlState::bind_program(GLuint to_bind) {
+    if (to_bind != program) {
+        glUseProgram(to_bind);
+        program = to_bind;
         return true;
     }
     return false;
@@ -100,4 +100,41 @@ bool GlState::bind_viewport(int x, int y, int w, int h) {
 
 bool GlState::bind_viewport(int w, int h) {
     return bind_viewport(0, 0, w, h);
+}
+
+bool GlState::bind_texture(uint64_t slot, GLuint to_bind, GLenum type) {
+    assert(slot < MAX_TEXTURE_SLOTS);
+
+    if (textures[slot] != to_bind) {
+        if (GL_TEXTURE0 + slot != active_texture) {
+            glActiveTexture(GL_TEXTURE0 + slot);
+            active_texture = GL_TEXTURE0 + slot;
+        }
+        glBindTexture(type, to_bind);
+        textures[slot] = to_bind;
+        return true;
+    }
+    return false;
+}
+bool GlState::bind_texture(TextureSlot slot, GLuint to_bind, GLenum type) {
+    return bind_texture((uint64_t)slot, to_bind, type);
+}
+
+void GlState::bind_framebuffer(GLuint to_bind, GlBufferFlags flags) {
+    if (!!(flags & GlBufferFlags::READ) && to_bind != read_framebuffer) {
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, to_bind);
+        read_framebuffer = to_bind;
+    }
+    if (!!(flags & GlBufferFlags::WRITE) && to_bind != write_framebuffer) {
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, to_bind);
+        write_framebuffer = to_bind;
+    }
+}
+bool GlState::bind_renderbuffer(GLuint to_bind) {
+    if (to_bind != renderbuffer) {
+        glBindRenderbuffer(GL_RENDERBUFFER, to_bind);
+        renderbuffer = to_bind;
+        return true;
+    }
+    return false;
 }

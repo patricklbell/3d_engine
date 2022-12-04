@@ -55,7 +55,7 @@ void initBRDFLut(AssetManager& asset_manager);
 void initAnimationUbo();
 
 void initWaterColliderFbo();
-void bindDrawWaterColliderMap(const EntityManager &entity_manager, WaterEntity *water);
+void bindDrawWaterColliderMap(const RenderQueue& q, WaterEntity *water);
 void distanceTransformWaterFbo(WaterEntity* water);
 
 void clearFramebuffer();
@@ -67,7 +67,7 @@ void drawRenderQueueShadows(const RenderQueue& q);
 void drawSkybox(const Texture* skybox, const Camera& camera);
 
 void bindBackbuffer();
-void drawPost(Texture *skybox, const Camera& camera);
+void drawPost(const Camera& camera);
 
 void blurBloomFbo(double dt);
 void initBloomFbo(bool resize=false);
@@ -105,10 +105,10 @@ namespace graphics {
     extern bool do_volumetrics;
     extern const std::string volumetric_shader_macro;
     extern struct FogProperties {
-        float anisotropy = 0.5;
-        float density = 0.02;
-        float noise_scale = 1.5;
-        float noise_amount = 0.5;
+        float anisotropy = 0.2;
+        float density = 0.03;
+        float noise_scale = 0.15;
+        float noise_amount = 0.3;
     } global_fog_properties;
 
     extern GLuint water_collider_fbos[2], water_collider_buffers[2];

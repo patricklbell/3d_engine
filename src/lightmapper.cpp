@@ -75,9 +75,9 @@ void createShadowMapForGeometry(RenderQueue& q, Camera &camera, glm::vec3 positi
 bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, Texture* skybox, Texture *skybox_irradiance, Texture *skybox_specular) {
 	lm_context* ctx = lmCreate(
 		64,               // hemicube rendering resolution/quality
-		0.01f, 100.0f,    // zNear, zFar
+		0.1f, 100.0f,     // zNear, zFar
 		1.0f, 1.0f, 1.0f, // sky/clear color
-		4, 0.1f,         // hierarchical selective interpolation for speedup (passes, threshold)
+		4, 0.1f,          // hierarchical selective interpolation for speedup (passes, threshold)
 		0.01f);           // modifier for camera-to-surface distance for hemisphere rendering.
 						  // tweak this to trade-off between interpolated vertex normal quality and other artifacts (see declaration).
 	if (!ctx) {
@@ -97,20 +97,21 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 	auto old_window_height = window_height;
 	auto old_bloom = graphics::do_bloom;
 	auto old_shadows = graphics::do_shadows;
+	auto old_volumetrics = graphics::do_volumetrics;
 	auto old_msaa = graphics::do_msaa;
 	auto old_sun_color = sun_color; // Hacky way to get rid of direct contribution
 
-	sun_color = glm::vec3(0.0);
 	graphics::do_bloom = false;
 	graphics::do_msaa = false;
-	graphics::do_shadows = true;
+	graphics::do_shadows = false;
+	graphics::do_volumetrics = false;
 	window_width = w;
 	window_height = h;
 	initHdrFbo();
 
-	// Not a real camera, just so shader uniforms are correct
+	// Camera which is moved by the lightmapper
 	Frustrum frustrum;
-	frustrum.near_plane = 0.01f;
+	frustrum.near_plane = 0.1f;
 	frustrum.far_plane = 100.0f;
 	Camera camera(frustrum);
 
@@ -120,17 +121,36 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 
 	std::vector<float*> lightmaps;
 	std::vector<MeshEntity*> mesh_entities;
+	std::vector<uint64_t> submesh_indices;
 	for (int i = 0; i < ENTITY_COUNT; ++i) {
 		auto m_e = reinterpret_cast<MeshEntity*>(entity_manager.entities[i]);
 		if (m_e == nullptr ||
-			!entityInherits(m_e->type, MESH_ENTITY) || m_e->mesh == nullptr || !m_e->do_lightmap ||
+			!entityInherits(m_e->type, MESH_ENTITY) || m_e->mesh == nullptr || !m_e->do_lightmap || m_e->mesh->uvs == nullptr ||
 			entityInherits(m_e->type, ANIMATED_MESH_ENTITY) || entityInherits(m_e->type, VEGETATION_ENTITY))
 			continue;
 
-		float* img = (float*)malloc(w * h * c * sizeof(float));
-		assert(img != NULL);
-		lightmaps.push_back(img);
-		mesh_entities.push_back(m_e);
+		for (int j = 0; j < m_e->mesh->num_submeshes; j++) {
+			float* img = (float*)malloc(w * h * c * sizeof(float));
+			assert(img != NULL);
+			lightmaps.push_back(img);
+			mesh_entities.push_back(m_e);
+			submesh_indices.push_back(j);
+
+			// Make a new material which is unique to the submesh
+			Material* new_mat;
+			const auto& overide_mat_lu = m_e->overidden_materials.find(j);
+			if (overide_mat_lu != m_e->overidden_materials.end()) {
+				new_mat = &overide_mat_lu->second;
+			} else {
+				new_mat = &m_e->overidden_materials.emplace(j, m_e->mesh->materials[m_e->mesh->material_indices[j]]).first->second;
+			}
+			// Add a black lightmap texture to this material
+			new_mat->textures[TextureSlot::GI] = asset_manager.getColorTexture(glm::vec4(0.0), GL_RGB);
+			new_mat->type |= MaterialType::LIGHTMAPPED;
+			if (new_mat->uniforms.find("ambient_mult") == new_mat->uniforms.end()) {
+				new_mat->uniforms.emplace("ambient_mult", 1.0f);
+			}
+		}
 	}
 
 	RenderQueue q;
@@ -145,67 +165,61 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 		for(int i = 0; i < lightmaps.size(); ++i) {
 			const auto& img = lightmaps[i];
 			const auto& m_e = mesh_entities[i];
+			const auto& submesh_i = submesh_indices[i];
+			auto& mesh = m_e->mesh;
 
 			// @note relies on 0 bits representing 0.0 in floating format which is true for almost all standards
 			memset(img, 0, sizeof(float) * w * h * c); // clear lightmap to black
 			lmSetTargetLightmap(ctx, img, w, h, c);
 
-			auto g_model_rot_scl = glm::mat4_cast(m_e->rotation) * glm::mat4x4(m_e->scale);
-			auto g_model_pos = glm::translate(glm::mat4x4(1.0), m_e->position);
-
 			indicators::ProgressBar bar{ indicators::option::BarWidth{50}, indicators::option::Start{"["}, indicators::option::Fill{"="}, indicators::option::Lead{">"}, indicators::option::Remainder{" "}, indicators::option::End{" ]"}, indicators::option::PostfixText{""}, indicators::option::ForegroundColor{indicators::Color::white}, indicators::option::FontStyles{std::vector<indicators::FontStyle>{indicators::FontStyle::bold}} };
 			bar.set_option(indicators::option::ShowPercentage{ true });
 			
-			createShadowMapForGeometry(q, camera, m_e->position);
+			//createShadowMapForGeometry(q, camera, m_e->position);
 
-			auto& mesh = m_e->mesh;
-			for (int j = 0; j < mesh->num_submeshes; ++j) {
-				auto model = g_model_pos * mesh->transforms[j] * g_model_rot_scl;
+			auto model = glm::translate(glm::mat4x4(1.0), m_e->position) * mesh->transforms[submesh_i] * glm::mat4_cast(m_e->rotation) * glm::mat4x4(m_e->scale);
+			lmSetGeometry(ctx, (float*)&model[0][0],
+				LM_FLOAT, mesh->vertices,	sizeof(*mesh->vertices),
+				LM_FLOAT, mesh->normals,	sizeof(*mesh->normals),
+				LM_FLOAT, mesh->uvs,		sizeof(*mesh->uvs),
+				mesh->draw_count[submesh_i], LM_UNSIGNED_INT, &mesh->indices[mesh->draw_start[submesh_i]]);
 
-				assert(mesh->uvs != nullptr); // Mesh should be parameterized and packed
-				lmSetGeometry(ctx, (float*)&model[0][0],
-					LM_FLOAT, mesh->vertices,	sizeof(*mesh->vertices),
-					LM_FLOAT, mesh->normals,	sizeof(*mesh->normals),
-					LM_FLOAT, mesh->uvs,		sizeof(*mesh->uvs),
-					mesh->draw_count[j], LM_UNSIGNED_INT, &mesh->indices[mesh->draw_start[j]]);
+			double last_update_time = glfwGetTime();
 
-				double last_update_time = glfwGetTime();
+			int viewport[4];
+			bar.set_option(indicators::option::PostfixText{ "Baking lightmap " + std::to_string(count) + " / " + std::to_string(lightmaps.size())});
 
-				int vp[4];
-				glm::mat4 view, proj;
-				bar.set_option(indicators::option::PostfixText{ "Baking lightmap " + std::to_string(count) + " / " + std::to_string(lightmaps.size())});
+			while (lmBegin(ctx, viewport, &camera.view[0][0], &camera.projection[0][0])) {
+				camera.position = glm::vec3(
+					ctx->meshPosition.sample.position.x, 
+					ctx->meshPosition.sample.position.y, 
+					ctx->meshPosition.sample.position.z
+				);
 
-				while (lmBegin(ctx, vp, &camera.view[0][0], &camera.projection[0][0])) {
-					camera.position = glm::vec3(
-						ctx->meshPosition.sample.position.x, 
-						ctx->meshPosition.sample.position.y, 
-						ctx->meshPosition.sample.position.z
-					);
+				// Used for debugging the hemicube's rendering
+				//using namespace std::this_thread; // sleep_for, sleep_until
+				//using namespace std::chrono; // nanoseconds, system_clock, seconds
+				//bindBackbuffer();
+				//if(vp[0] == 0 && vp[1] == 0)
+				//	clearFramebuffer();
+				//gl_state.bind_viewport(vp[0], vp[1], vp[2], vp[3]);
+				//drawRenderQueue(q, skybox, skybox_irradiance, skybox_specular, camera);
+				//glfwSwapBuffers(window);
+				//sleep_for(milliseconds(10));
 
-					// Used for debugging the hemicube's rendering
-					//using namespace std::this_thread; // sleep_for, sleep_until
-					//using namespace std::chrono; // nanoseconds, system_clock, seconds
-					//bindBackbuffer();
-					//if(vp[0] == 0 && vp[1] == 0)
-					//	clearFramebuffer();
-					//glViewport(vp[0], vp[1], vp[2], vp[3]);
-					//drawEntitiesHdr(entity_manager, skybox, skybox_irradiance, skybox_specular, camera, true);
-					//glfwSwapBuffers(window);
-					//sleep_for(milliseconds(10));
-
-					glViewport(vp[0], vp[1], vp[2], vp[3]);
-					drawRenderQueue(q, skybox, skybox_irradiance, skybox_specular, camera);
+				gl_state.bind_viewport(viewport[0], viewport[1], viewport[2], viewport[3]);
+				drawRenderQueue(q, skybox, skybox_irradiance, skybox_specular, camera);
 					
-					double time = glfwGetTime();
-					if (time - last_update_time > 1.0) {
-						last_update_time = time;
-						bar.set_progress(lmProgress(ctx) * 100.0f * ((float)(j+1) / (float)mesh->num_submeshes));
-					}
-
-					lmEnd(ctx);
+				double time = glfwGetTime();
+				if (time - last_update_time > 1.0) {
+					last_update_time = time;
+					bar.set_progress(lmProgress(ctx) * 100.0f);
 				}
-				bar.set_progress(100);
+
+				lmEnd(ctx);
 			}
+
+			bar.set_progress(100);
 			count++;
 		}
 
@@ -221,6 +235,11 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 		for (int i = 0; i < lightmaps.size(); ++i) {
 			const auto& img = lightmaps[i];
 			const auto& m_e = mesh_entities[i];
+			const auto& submesh_i = submesh_indices[i];
+			const auto& mesh = *m_e->mesh;
+
+			bar.set_progress((float)(count) / (float)lightmaps.size());
+			bar.set_option(indicators::option::PostfixText{ "Postprocessing " + std::to_string(count) + " / " + std::to_string(lightmaps.size()) });
 
 			lmImageSmooth(img, temp, w, h, c);
 			lmImageDilate(temp, img, w, h, c);
@@ -232,6 +251,9 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 			if (b == 0) {
 				lightmap = asset_manager.createTexture(level_path + "." + std::to_string(i) + ".tga");
 				glGenTextures(1, &lightmap->id);
+			} else {
+				lightmap = asset_manager.getTexture(level_path + "." + std::to_string(i) + ".tga");
+				assert(lightmap);
 			}
 			lightmap->format = GL_RGB16F;
 			lightmap->resolution = glm::ivec2(w, h);
@@ -247,38 +269,19 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 			glGenerateMipmap(GL_TEXTURE_2D);
 			lightmap->complete = true;
 
-			// Make all materials unique to each submesh and add the lightmapped texture
-			const auto& mesh = *m_e->mesh;
-			for (uint64_t submesh_i = 0; submesh_i < mesh.num_submeshes; submesh_i++) {
-				Material new_mat = mesh.materials[mesh.material_indices[submesh_i]];
-				new_mat.type = (MaterialType::Type)(new_mat.type | MaterialType::LIGHTMAPPED);
-				new_mat.textures[TextureSlot::GI] = lightmap;
-				// @hardcoded IDK whether to use uniform bindings or just a static map, this will do for now
-				if (new_mat.uniforms.find("ambient_mult") == new_mat.uniforms.end()) {
-					new_mat.uniforms.emplace("ambient_mult", 1.0f);
-				}
-
-				m_e->overidden_materials[submesh_i] = new_mat;
-			}
-
-			bar.set_progress((float)(count) / (float)lightmaps.size());
-			bar.set_option(indicators::option::PostfixText{ "Postprocessing " + std::to_string(count) + " / " + std::to_string(lightmaps.size()) });
-			count++;
+			// Update the material to show the lightmap
+			m_e->overidden_materials[submesh_i].textures[TextureSlot::GI] = lightmap;
 
 			// If we are on the last bound we want to save to disk
 			if (b == bounces - 1) {
-				indicators::ProgressBar bar{ indicators::option::BarWidth{50}, indicators::option::Start{"["}, indicators::option::Fill{"="}, indicators::option::Lead{">"}, indicators::option::Remainder{" "}, indicators::option::End{" ]"}, indicators::option::PostfixText{""}, indicators::option::ForegroundColor{indicators::Color::white}, indicators::option::FontStyles{std::vector<indicators::FontStyle>{indicators::FontStyle::bold}} };
-				bar.set_option(indicators::option::ShowPercentage{ true });
-
 				const auto& img = lightmaps[i];
 				const auto& m_e = mesh_entities[i];
 
-				lmImageSaveTGAf(lightmap->handle.c_str(), img, w, h, c, 1.0);
-
-				bar.set_progress((float)(count) / (float)lightmaps.size());
 				bar.set_option(indicators::option::PostfixText{ "Writing TGA " + std::to_string(count) + " / " + std::to_string(lightmaps.size()) });
-				count++;
+				lmImageSaveTGAf(lightmap->handle.c_str(), img, w, h, c, 1.0);
 			}
+
+			count++;
 		}
 		bar.set_progress(100);
 	}
@@ -298,6 +301,7 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 	graphics::do_bloom = old_bloom;
 	graphics::do_msaa = old_msaa;
 	graphics::do_shadows = old_shadows;
+	graphics::do_volumetrics = old_volumetrics;
 	initHdrFbo();
 	initShadowFbo();
 

@@ -12,7 +12,7 @@ uniform ivec3 vol_size;
 #load lib/utilities.gl
 
 float slice_thickness(float z, float z_max) {
-    return linearToExponentialDist((z + 1.0) / z_max) - linearToExponentialDist(z / z_max);
+    return FAR*abs(linearToExponentialDistribution((z + 1.0) / z_max) - linearToExponentialDistribution(z / z_max));
 }
 
 // https://github.com/Unity-Technologies/VolumetricLighting/blob/master/Assets/VolumetricFog/Shaders/Scatter.compute

@@ -112,7 +112,7 @@ uniform float roughness_mult;
 layout(binding = 2) uniform sampler2D metallic_map;
 uniform float metal_mult;
 #endif
-#if AMBIENT
+#if AO || GLOBAL_ILLUMINATION
 layout(binding = 4) uniform sampler2D ambient_map;
 uniform float ambient_mult;
 #endif
