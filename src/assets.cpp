@@ -16,23 +16,21 @@
 
 #include <glm/glm.hpp>
 
-#include <assimp/Importer.hpp>      // C++ importer interface
-#include <assimp/scene.h>           // Output data structure
-#include <assimp/postprocess.h>     // Post processing flags
+#include <assimp/Importer.hpp>
+#include <assimp/scene.h>
+#include <assimp/postprocess.h>
+#include <assimp/material.h>
+#include <assimp/types.h>
 
-#include <indicators.hpp>
 #include <xatlas.h>
 
-#include "assimp/material.h"
-#include "assimp/types.h"
+#include <indicators.hpp>
 
+#include <utilities/math.hpp>
 #include "serialize.hpp"
 #include "texture.hpp"
-#include "assets.hpp"
-#include "graphics.hpp"
-#include "utilities.hpp"
-#include "globals.hpp"
 
+#include "assets.hpp"
 
 glm::mat4x4 aiMat4x4ToGlm(const aiMatrix4x4& m) {
     return glm::mat4x4(
@@ -58,6 +56,7 @@ glm::quat aiQuatToGlm(const aiQuaternion& q) {
 //
 // --------------------------------- Materials ---------------------------------
 //
+
 Material *default_material;
 void initDefaultMaterial(AssetManager &asset_manager){
     default_material = new Material;
@@ -74,8 +73,96 @@ void initDefaultMaterial(AssetManager &asset_manager){
 
     default_material->uniforms.emplace("albedo_mult", glm::vec3(1));
     default_material->uniforms.emplace("roughness_mult", 1.0f);
+    default_material->uniforms.emplace("diffuse_mult", glm::vec3(1));
+    default_material->uniforms.emplace("specular_mult", 1.0f);
+    default_material->uniforms.emplace("shininess_mult", 1.0f);
+    default_material->uniforms.emplace("emissive_mult", glm::vec3(1));
+    default_material->uniforms.emplace("ambient_mult", 1.0f);
+    default_material->uniforms.emplace("metal_mult", 1.0f);
 
     default_material->type = MaterialType::PBR;
+}
+
+std::string getMaterialTypeName(const MaterialType& type) {
+    switch (type)
+    {
+    case MaterialType::NONE:            return "None";
+    case MaterialType::PBR:             return "PBR";
+    case MaterialType::BLINN_PHONG:     return "Blinn-Phong";
+    case MaterialType::ALPHA_CLIP:      return "Clipping";
+    case MaterialType::AO:              return "AO";
+    case MaterialType::LIGHTMAPPED:     return "Lightmap";
+    case MaterialType::EMISSIVE:        return "Emissive";
+    case MaterialType::METALLIC:        return "Metal";
+    case MaterialType::VEGETATION:      return "Vegetation";
+
+    default: return "Unknown";
+    }
+}
+
+std::string getMaterialName(const Material& mat) {
+    if (!!(mat.type & MaterialType::WATER)) {
+        return "Water";
+    }
+
+    std::string name = "";
+    if (!!(mat.type & MaterialType::PBR)) {
+        name += "PBR";
+    } else if (!!(mat.type & MaterialType::BLINN_PHONG)) {
+        name += "Blinn-Phong";
+    } else {
+        name += "Other";
+    }
+
+    if (mat.type > MaterialType::BLINN_PHONG) {
+        name += " with ";
+
+        if (!!(mat.type & MaterialType::ALPHA_CLIP)) {
+            name += "Clipping, ";
+        }
+        if (!!(mat.type & MaterialType::AO)) {
+            name += "AO, ";
+        }
+        if (!!(mat.type & MaterialType::LIGHTMAPPED)) {
+            name += "Lightmap, ";
+        }
+        if (!!(mat.type & MaterialType::EMISSIVE)) {
+            name += "Emissive, ";
+        }
+        if (!!(mat.type & MaterialType::METALLIC)) {
+            name += "Metal, ";
+        }
+        if (!!(mat.type & MaterialType::VEGETATION)) {
+            name += "Vegetation, ";
+        }
+        name = name.substr(0, name.size() - 2);
+    }
+
+    return name;
+}
+std::string getTextureSlotName(const Material& mat, TextureSlot slot) {
+    if (!!(mat.type & MaterialType::PBR)) {
+        switch (slot) {
+        case TextureSlot::ALBEDO:           return (!!(mat.type & MaterialType::ALPHA_CLIP)) ? "Albedo/Clip" : "Albedo";
+            case TextureSlot::METAL:        return "Metal";
+            case TextureSlot::ROUGHNESS:    return "Roughness";
+        }
+    }
+    else if (!!(mat.type & MaterialType::BLINN_PHONG)) {
+        switch (slot) {
+            case TextureSlot::DIFFUSE:      return (!!(mat.type & MaterialType::ALPHA_CLIP)) ? "Diffuse/Clip" : "Diffuse";
+            case TextureSlot::SPECULAR:     return "Specular";
+            case TextureSlot::SHININESS:    return "Shininess";
+        }
+    }
+
+    switch (slot) {
+        case TextureSlot::AO:               return !!(mat.type & MaterialType::AO) ? "AO" : "GI";
+        case TextureSlot::NORMAL:           return "Normal";
+        case TextureSlot::EMISSIVE:         return "Emissive";
+    }
+
+    return "Unkown";
 }
 
 std::ostream &operator<<(std::ostream &os, const Texture &t) {
@@ -120,6 +207,8 @@ Mesh::~Mesh(){
     glDeleteVertexArrays(1, &vao);
 
     delete[] materials;
+    delete[] submesh_names;
+
     free(material_indices);
 
     free(indices);
@@ -133,12 +222,6 @@ Mesh::~Mesh(){
     free(transforms);
     free(draw_start);
     free(draw_count);
-}
-
-// @note Without this the uniforms default destructor frees twice, at least thats what i think
-Material::~Material() {
-    textures.clear();
-    uniforms.clear();
 }
 
 static void createMeshVao(Mesh *mesh){
@@ -534,7 +617,7 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
         // I don't know what the difference between emission_color and emissive for ASSIMP, @note emissive intensity should probably be loaded as well
         if (!loadTextureFromAssimp(mat.textures[TextureSlot::EMISSIVE], ai_mat, scene, aiTextureType_EMISSIVE, GL_FALSE)) {
             if (!loadTextureFromAssimp(mat.textures[TextureSlot::EMISSIVE], ai_mat, scene, aiTextureType_EMISSION_COLOR, GL_FALSE)) {
-                loadColorFromAssimp(mat.textures[TextureSlot::SHININESS], ai_mat, AI_MATKEY_COLOR_EMISSIVE, GL_RGB);
+                loadColorFromAssimp(mat.textures[TextureSlot::EMISSIVE], ai_mat, AI_MATKEY_COLOR_EMISSIVE, GL_RGB);
             }
         }
         if (mat.textures[TextureSlot::EMISSIVE]) {
@@ -570,22 +653,22 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
 
         // Add some uniforms for modifying certain material types
         if (!!(mat.type & MaterialType::PBR)) {
-            mat.uniforms.emplace("albedo_mult", glm::vec3(1));
-            mat.uniforms.emplace("roughness_mult", 1.0f);
+            mat.uniforms.emplace("albedo_mult", default_material->uniforms["albedo_mult"]);
+            mat.uniforms.emplace("roughness_mult", default_material->uniforms["roughness_mult"]);
         }
         if (!!(mat.type & MaterialType::BLINN_PHONG)) {
-            mat.uniforms.emplace("diffuse_mult", glm::vec3(1));
-            mat.uniforms.emplace("specular_mult", 1.0f);
-            mat.uniforms.emplace("shininess_mult", 1.0f);
+            mat.uniforms.emplace("diffuse_mult", default_material->uniforms["diffuse_mult"]);
+            mat.uniforms.emplace("specular_mult", default_material->uniforms["specular_mult"]);
+            mat.uniforms.emplace("shininess_mult", default_material->uniforms["shininess_mult"]);
         }
         if (!!(mat.type & MaterialType::EMISSIVE)) {
-            mat.uniforms.emplace("emissive_mult", glm::vec3(1));
+            mat.uniforms.emplace("emissive_mult", default_material->uniforms["emissive_mult"]);
         }
         if (!!(mat.type & MaterialType::LIGHTMAPPED) || !!(mat.type & MaterialType::AO)) {
-            mat.uniforms.emplace("ambient_mult", 1.0f);
+            mat.uniforms.emplace("ambient_mult", default_material->uniforms["ambient_mult"]);
         }
         if (!!(mat.type & MaterialType::METALLIC)) {
-            mat.uniforms.emplace("metal_mult", 1.0f);
+            mat.uniforms.emplace("metal_mult", default_material->uniforms["metal_mult"]);
         }
 
         std::cout << "Material " << i << ": \n" << mat << "\n";
@@ -597,6 +680,7 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
     mesh->draw_start = reinterpret_cast<decltype(mesh->draw_start)>(malloc(sizeof(*mesh->draw_start) * mesh->num_submeshes));
     mesh->draw_count = reinterpret_cast<decltype(mesh->draw_count)>(malloc(sizeof(*mesh->draw_count) * mesh->num_submeshes));
     mesh->transforms = reinterpret_cast<decltype(mesh->transforms)>(malloc(sizeof(*mesh->transforms) * mesh->num_submeshes));
+    mesh->submesh_names = new std::string[mesh->num_submeshes];
 
     mesh->material_indices = reinterpret_cast<decltype(mesh->material_indices)>(malloc(sizeof(*mesh->material_indices) * mesh->num_submeshes));
 
@@ -613,8 +697,9 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
         mesh->num_vertices += ai_mesh->mNumVertices;
 
         mesh->material_indices[i] = ai_mesh->mMaterialIndex;
-
         mesh->transforms[i] = aiMat4x4ToGlm(ai_meshes_global_transforms[i]);
+        mesh->submesh_names[i] = std::string(ai_mesh->mName.C_Str());
+        if (mesh->submesh_names[i] == "") mesh->submesh_names[i] = "submesh " + std::to_string(i);
 
         // If every mesh has attribute then it is valid
         if (mesh->attributes & MESH_ATTRIBUTES_NORMALS && ai_mesh->mNormals == NULL) {
@@ -1413,6 +1498,11 @@ bool AssetManager::loadTextureFromAssimp(Texture *&tex, aiMaterial *mat, const a
 			// Texture specification
 			glTexImage2D(GL_TEXTURE_2D, 0, format, ai_tex->mWidth, ai_tex->mHeight, 0, GL_BGRA, GL_UNSIGNED_BYTE, ai_tex->pcData);
 
+            tex->format = format;
+            tex->handle = p;
+            tex->resolution = glm::ivec2(ai_tex->mWidth, ai_tex->mHeight);
+            tex->complete = true;
+
             return true;
         } else {
             glm::ivec2 resolution;
@@ -1424,6 +1514,8 @@ bool AssetManager::loadTextureFromAssimp(Texture *&tex, aiMaterial *mat, const a
             tex->format = result_format;
             tex->resolution = resolution;
             tex->id = tex_id;
+            tex->complete = true;
+
             return true;
         }
     }
@@ -1506,7 +1598,13 @@ Texture* AssetManager::getColorTexture(const glm::vec4& col, GLint format) {
         tex->complete = true;
         return tex;
     } else {
-        return &lu->second;
+        if (getChannelsForFormat(format) > getChannelsForFormat(lu->second.format)) {
+            color_texture_map.erase(col);
+            return getColorTexture(col, format);
+        }
+        else {
+            return &lu->second;
+        }
     }
 
     return nullptr;

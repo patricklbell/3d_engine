@@ -10,7 +10,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-//#define LM_DEBUG_INTERPOLATION
+#define LM_DEBUG_INTERPOLATION
 #define LIGHTMAPPER_IMPLEMENTATION
 #include <lightmapper.h>
 #include <indicators.hpp>
@@ -19,8 +19,9 @@
 #include <camera/globals.hpp>
 #include "editor.hpp"
 #include "texture.hpp"
-#include "utilities.hpp"
+
 #include "assets.hpp"
+#include "level.hpp"
 
 static void writeFrambufferToTga(std::string_view path, int width, int height) {
 	int* buffer = new int[width * height * 3];
@@ -42,16 +43,16 @@ static void writeFrambufferToTga(std::string_view path, int width, int height) {
 	fclose(fp);
 }
 
-glm::mat4x4 getShadowMatrixFromRadius(glm::vec3 c, float r) {
+glm::mat4x4 getShadowMatrixFromRadius(Environment& env, glm::vec3 c, float r) {
 	auto min_c = c - glm::vec3(r);
 	auto max_c = c - glm::vec3(r);
 
-	const auto shadow_view = glm::lookAt(-sun_direction + c, c, glm::vec3(0,1,0));
+	const auto shadow_view = glm::lookAt(-env.sun_direction + c, c, glm::vec3(0,1,0));
 	const auto shadow_projection = glm::ortho(min_c.x, max_c.x, min_c.y, max_c.y, min_c.z, max_c.z);
 	return shadow_projection * shadow_view;
 }
 
-void createShadowMapForGeometry(RenderQueue& q, Camera &camera, glm::vec3 position) {
+void createShadowMapForGeometry(RenderQueue& q, Environment& env, Camera &camera, glm::vec3 position) {
 	const double& cnp = camera.frustrum.near_plane, & cfp = camera.frustrum.far_plane / 10.0f; // Only consider effects of close shadows
 	double r;
 	for (int i = 0; i < SHADOW_CASCADE_NUM; i++) {
@@ -61,7 +62,7 @@ void createShadowMapForGeometry(RenderQueue& q, Camera &camera, glm::vec3 positi
 		r = cnp + (cfp - cnp) * p;
 
 		graphics::shadow_cascade_distances[i] = r;
-		graphics::shadow_vps[i] = getShadowMatrixFromRadius(position, r);
+		graphics::shadow_vps[i] = getShadowMatrixFromRadius(env, position, r);
 	}
 
 	writeShadowVpsUbo();
@@ -72,13 +73,13 @@ void createShadowMapForGeometry(RenderQueue& q, Camera &camera, glm::vec3 positi
 	graphics::shadow_size = old_shadow_size;
 }
 
-bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, Texture* skybox, Texture *skybox_irradiance, Texture *skybox_specular) {
+bool runLightmapper(Level& level, AssetManager &asset_manager) {
 	lm_context* ctx = lmCreate(
 		64,               // hemicube rendering resolution/quality
 		0.1f, 100.0f,     // zNear, zFar
 		1.0f, 1.0f, 1.0f, // sky/clear color
-		4, 0.1f,          // hierarchical selective interpolation for speedup (passes, threshold)
-		0.01f);           // modifier for camera-to-surface distance for hemisphere rendering.
+		2, 0.1f,          // hierarchical selective interpolation for speedup (passes, threshold)
+		0.0f);            // modifier for camera-to-surface distance for hemisphere rendering.
 						  // tweak this to trade-off between interpolated vertex normal quality and other artifacts (see declaration).
 	if (!ctx) {
 		std::cerr << "Could not initialize lightmapper.\n";
@@ -86,28 +87,28 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 	}
 
 	// @todo dynamic lightmap resolution / editor
-	constexpr int w = 654; //image height
-	constexpr int h = 654; //image height
+	constexpr int w = 640; //image width
+	constexpr int h = 640; //image height
 	constexpr int c = 4;
 
 	// Buffer used during post processing
 	float* temp = (float*)malloc(w * h * c * sizeof(float));
 
+	// @todo make global state of renderer contained in a struct
 	auto old_window_width = window_width;
 	auto old_window_height = window_height;
 	auto old_bloom = graphics::do_bloom;
 	auto old_shadows = graphics::do_shadows;
 	auto old_volumetrics = graphics::do_volumetrics;
 	auto old_msaa = graphics::do_msaa;
-	auto old_sun_color = sun_color; // Hacky way to get rid of direct contribution
 
 	graphics::do_bloom = false;
-	graphics::do_msaa = false;
 	graphics::do_shadows = false;
 	graphics::do_volumetrics = false;
+	graphics::do_msaa = false;
 	window_width = w;
 	window_height = h;
-	initHdrFbo();
+	initHdrFbo(true);
 
 	// Camera which is moved by the lightmapper
 	Frustrum frustrum;
@@ -116,17 +117,17 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 	Camera camera(frustrum);
 
 	std::cout << "====================================================================================\n"
-				 "\tBaking " << level_path << "'s Lightmap\n"
+				 "\tBaking " << level.path << "'s Lightmap\n"
 				 "====================================================================================\n";
 
 	std::vector<float*> lightmaps;
 	std::vector<MeshEntity*> mesh_entities;
 	std::vector<uint64_t> submesh_indices;
 	for (int i = 0; i < ENTITY_COUNT; ++i) {
-		auto m_e = reinterpret_cast<MeshEntity*>(entity_manager.entities[i]);
+		auto m_e = reinterpret_cast<MeshEntity*>(level.entities.entities[i]);
 		if (m_e == nullptr ||
 			!entityInherits(m_e->type, MESH_ENTITY) || m_e->mesh == nullptr || !m_e->do_lightmap || m_e->mesh->uvs == nullptr ||
-			entityInherits(m_e->type, ANIMATED_MESH_ENTITY) || entityInherits(m_e->type, VEGETATION_ENTITY))
+			entityInherits(m_e->type, ANIMATED_MESH_ENTITY))
 			continue;
 
 		for (int j = 0; j < m_e->mesh->num_submeshes; j++) {
@@ -154,9 +155,9 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 	}
 
 	RenderQueue q;
-	createRenderQueue(q, entity_manager, true);
+	createRenderQueue(q, level.entities, true);
 
-	constexpr int bounces = 2;
+	constexpr int bounces = 1;
 	for (int b = 0; b < bounces; b++) {
 		std::cout << "Bounce " << b << " / " << bounces - 1 << "\n";
 
@@ -184,41 +185,46 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 				LM_FLOAT, mesh->uvs,		sizeof(*mesh->uvs),
 				mesh->draw_count[submesh_i], LM_UNSIGNED_INT, &mesh->indices[mesh->draw_start[submesh_i]]);
 
-			double last_update_time = glfwGetTime();
+			bar.set_option(indicators::option::PostfixText{ "Baking lightmap " + std::to_string(count) + " / " + std::to_string(lightmaps.size())});
+			double last_update_time = 0;
 
 			int viewport[4];
-			bar.set_option(indicators::option::PostfixText{ "Baking lightmap " + std::to_string(count) + " / " + std::to_string(lightmaps.size())});
-
 			while (lmBegin(ctx, viewport, &camera.view[0][0], &camera.projection[0][0])) {
-				camera.position = glm::vec3(
-					ctx->meshPosition.sample.position.x, 
-					ctx->meshPosition.sample.position.y, 
+				// Place camera at sample, looking in direction of normal,
+				// set vp from the view and projection
+				camera.set_position(glm::vec3(
+					ctx->meshPosition.sample.position.x,
+					ctx->meshPosition.sample.position.y,
 					ctx->meshPosition.sample.position.z
-				);
+				));
+				camera.set_target(camera.position + glm::vec3(
+					ctx->meshPosition.triangle.n->x,
+					ctx->meshPosition.triangle.n->y,
+					ctx->meshPosition.triangle.n->z
+				));
+				camera.vp = camera.projection * camera.view;
+
+				gl_state.bind_viewport(viewport[0], viewport[1], viewport[2], viewport[3]);
+				drawRenderQueue(q, level.environment, camera);
 
 				// Used for debugging the hemicube's rendering
 				//using namespace std::this_thread; // sleep_for, sleep_until
 				//using namespace std::chrono; // nanoseconds, system_clock, seconds
 				//bindBackbuffer();
-				//if(vp[0] == 0 && vp[1] == 0)
-				//	clearFramebuffer();
-				//gl_state.bind_viewport(vp[0], vp[1], vp[2], vp[3]);
+				//clearFramebuffer();
+				//gl_state.bind_viewport(viewport[0], viewport[1], viewport[2], viewport[3]);
 				//drawRenderQueue(q, skybox, skybox_irradiance, skybox_specular, camera);
-				//glfwSwapBuffers(window);
 				//sleep_for(milliseconds(10));
-
-				gl_state.bind_viewport(viewport[0], viewport[1], viewport[2], viewport[3]);
-				drawRenderQueue(q, skybox, skybox_irradiance, skybox_specular, camera);
+				//glfwSwapBuffers(window);
 					
 				double time = glfwGetTime();
-				if (time - last_update_time > 1.0) {
+				if (time - last_update_time > 2.0) {
 					last_update_time = time;
 					bar.set_progress(lmProgress(ctx) * 100.0f);
 				}
 
 				lmEnd(ctx);
 			}
-
 			bar.set_progress(100);
 			count++;
 		}
@@ -249,16 +255,16 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 			// Generate a new texture seperate from the color texture (which is still stored by asset manager)
 			Texture* lightmap;
 			if (b == 0) {
-				lightmap = asset_manager.createTexture(level_path + "." + std::to_string(i) + ".tga");
+				lightmap = asset_manager.createTexture(level.path + "." + std::to_string(i) + ".tga");
 				glGenTextures(1, &lightmap->id);
 			} else {
-				lightmap = asset_manager.getTexture(level_path + "." + std::to_string(i) + ".tga");
+				lightmap = asset_manager.getTexture(level.path + "." + std::to_string(i) + ".tga");
 				assert(lightmap);
 			}
 			lightmap->format = GL_RGB16F;
 			lightmap->resolution = glm::ivec2(w, h);
 
-			glBindTexture(GL_TEXTURE_2D, lightmap->id);
+			gl_state.bind_texture_any(lightmap->id);
 			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, w, h, 0, GL_RGBA, GL_FLOAT, img);
 
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -294,26 +300,16 @@ bool runLightmapper(EntityManager& entity_manager, AssetManager &asset_manager, 
 	free(temp);
 
 	// Restore global graphics state
-	sun_color = old_sun_color;
 	window_width = old_window_width;
 	window_height = old_window_height;
-	glViewport(0, 0, window_width, window_height);
+	gl_state.bind_viewport(window_width, window_height);
 	graphics::do_bloom = old_bloom;
 	graphics::do_msaa = old_msaa;
 	graphics::do_shadows = old_shadows;
 	graphics::do_volumetrics = old_volumetrics;
-	initHdrFbo();
-	initShadowFbo();
+	initHdrFbo(true);
 
 	// Update shadow vp for correct camera
-	auto camera_ptr = &Cameras::editor_camera;
-	if (playing) {
-		camera_ptr = &Cameras::game_camera;
-	}
-	else if (editor::use_level_camera) {
-		camera_ptr = &Cameras::level_camera;
-	}
-
-	updateShadowVP(*camera_ptr);
-  return true;
+	updateShadowVP(*Cameras::get_active_camera(), loaded_level.environment.sun_direction);
+	return true;
 }

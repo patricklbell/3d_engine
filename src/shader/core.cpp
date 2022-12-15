@@ -5,7 +5,7 @@
 #include <shader/core.hpp>
 #include <shader/globals.hpp>
 
-#include "utilities.hpp"
+#include <utilities/strings.hpp>
 
 static uint64_t compute_bitmap_hash(std::unordered_map<std::string, bool>& macros);
 
@@ -95,6 +95,11 @@ static bool load_shader_chunk(std::ifstream &f, std::string &chunk,
 
 bool Shader::load_file(std::string_view path) {
 	std::ifstream f(path);
+	if (!f) {
+		std::cerr << "Failed to open shader file " << path << "\n";
+		return false;
+	}
+
 	handle = path;
 	dependencies[handle].path = handle;
 	dependencies[handle].last_write_time = std::filesystem::last_write_time(path);
@@ -208,7 +213,7 @@ static void get_uniforms_from_program(GLuint program_id, std::unordered_map<std:
 		glGetActiveUniform(program_id, (GLuint)i, buf_size, &length, &size, &type, name);
 		uniforms[name] = glGetUniformLocation(program_id, name);
 
-		printf("Uniform #%d Type: %u Name: %s\n", i, type, name);
+		//printf("Uniform #%d Type: %u Name: %s\n", i, type, name);
 	}
 }
 
@@ -231,7 +236,7 @@ bool Shader::compile(std::string_view _prepend) {
 			macros_str += "#define " + p.first + " " + std::to_string(p.second) + "\n";
 		}
 	}
-	std::vector<char*> sources = { (char*)Shaders::glsl_version.c_str(), (char*)prepend.data(), (char*)macros_str.c_str(), nullptr };
+	std::vector<char*> sources = { (char*)prepend.data(), (char*)macros_str.c_str(), nullptr };
 	std::vector<GLuint> shader_ids;
 
 	for (const auto& p : type_to_chunk) {

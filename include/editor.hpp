@@ -1,5 +1,5 @@
-#ifndef EDITOR_H
-#define EDITOR_H
+#ifndef EDITOR_HPP
+#define EDITOR_HPP
 
 #include <string>
 #include <iostream>
@@ -13,8 +13,10 @@
 
 #include "imgui.h"
 #include "imfilebrowser.hpp"
+
+#include <utilities/math.hpp>
+
 #include "graphics.hpp"
-#include "utilities.hpp"
 #include "entities.hpp"
 
 enum class TransformType : uint64_t {
@@ -54,7 +56,7 @@ TransformType editTransform(Camera &camera, glm::vec3 &pos, glm::quat &rot, glm:
 void drawWaterDebug(WaterEntity* w, const Camera &camera, bool flash);
 void drawMeshCube(const glm::vec3 &pos, const glm::quat &rot, const glm::mat3x3 &scl, const Camera &camera);
 void drawFrustrum(Camera& drawn_camera, const Camera& camera);
-void drawMeshWireframe(const Mesh& mesh, const glm::mat4& g_model_rot_scl, const glm::mat4& g_model_pos, const Camera& camera, bool flash);
+void drawMeshWireframe(const Mesh& mesh, const glm::mat4& g_model_rot_scl, const glm::mat4& g_model_pos, const Camera& camera, bool flash, int submesh_i);
 void drawEditor3DRing(const glm::vec3 &position, const glm::vec3 &direction, const Camera &camera, const glm::vec4 &color, const glm::vec3 &scale, bool shaded=true);
 void drawEditor3DArrow(const glm::vec3 &position, const glm::vec3 &direction, const Camera &camera, const glm::vec4 &color, const glm::vec3 &scale, bool shaded=true, bool block=false);
 void drawColliders(const EntityManager& entity_manager, const Camera& camera);
@@ -62,12 +64,14 @@ void drawColliders(const EntityManager& entity_manager, const Camera& camera);
 struct ReferenceSelection {
     void addEntity(Entity* e);
     void toggleEntity(const EntityManager& entity_manager, Entity* e);
+    bool setSubmesh(int i);
     void clear();
 
     std::vector<Id> ids;
     EntityType type = ENTITY;
     glm::vec3 avg_position = glm::vec3(0.0);
     int avg_position_count = 0;
+    int submesh_i = -1;
 };
 struct CopySelection {
     // @note owns memory
@@ -93,7 +97,9 @@ enum class EditorMode {
     NUM,
 };
 
-namespace editor {
+namespace Editor {
+    extern Camera editor_camera;
+
     extern EditorMode editor_mode;
 
     extern GizmoMode gizmo_mode;
@@ -113,5 +119,4 @@ namespace editor {
     extern CopySelection copy_selection;
 }
 
-
-#endif
+#endif // EDITOR_HPP

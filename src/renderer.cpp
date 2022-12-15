@@ -1,4 +1,34 @@
 #include "renderer.hpp"
+#include <iostream>
+
+bool GlState::init() {
+#ifdef __APPLE__
+    // GL 4.3 + GLSL 430
+    glsl_version = "#version 430\n";
+#elif __linux__
+    // GL 4.3 + GLSL 430
+    glsl_version = "#version 430\n";
+#elif _WIN32
+    // GL 4.3 + GLSL 430
+    glsl_version = "#version 430\n";
+#endif
+
+    version = std::string((char*)glGetString(GL_VERSION));
+    vendor = std::string((char*)glGetString(GL_VENDOR));
+    renderer = std::string((char*)glGetString(GL_RENDERER));
+
+    std::cout << "OpenGL Info:\nVersion: \t" << version << "\nVendor: \t" << vendor << "\nRenderer: \t" << renderer << "\n";
+
+    // Configure gl global state
+    glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);
+    glEnable(GL_SCISSOR_TEST);
+    glCullFace(GL_BACK);
+
+    // Set clear color, doesn't really matter since we use a skybox anyway
+    glClearColor(0.0, 0.0, 0.0, 1.0);
+
+    return !check_errors(__FILE__, __LINE__, __func__);
+}
 
 GlState gl_state;
 bool GlState::bind_vao(GLuint to_bind) {
@@ -116,6 +146,14 @@ bool GlState::bind_texture(uint64_t slot, GLuint to_bind, GLenum type) {
     }
     return false;
 }
+bool GlState::bind_texture_any(GLuint to_bind, GLenum type) {
+    if (textures[active_texture - GL_TEXTURE0] != to_bind) {
+        glBindTexture(type, to_bind);
+        textures[active_texture - GL_TEXTURE0] = to_bind;
+        return true;
+    }
+    return false;
+}
 bool GlState::bind_texture(TextureSlot slot, GLuint to_bind, GLenum type) {
     return bind_texture((uint64_t)slot, to_bind, type);
 }
@@ -137,4 +175,65 @@ bool GlState::bind_renderbuffer(GLuint to_bind) {
         return true;
     }
     return false;
+}
+
+bool GlState::check_errors(std::string_view file, const int line, std::string_view function) {
+    int error_code = (int)glGetError();
+    if (error_code == 0)
+        return false;
+
+    std::string error = "Unknown error";
+    std::string description = "No description";
+
+    if (error_code == GL_INVALID_ENUM)
+    {
+        error = "GL_INVALID_ENUM";
+        description = "An unacceptable value has been specified for an enumerated argument.";
+    }
+    else if (error_code == GL_INVALID_VALUE)
+    {
+        error = "GL_INVALID_VALUE";
+        description = "A numeric argument is out of range.";
+    }
+    else if (error_code == GL_INVALID_OPERATION)
+    {
+        error = "GL_INVALID_OPERATION";
+        description = "The specified operation is not allowed in the current state.";
+    }
+    else if (error_code == GL_STACK_OVERFLOW)
+    {
+        error = "GL_STACK_OVERFLOW";
+        description = "This command would cause a stack overflow.";
+    }
+    else if (error_code == GL_STACK_UNDERFLOW)
+    {
+        error = "GL_STACK_UNDERFLOW";
+        description = "This command would cause a stack underflow.";
+    }
+    else if (error_code == GL_OUT_OF_MEMORY)
+    {
+        error = "GL_OUT_OF_MEMORY";
+        description = "There is not enough memory left to execute the command.";
+    }
+    else if (error_code == GL_INVALID_FRAMEBUFFER_OPERATION)
+    {
+        error = "GL_INVALID_FRAMEBUFFER_OPERATION";
+        description = "The object bound to FRAMEBUFFER_BINDING is not 'framebuffer complete'.";
+    }
+    else if (error_code == GL_CONTEXT_LOST)
+    {
+        error = "GL_CONTEXT_LOST";
+        description = "The context has been lost, due to a graphics card reset.";
+    }
+    else if (error_code == GL_TABLE_TOO_LARGE)
+    {
+        error = "GL_TABLE_TOO_LARGE";
+        description = std::string("The exceeds the size limit. This is part of the ") +
+            "(Architecture Review Board) ARB_imaging extension.";
+    }
+
+    std::cerr << "An internal OpenGL call failed, checked in function '" << function << "' in file " << file << " at line " <<  line << 
+        "\nError was '" + error + "' description: " + description + "\n";
+
+    return true;
 }

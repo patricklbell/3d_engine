@@ -3,21 +3,23 @@
 
 #include "globals.hpp"
 #include "editor.hpp"
+#include "game_behaviour.hpp"
 
 namespace Cameras {
-	Camera editor_camera = Camera();
-	Camera level_camera = Camera();
-	Camera game_camera = Camera();
-
 	Camera* get_active_camera() {
-		if (playing) {
-			return &Cameras::game_camera;
+		if (gamestate.is_active) {
+			return &gamestate.level.camera;
 		}
-		else if (editor::use_level_camera) {
-			return &Cameras::level_camera;
+		else if (Editor::use_level_camera) {
+			return &loaded_level.camera;
 		}
 		else {
-			return &Cameras::editor_camera;
+			return &Editor::editor_camera;
 		}
+	}
+
+	void update_cameras_for_level() {
+		Editor::editor_camera = loaded_level.camera;
+		Editor::editor_camera.state = Camera::TRACKBALL;
 	}
 };

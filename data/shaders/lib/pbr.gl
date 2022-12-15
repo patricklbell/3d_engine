@@ -157,6 +157,10 @@ vec3 brdfSchlickGGX(vec3 position, vec3 N, vec3 albedo, float metallic, float ro
         vec2 brdf = texture(brdf_lut_map, vec2(NdotV, roughness)).rg;
         vec3 specular = prefiltered_color * (F * brdf.x + brdf.y);
 
+        // Im not sure how the specular contribution should be handled, but since 
+        // reflection should require direct illumination I think it should respect shadowing
+        //specular *=  clamp(length(Lo), 0.0, 1.0);
+
 #if GLOBAL_ILLUMINATION
         vec3 irradiance = GI;
 #else
@@ -165,10 +169,6 @@ vec3 brdfSchlickGGX(vec3 position, vec3 N, vec3 albedo, float metallic, float ro
         vec3 diffuse = irradiance * albedo;
         ambient = kD * diffuse + specular;
 #if !GLOBAL_ILLUMINATION
-        // Reduce ambient factor for shadowed areas, there is probably a better way to do this @note
-#if SHADOWS
-        //ao *= 1.0 - 0.4*shadow;
-#endif
         ambient *= ao;
 #endif
 

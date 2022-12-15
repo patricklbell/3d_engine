@@ -69,19 +69,20 @@ set(SOURCES
 	src/shader/core.cpp
 	src/shader/globals.cpp
 
-	src/utilities.cpp
-	src/graphics.cpp
-	src/main.cpp
-	
+	src/utilities/math.cpp
+	src/utilities/strings.cpp
+
+	src/level.cpp
 	src/renderer.cpp
 	src/serialize.cpp
+	src/threadpool.cpp
 	src/texture.cpp
 	src/editor.cpp
 	src/assets.cpp
 	src/entities.cpp
-	src/level.cpp
 	src/game_behaviour.cpp
 	src/lightmapper.cpp
+	src/graphics.cpp
 
     external/imgui/imgui_draw.cpp
     external/imgui/imgui_impl_glfw.cpp
@@ -91,6 +92,8 @@ set(SOURCES
     external/imgui/imgui_stdlib.cpp
     external/imgui/imgui.cpp
 	external/xatlas/xatlas.cpp
+
+	src/main.cpp
 )
 
 # YCM generate compile_commands.json

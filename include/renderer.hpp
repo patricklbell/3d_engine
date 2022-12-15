@@ -30,12 +30,15 @@ enum class GlBufferFlags : uint64_t {
 SCOPED_ENUM_FLAG(GlBufferFlags);
 
 struct GlState {
+    bool init();
+
     bool bind_vao(GLuint to_bind);
     bool bind_program(GLuint to_bind);
     bool bind_viewport(int x, int y, int w, int h);
     bool bind_viewport(int w, int h);
     bool bind_texture(uint64_t slot, GLuint to_bind, GLenum type = GL_TEXTURE_2D);
     bool bind_texture(TextureSlot slot, GLuint to_bind, GLenum type = GL_TEXTURE_2D);
+    bool bind_texture_any(GLuint to_bind, GLenum type = GL_TEXTURE_2D);
 
     void bind_framebuffer(GLuint to_bind, GlBufferFlags flags = GlBufferFlags::READ_WRITE);
     bool bind_renderbuffer(GLuint to_bind);
@@ -43,6 +46,8 @@ struct GlState {
     bool set_flags(GlFlags desired);
     bool add_flags(GlFlags add);
     bool remove_flags(GlFlags remove);
+
+    bool check_errors(std::string_view file, const int line, std::string_view function);
 
     static constexpr int MAX_TEXTURE_SLOTS = 32;
     GLuint textures[MAX_TEXTURE_SLOTS] = { GL_FALSE };
@@ -53,6 +58,7 @@ struct GlState {
     GLuint vao = GL_FALSE;
     GLuint program = GL_FALSE;
     glm::ivec4 viewport = glm::ivec4(0);
+    std::string version, vendor, renderer, glsl_version;
 };
 extern GlState gl_state;
 
@@ -65,6 +71,7 @@ struct RenderItem {
 
     glm::mat4x4 model;
     std::array<glm::mat4, MAX_BONES>* bone_matrices = nullptr;
+    bool draw_shadow = true;
 };
 
 struct WaterEntity;

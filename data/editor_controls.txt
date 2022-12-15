@@ -3,13 +3,14 @@ toggle_terminal 0 `
 delete_selection 0 delete
 switch_camera_mode 0 c left_shift
 switch_cameras 0 c
+focus_camera 0 f
 switch_editor_mode 0 b
 toggle_collider_visibility 0 b left_shift
 toggle_debug_visibility 0 d left_shift
 copy 0 c left_control
 paste 0 v left_control
 toggle_playing 0 p
-toggle_level_camera_visibility 0 f
+toggle_level_camera_visibility 0 f left_shift
 fly_left 1 a
 fly_left 1 left
 fly_right 1 d

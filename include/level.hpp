@@ -2,8 +2,44 @@
 #define LEVEL_HPP
 
 #include "graphics.hpp"
+#include "entities.hpp"
+#include "assets.hpp"
 
-void saveLevel(EntityManager& entity_manager, const std::string& level_path, const Camera &camera);
-bool loadLevel(EntityManager &entity_manager, AssetManager &asset_manager, const std::string &level_path, Camera& camera);
+struct FogProperties {
+    float anisotropy = 0.2;
+    float density = 0.03;
+    float noise_scale = 0.15;
+    float noise_amount = 0.3;
+};
+
+struct Environment {
+    Texture* skybox = nullptr;
+    Texture* skybox_irradiance = nullptr;
+    Texture* skybox_specular = nullptr;
+
+    glm::vec3 sun_color = glm::normalize(glm::vec3(-1, -1, -0.25));
+    glm::vec3 sun_direction = 5.0f * glm::vec3(0.941, 0.933, 0.849);
+
+    FogProperties fog;
+};
+
+struct Level {
+    std::string path = "";
+
+    EntityManager entities;
+    Camera camera;
+
+    enum class Type : uint64_t {
+        BASIC = 0,
+    } type = Type::BASIC;
+
+    Environment environment;
+};
+
+extern Level loaded_level;
+
+void initDefaultLevel(Level& level, AssetManager& assets);
+bool saveLevel(Level& level, const std::string& path);
+bool loadLevel(Level& level, AssetManager& assets, const std::string& path);
 
 #endif // LEVEL_HPP

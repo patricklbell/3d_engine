@@ -14,7 +14,6 @@ layout (location = 5) in ivec4 in_bone_ids;
 layout (location = 6) in vec4  in_weights;
 #endif
 #if VEGETATION
-layout (location = 1) in vec3 in_normal;
 // R - edge stiffness, G - Phase offset, B - overall stiffnes, A - Precomputed ambient occlusion
 layout (location = 7) in vec4 in_color;
 #endif
@@ -30,10 +29,11 @@ uniform mat4 model;
 #if ANIMATED_BONES
 #load lib/bone_ubo.gl
 #endif
+
 #if VEGETATION
-#load lib/vegetation.gl
 uniform vec2 wind_direction;
 uniform float wind_strength;
+#load lib/vegetation.gl
 #endif
 
 void main() {
@@ -49,6 +49,10 @@ void main() {
     vec4 vertex = bone_transform * vec4(in_vertex, 1.0);
 #else
     vec4 vertex = vec4(in_vertex, 1.0);
+#endif
+
+#if VEGETATION
+    vertex.xyz = applyWindToVegetation(vertex.xyz, in_normal, in_color.r, in_color.g, in_color.b, wind_direction, wind_strength, time);
 #endif
 
     gl_Position = mvp * vertex;
@@ -112,10 +116,6 @@ uniform float roughness_mult;
 layout(binding = 2) uniform sampler2D metallic_map;
 uniform float metal_mult;
 #endif
-#if AO || GLOBAL_ILLUMINATION
-layout(binding = 4) uniform sampler2D ambient_map;
-uniform float ambient_mult;
-#endif
 
 #else // PBR
 
@@ -128,6 +128,11 @@ layout(binding = 2) uniform sampler2D shininess_map; // Cosine power
 uniform float shininess_mult;
 
 #endif // PBR
+
+#if AO || GLOBAL_ILLUMINATION
+layout(binding = 4) uniform sampler2D ambient_map;
+uniform float ambient_mult;
+#endif
 
 #if EMISSIVE
 layout(binding = 11) uniform sampler2D emissive_map;
@@ -197,9 +202,9 @@ void main() {
 #endif // DEBUG_SHADOWS
 
 #if GLOBAL_ILLUMINATION
-    const vec3 ambient = ambient_mult * texture(ambient_map, texcoord).rgb;
+    const vec3 ambient = ambient_mult *texture(ambient_map, texcoord).rgb;
 #elif AO
-    const float ambient = ambient_mult * texture(ambient_map, texcoord).r;
+    const float ambient = ambient_mult*texture(ambient_map, texcoord).r;
 #else
     const float ambient = 1.0;
 #endif
@@ -217,7 +222,7 @@ void main() {
 
 #else // PBR
 
-    float specular = specular_mult *texture(specular_map, texcoord).r; 
+    float specular = specular_mult  *texture(specular_map, texcoord).r; 
     float shininess = shininess_mult*texture(shininess_map, texcoord).r; 
 
     vec3 hdr_color = blinnPhongLighting(position, normal, sun_direction, sun_color, camera_position, 

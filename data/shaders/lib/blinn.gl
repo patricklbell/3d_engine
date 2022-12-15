@@ -16,7 +16,7 @@ vec3 blinnPhongLighting(vec3 position, vec3 normal, vec3 sun_direction, vec3 sun
         vec3 V = normalize(camera_position - position);
 
         vec3 H = normalize(-sun_direction + V);
-        float HdotN = max(dot(H, normal), 0.0);
+        float HdotN = max(dot(H, normal), 0.0001);
         specular = pow(HdotN, shininess);
     }
 

@@ -14,14 +14,16 @@
 #include <camera/core.hpp>
 #include <shader/globals.hpp>
 
-#include "graphics.hpp"
+#include <utilities/math.hpp>
+
 #include "renderer.hpp"
 #include "assets.hpp"
-#include "utilities.hpp"
 #include "globals.hpp"
 #include "entities.hpp"
 #include "editor.hpp"
 #include "game_behaviour.hpp"
+
+#include "graphics.hpp"
 
 int    window_width;
 int    window_height;
@@ -75,8 +77,6 @@ namespace graphics {
     const std::string volumetric_shader_macro = "#define LOCAL_SIZE_X " + std::to_string(VOLUMETRIC_LOCAL_SIZE.x) +
                                               "\n#define LOCAL_SIZE_Y " + std::to_string(VOLUMETRIC_LOCAL_SIZE.y) +
                                               "\n#define LOCAL_SIZE_Z " + std::to_string(VOLUMETRIC_LOCAL_SIZE.z) + "\n"; // @todo
-    // global fog settings, @todo local fog volumes etc.
-    FogProperties global_fog_properties;
 
     //
     // WATER PLANE COLLISIONS
@@ -105,11 +105,6 @@ namespace graphics {
     //
     bool do_msaa = false;
     int MSAA_SAMPLES = 4;
-
-    //
-    // Environment
-    //
-    Environment environment;
 
     //
     // Wind
@@ -146,7 +141,7 @@ static void initBoneMatricesUbo() {
 
 static void writeBoneMatricesUbo(const std::array<glm::mat4, MAX_BONES>& final_bone_matrices) {
     // @note if something else binds another ubo to 1 then this will be overwritten
-    // Reloads ubo everytime, this is slow but don't know any other way
+    // Reloads ubo everytime, @todo integrate this with gl_state to avoid rebinding/copying
     glBindBuffer(GL_UNIFORM_BUFFER, bone_matrices_ubo);
     for (size_t i = 0; i < MAX_BONES; ++i)
     {
@@ -155,7 +150,7 @@ static void writeBoneMatricesUbo(const std::array<glm::mat4, MAX_BONES>& final_b
     glBindBuffer(GL_UNIFORM_BUFFER, 0);
 }
 
-static glm::mat4x4 getShadowMatrixFromFrustrum(const Camera& camera, double near_plane, double far_plane) {
+static glm::mat4x4 getShadowMatrixFromFrustrum(const Camera& camera, double near_plane, double far_plane, glm::vec3 light_direction) {
     // Make shadow's view target the center of the camera frustrum by averaging frustrum corners
     // maybe you can just calculate from view direction and near and far
     const auto camera_projection_alt = glm::perspective((double)camera.frustrum.fov, (double)camera.frustrum.aspect_ratio, near_plane, far_plane);
@@ -175,7 +170,7 @@ static glm::mat4x4 getShadowMatrixFromFrustrum(const Camera& camera, double near
     }
     center /= frustrum.size();
 
-    const auto shadow_view = glm::lookAt(-glm::dvec3(sun_direction) + center, center, glm::dvec3(camera.up));
+    const auto shadow_view = glm::lookAt(-glm::dvec3(light_direction) + center, center, glm::dvec3(camera.up));
     using lim = std::numeric_limits<float>;
     double min_x = lim::max(), min_y = lim::max(), min_z = lim::max();
     double max_x = lim::min(), max_y = lim::min(), max_z = lim::min();
@@ -242,7 +237,7 @@ void writeShadowVpsUbo() {
     glBindBuffer(GL_UNIFORM_BUFFER, 0);
 }
 
-void updateShadowVP(const Camera& camera) {
+void updateShadowVP(const Camera& camera, glm::vec3 light_direction) {
     const double& cnp = camera.frustrum.near_plane, & cfp = camera.frustrum.far_plane * 0.75;
 
     // Hardcoded csm distances
@@ -267,7 +262,7 @@ void updateShadowVP(const Camera& camera) {
         // Use @hardcoded distances, doesn't work when cascade num changes
         //sfp = shadow_cascade_distances[i];
 
-        shadow_vps[i] = getShadowMatrixFromFrustrum(camera, snp, sfp);
+        shadow_vps[i] = getShadowMatrixFromFrustrum(camera, snp, sfp, light_direction);
 
         shadow_cascade_distances[i] = sfp;
         snp = sfp;
@@ -357,12 +352,15 @@ void initWaterColliderFbo() {
 }
 
 void bindDrawWaterColliderMap(const RenderQueue& q, WaterEntity* water) {
+
     gl_state.bind_framebuffer(water_collider_fbos[0]);
     gl_state.bind_viewport(WATER_COLLIDER_SIZE, WATER_COLLIDER_SIZE);
+
 
     gl_state.add_flags(GlFlags::DEPTH_WRITE);
     glClearColor(0, 0, 0, 1);
     glClear(GL_COLOR_BUFFER_BIT);
+
 
     // Render entities only when they intersect water plane
     gl_state.bind_program(Shaders::plane_projection.program());
@@ -377,39 +375,40 @@ void bindDrawWaterColliderMap(const RenderQueue& q, WaterEntity* water) {
 
         auto& mesh = *ri.mesh;
         gl_state.bind_vao(mesh.vao);
-        glDrawElements(mesh.draw_mode, mesh.draw_count[ri.submesh_i], mesh.draw_type, (GLvoid*)(sizeof(GLubyte) * mesh.draw_start[ri.submesh_i]));
+        glDrawElements(mesh.draw_mode, mesh.draw_count[ri.submesh_i], mesh.draw_type, (GLvoid*)(sizeof(*mesh.indices) * mesh.draw_start[ri.submesh_i]));
     }
 
     gl_state.bind_viewport(window_width, window_height);
 }
+
 void distanceTransformWaterFbo(WaterEntity* water) {
-    constexpr uint64_t num_steps = nextPowerOf2(WATER_COLLIDER_SIZE, WATER_COLLIDER_SIZE) - 2.0;
+    constexpr uint64_t num_steps = nextPowerOf2(WATER_COLLIDER_SIZE, WATER_COLLIDER_SIZE) - 2;
 
     gl_state.set_flags(GlFlags::NONE);
     gl_state.bind_program(Shaders::jump_flood.program());
+
 
     glUniform1f(Shaders::jump_flood.uniform("num_steps"), (float)num_steps);
     glUniform2f(Shaders::jump_flood.uniform("resolution"), WATER_COLLIDER_SIZE, WATER_COLLIDER_SIZE);
 
     gl_state.bind_viewport(WATER_COLLIDER_SIZE, WATER_COLLIDER_SIZE);
     for (int step = 0; step <= num_steps; step++) {
-        gl_state.bind_framebuffer(water_collider_fbos[(step + 1) % 2]);
-
         // Last iteration convert jfa to distance transform
         if (step != num_steps) {
-            glUniform1f(Shaders::jump_flood.uniform("step"), step);
+            glUniform1f(Shaders::jump_flood.uniform("step"), (float)step);
         }
         else {
             gl_state.bind_program(Shaders::jfa_to_distance.program());
             glUniform2f(Shaders::jfa_to_distance.uniform("dimensions"), water->scale[0][0], water->scale[2][2]);
         }
+
+        gl_state.bind_framebuffer(water_collider_fbos[(step + 1) % 2]);
         gl_state.bind_texture(0, water_collider_buffers[step % 2]);
 
         drawQuad();
     }
 
-    gl_state.bind_texture(0, water_collider_buffers[(num_steps + 1) % 2]);
-    glGenerateMipmap(GL_TEXTURE_2D);
+    glGenerateTextureMipmap(water_collider_buffers[(num_steps + 1) % 2]);
     water_collider_final_fbo = (num_steps + 1) % 2;
 
     gl_state.bind_program(Shaders::gaussian_blur.program());
@@ -484,12 +483,12 @@ void initHdrFbo(bool resize) {
     gl_state.bind_framebuffer(hdr_fbo);
 
     if (do_msaa) {
-        gl_state.bind_texture(0, hdr_buffer, GL_TEXTURE_2D_MULTISAMPLE);
+        gl_state.bind_texture_any(hdr_buffer, GL_TEXTURE_2D_MULTISAMPLE);
         glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, MSAA_SAMPLES, GL_RGBA16F, window_width, window_height, GL_TRUE);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D_MULTISAMPLE, hdr_buffer, 0);
     }
     else {
-        gl_state.bind_texture(0, hdr_buffer);
+        gl_state.bind_texture_any(hdr_buffer);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, window_width, window_height, 0, GL_RGBA, GL_FLOAT, NULL);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -507,12 +506,12 @@ void initHdrFbo(bool resize) {
 
     // Create actual depth texture, multisampled if necessary
     if (do_msaa) {
-        gl_state.bind_texture(0, hdr_depth, GL_TEXTURE_2D_MULTISAMPLE);
+        gl_state.bind_texture_any(hdr_depth, GL_TEXTURE_2D_MULTISAMPLE);
         glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, MSAA_SAMPLES, GL_DEPTH24_STENCIL8, window_width, window_height, GL_TRUE);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D_MULTISAMPLE, hdr_depth, 0);
     }
     else {
-        gl_state.bind_texture(0, hdr_depth);
+        gl_state.bind_texture_any(hdr_depth);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH24_STENCIL8, window_width, window_height, 0, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8, NULL);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -529,7 +528,7 @@ void initHdrFbo(bool resize) {
 
     // Create copy of depth texture which is sampled by water shader and/or msaa post processing
     // @fix if there is no water (and not msaa) this texture is unnecessary (and might be unnecessary anyway)
-    gl_state.bind_texture(0, hdr_depth_copy);
+    gl_state.bind_texture_any(hdr_depth_copy);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH24_STENCIL8, window_width, window_height, 0, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8, NULL);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -540,10 +539,10 @@ void initHdrFbo(bool resize) {
     if (do_msaa) {
         gl_state.bind_framebuffer(hdr_fbo_resolve_multisample);
 
-        gl_state.bind_texture(0, hdr_depth_copy); // @note Might be redundant
+        gl_state.bind_texture_any(hdr_depth_copy); // @note Might be redundant
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, hdr_depth_copy, 0);
 
-        gl_state.bind_texture(0, hdr_buffer_resolve_multisample);
+        gl_state.bind_texture_any(hdr_buffer_resolve_multisample);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, window_width, window_height, 0, GL_RGBA, GL_FLOAT, NULL);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -554,6 +553,8 @@ void initHdrFbo(bool resize) {
         if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
             std::cerr << "Hdr resolve framebuffer not complete, error code: " << glCheckFramebufferStatus(GL_FRAMEBUFFER) << ".\n";
     }
+
+    gl_state.bind_framebuffer(GL_FALSE);
 }
 
 static void initSharedUbo() {
@@ -564,15 +565,15 @@ static void initSharedUbo() {
     glBindBuffer(GL_UNIFORM_BUFFER, 0);
 }
 
-static void writeSharedUbo(const Camera& camera) {
+static void writeSharedUbo(const Camera& camera, const Environment& env) {
     // @note if something else binds another ubo to 0 then this will be overwritten
     glBindBuffer(GL_UNIFORM_BUFFER, shared_uniforms_ubo);
     int offset = 0;
     glBufferSubData(GL_UNIFORM_BUFFER, offset, 64, &camera.view[0][0]); offset += 4 * 16;
     glm::mat4 vp = camera.projection * camera.view;
     glBufferSubData(GL_UNIFORM_BUFFER, offset, 64, &vp[0][0]); offset += 4 * 16;
-    glBufferSubData(GL_UNIFORM_BUFFER, offset, 16, &sun_direction[0]); offset += 16;
-    glBufferSubData(GL_UNIFORM_BUFFER, offset, 16, &sun_color[0]); offset += 16;
+    glBufferSubData(GL_UNIFORM_BUFFER, offset, 16, &env.sun_direction[0]); offset += 16;
+    glBufferSubData(GL_UNIFORM_BUFFER, offset, 16, &env.sun_color[0]); offset += 16;
     glBufferSubData(GL_UNIFORM_BUFFER, offset, 16, &camera.position[0]); offset += 12;
     float time = glfwGetTime();
     glBufferSubData(GL_UNIFORM_BUFFER, offset, 4, &time); offset += 4;
@@ -607,27 +608,20 @@ void initVolumetrics() {
     }
 }
 
-void computeVolumetrics(uint64_t frame_i, const Camera& camera) {
+void computeVolumetrics(const Environment& env, uint64_t frame_i, const Camera& camera) {
     // @todo integrate with draw entities so we don't send ubo,
     // in future it would be better to have a system for write ubos easily and checking if something has changed
-    writeSharedUbo(camera);
+    writeSharedUbo(camera, env);
 
     // Convert fog volumes, for now just a global fog, into camera fitted color&density 3D texture
     auto& vi = Shaders::volumetric_integration;
     gl_state.bind_program(vi.program());
 
-    if (playing) {
-        glUniform1f(vi.uniform("anisotropy"), Game::fog_properties.anisotropy);
-        glUniform1f(vi.uniform("density"), Game::fog_properties.density);
-        glUniform1f(vi.uniform("noise_scale"), Game::fog_properties.noise_scale);
-        glUniform1f(vi.uniform("noise_amount"), Game::fog_properties.noise_amount);
-    }
-    else {
-        glUniform1f(vi.uniform("anisotropy"), global_fog_properties.anisotropy);
-        glUniform1f(vi.uniform("density"), global_fog_properties.density);
-        glUniform1f(vi.uniform("noise_scale"), global_fog_properties.noise_scale);
-        glUniform1f(vi.uniform("noise_amount"), global_fog_properties.noise_amount);
-    }
+    const auto& properties = env.fog;
+    glUniform1f(vi.uniform("anisotropy"), properties.anisotropy);
+    glUniform1f(vi.uniform("density"), properties.density);
+    glUniform1f(vi.uniform("noise_scale"), properties.noise_scale);
+    glUniform1f(vi.uniform("noise_amount"), properties.noise_amount);
     glUniform1i(vi.uniform("do_accumulation"), frame_i != 0);
     glUniform3iv(vi.uniform("vol_size"), 1, &VOLUMETRIC_RESOLUTION[0]);
     glUniform3fv(vi.uniform("wind_direction"), 1, &wind_direction[0]);
@@ -819,7 +813,7 @@ void initGraphics(AssetManager& asset_manager) {
     line_cube.draw_start[0] = 0;
     line_cube.draw_count[0] = sizeof(line_cube_vertices) / (2.0 * sizeof(*line_cube_vertices));
 
-    asset_manager.loadMeshAssimp(&water_grid, "data/models/water_grid.obj");
+    asset_manager.loadMeshFile(&water_grid, "data/mesh/water_grid.mesh");
     simplex_gradient = asset_manager.createTexture("data/textures/2d_simplex_gradient_seamless.png");
     asset_manager.loadTexture(simplex_gradient, "data/textures/2d_simplex_gradient_seamless.png", GL_RGB, GL_REPEAT);
     simplex_value = asset_manager.createTexture("data/textures/2d_simplex_value_seamless.png");
@@ -835,9 +829,6 @@ void initGraphics(AssetManager& asset_manager) {
         blue_noise_textures[i] = asset_manager.createTexture(p);
         asset_manager.loadTexture(blue_noise_textures[i], p, GL_RGB, GL_REPEAT);
     }
-
-    // Set clear color
-    glClearColor(0.0, 0.0, 0.0, 1.0);
 
     initVolumetrics();
     initShadowFbo();
@@ -989,21 +980,16 @@ void createRenderQueue(RenderQueue& q, const EntityManager& entity_manager, cons
 
         RenderItem ri;
         ri.mesh = m_e->mesh;
-        ri.flags = GlFlags::DEPTH_READ | GlFlags::DEPTH_WRITE;
+        ri.flags = GlFlags::DEPTH_READ | GlFlags::DEPTH_WRITE | GlFlags::CULL;
 
         if (entityInherits(m_e->type, ANIMATED_MESH_ENTITY)) {
-            if (lightmapping) continue;
+            if (lightmapping) 
+                continue;
 
             auto a_e = (AnimatedMeshEntity*)m_e;
-            if (playing || a_e->draw_animated) {
+            if (gamestate.is_active || a_e->draw_animated) {
                 ri.bone_matrices = &a_e->final_bone_matrices;
             }
-        }
-        if (entityInherits(m_e->type, VEGETATION_ENTITY)) {
-            ri.flags = ri.flags | GlFlags::ALPHA_COVERAGE;
-        }
-        else {
-            ri.flags = ri.flags | GlFlags::CULL;
         }
 
         const auto& mesh = *m_e->mesh;
@@ -1013,13 +999,21 @@ void createRenderQueue(RenderQueue& q, const EntityManager& entity_manager, cons
             // @todo sorting by vao, material, texture similarity
             auto& sri = q.opaque_items.emplace_back(ri);
             sri.submesh_i = i;
-            sri.model = glm::translate(mesh.transforms[sri.submesh_i], m_e->position) * mesh.transforms[i] * glm::mat4_cast(m_e->rotation) * glm::mat4x4(m_e->scale);
+            sri.model = createModelMatrix(mesh.transforms[i], m_e->position, m_e->rotation, m_e->scale);
+            sri.draw_shadow = m_e->casts_shadow;
 
             const auto& lu = m_e->overidden_materials.find(i); // @note using the submesh index is intentional as it allows any part of a meshes material to be overriden
             if (lu == m_e->overidden_materials.end()) {
                 sri.mat = &m_e->mesh->materials[mesh.material_indices[i]];
             } else {
                 sri.mat = &lu->second;
+            }
+
+            if (!!(sri.mat->type & MaterialType::VEGETATION)) {
+                ri.flags = ri.flags | GlFlags::ALPHA_COVERAGE;
+            }
+            if (!!(sri.mat->type & MaterialType::ALPHA_CLIP)) {
+                ri.flags = ri.flags & (~GlFlags::CULL);
             }
 
             if (sri.mat->type == MaterialType::NONE) {
@@ -1031,9 +1025,13 @@ void createRenderQueue(RenderQueue& q, const EntityManager& entity_manager, cons
     if (!lightmapping && entity_manager.water != NULLID) {
         q.water = (WaterEntity*)entity_manager.getEntity(entity_manager.water);
     }
+
 }
 
 static void drawRenderItem(const RenderItem& ri, const glm::mat4x4* vp, const bool shadow=false) {
+    if (shadow && !ri.draw_shadow)
+        return;
+
     if (shadow) { // Get rid of culling if we are drawing a shadow, its sometimes suggested to use front face culling but this doesn't seem to work well
         gl_state.set_flags(ri.flags & (~GlFlags::CULL));
     }
@@ -1087,12 +1085,14 @@ static void drawRenderItem(const RenderItem& ri, const glm::mat4x4* vp, const bo
     // Setup transforms and other uniforms
     glUniformMatrix4fv(s.uniform("model"), 1, GL_FALSE, &ri.model[0][0]);
     if (!shadow && vp) {
-        auto mvp = *vp * ri.model;
+        auto mvp = (*vp) * ri.model;
         glUniformMatrix4fv(s.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
     }
     if (!!(mat.type & MaterialType::VEGETATION)) {
         glUniform2f(s.uniform("wind_direction"), wind_direction.x, wind_direction.y);
         glUniform1f(s.uniform("wind_strength"), 3.0);
+        if (shadow)
+            glUniform1f(s.uniform("time"), glfwGetTime());
     }
 
     // If bone animated write bone matrices
@@ -1105,9 +1105,9 @@ static void drawRenderItem(const RenderItem& ri, const glm::mat4x4* vp, const bo
     glDrawElements(mesh.draw_mode, mesh.draw_count[ri.submesh_i], mesh.draw_type, (GLvoid*)(sizeof(*mesh.indices) * mesh.draw_start[ri.submesh_i]));
 }
 
-void drawRenderQueue(const RenderQueue& q, const Texture* skybox, const Texture* irradiance_map, const Texture* prefiltered_specular_map, const Camera& camera) {
+void drawRenderQueue(const RenderQueue& q, Environment& env, const Camera& camera) {
     // Bind shared resources
-    writeSharedUbo(camera);
+    writeSharedUbo(camera, env);
     if (do_shadows) {
         gl_state.bind_texture(TextureSlot::SHADOW_BUFFER, shadow_buffer, GL_TEXTURE_2D_ARRAY);
         gl_state.bind_texture(TextureSlot::SHADOW_JITTER, jitter_texture->id, GL_TEXTURE_3D);
@@ -1116,8 +1116,8 @@ void drawRenderQueue(const RenderQueue& q, const Texture* skybox, const Texture*
         gl_state.bind_texture(TextureSlot::VOLUMETRICS, accumulated_volumetric_volume, GL_TEXTURE_3D);
     }
 
-    gl_state.bind_texture(TextureSlot::ENV_IRRADIANCE, irradiance_map->id, GL_TEXTURE_CUBE_MAP);
-    gl_state.bind_texture(TextureSlot::ENV_SPECULAR, prefiltered_specular_map->id, GL_TEXTURE_CUBE_MAP);
+    gl_state.bind_texture(TextureSlot::ENV_IRRADIANCE, env.skybox_irradiance->id, GL_TEXTURE_CUBE_MAP);
+    gl_state.bind_texture(TextureSlot::ENV_SPECULAR, env.skybox_specular->id, GL_TEXTURE_CUBE_MAP);
     gl_state.bind_texture(TextureSlot::BRDF_LUT, brdf_lut->id);
 
     Shaders::unified.set_macro("SHADOWS", do_shadows);
@@ -1127,7 +1127,7 @@ void drawRenderQueue(const RenderQueue& q, const Texture* skybox, const Texture*
         drawRenderItem(ri, &camera.vp);
     }
 
-    drawSkybox(skybox, camera);
+    drawSkybox(env.skybox, camera);
 
     for (const auto& ri : q.transparent_items) {
         drawRenderItem(ri, &camera.vp);
@@ -1371,12 +1371,21 @@ void convoluteSpecularFromCubemap(Texture* in_tex, Texture* out_tex, GLint forma
     glDeleteRenderbuffers(1, &RBO);
 }
 
-bool createEnvironmentFromCubemap(Environment& env, AssetManager &asset_manager, const std::array<std::string, FACE_NUM_FACES>& paths, GLint format) {
-    env.skybox = asset_manager.createTexture("skybox");
-    if (!asset_manager.loadCubemapTexture(env.skybox, paths, format, GL_REPEAT, true)) {
-        std::cerr << "Error loading cubemap\n";
-        return false;
+bool createEnvironmentFromCubemap(Environment& env, AssetManager &asset_manager, const std::string& path, GLint format) {
+    env.skybox = asset_manager.getTexture(path);
+    if (!env.skybox) {
+        env.skybox = asset_manager.createTexture(path);
+
+        std::array<std::string, FACE_NUM_FACES> paths = {
+            path + "/px.hdr", path + "/nx.hdr",
+            path + "/py.hdr", path + "/ny.hdr",
+            path + "/pz.hdr", path + "/nz.hdr" };
+        if (!asset_manager.loadCubemapTexture(env.skybox, paths, format, GL_REPEAT, true)) {
+            std::cerr << "Error loading cubemap\n";
+            return false;
+        }
     }
+
 
     env.skybox_irradiance = asset_manager.createTexture("skybox_irradiance");
     convoluteIrradianceFromCubemap(env.skybox, env.skybox_irradiance, format);
@@ -1446,5 +1455,7 @@ Texture *createJitter3DTexture(AssetManager &asset_manager, int size, int sample
 
     delete[] data;
 
+    tex->format = GL_RGBA;
+    tex->complete = true;
     return tex;
 }

@@ -24,19 +24,14 @@
 
 #include <assets.hpp>
 
-extern GLFWwindow* window;
-extern std::string glsl_version;
 extern std::string exepath;
-extern glm::vec3 sun_color;
-extern glm::vec3 sun_direction;
-extern glm::vec4 clear_color;
-extern bool draw_bloom;
+
+extern float true_time_warp, physics_time_warp;
+extern bool true_time_pause;
+
+extern GLFWwindow* window;
+
 extern AssetManager global_assets;
-extern std::string GL_version, GL_vendor, GL_renderer;
-extern std::string level_path;
-extern bool playing, global_paused;
-extern bool has_played;
-extern float global_time_warp;
 
 struct ThreadPool;
 extern ThreadPool *global_thread_pool;

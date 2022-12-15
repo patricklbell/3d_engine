@@ -3,19 +3,19 @@
 
 #include <camera/globals.hpp>
 
+#include <utilities/math.hpp>
 #include "entities.hpp"
-#include "utilities.hpp"
+#include "level.hpp"
+
+#include "game_behaviour.hpp"
+
+GameState gamestate;
 
 // @todo move to camera class, in future with multiple control points, etc.
 glm::vec3 camera_move_target, camera_move_origin;
 float camera_move_time, camera_move_duration;
 bool do_camera_move = false;
-
-namespace Game {
-    graphics::FogProperties fog_properties;
-};
-
-using namespace Game;
+float initial_fog_density;
 
 void initCameraMove(glm::vec3 origin, glm::vec3 target, float duration) {
     do_camera_move = true;
@@ -24,7 +24,9 @@ void initCameraMove(glm::vec3 origin, glm::vec3 target, float duration) {
 
     camera_move_duration = duration;
     camera_move_time = 0.0f;
-    fog_properties = graphics::global_fog_properties;
+
+    const auto& env = gamestate.level.environment;
+    initial_fog_density = env.fog.density;
 }
 
 void updateCameraMove(float dt) {
@@ -32,9 +34,10 @@ void updateCameraMove(float dt) {
         camera_move_time += dt;
         float t = glm::smoothstep(0.0f, camera_move_duration, camera_move_time);
         t = sqrt(t);
-        Cameras::game_camera.set_position(glm::mix(camera_move_origin, camera_move_target, t));
-        fog_properties.density = glm::mix(20 * graphics::global_fog_properties.density, graphics::global_fog_properties.density, t);
-        fog_properties.noise_amount = glm::mix(1.0f, graphics::global_fog_properties.noise_amount, t);
+        gamestate.level.camera.set_position(glm::mix(camera_move_origin, camera_move_target, t));
+
+        auto& env = gamestate.level.environment;
+        env.fog.density = glm::mix(10 * initial_fog_density, initial_fog_density, t);
 
         do_camera_move = camera_move_time <= camera_move_duration;
     }
@@ -143,39 +146,31 @@ void updatePlayerEntity(EntityManager& entity_manager, float dt, PlayerEntity &p
     }
 }
 
-void pauseGame(EntityManager* &entity_manager) {
-    playing = false;
-
-    entity_manager = &level_entity_manager;
+void pauseGame() {
+    gamestate.is_active = false;
 }
 
-void resetGameEntities() {
-    game_entity_manager.clear();
-    game_entity_manager = level_entity_manager;
-    level_entity_manager.copyEntities(game_entity_manager.entities);
-
-    Cameras::game_camera = Cameras::level_camera;
-    auto look_dir = glm::normalize(Cameras::game_camera.target - Cameras::game_camera.position);
-    initCameraMove(Cameras::game_camera.position - look_dir * 6.0f, Cameras::game_camera.position, 1.2f);
+void resetGameState() {
+    gamestate.level = loaded_level;
+    auto look_dir = glm::normalize(gamestate.level.camera.target - gamestate.level.camera.position);
+    initCameraMove(gamestate.level.camera.position - look_dir * 6.0f, gamestate.level.camera.position, 1.2f);
+    gamestate.initialized = true;
 }
 
-void playGame(EntityManager* &entity_manager) {
-    playing = true;
-
-    if(!has_played) {
-        resetGameEntities();
+void playGame() {
+    if (!gamestate.initialized) {
+        resetGameState();
     }
-    entity_manager = &game_entity_manager;
 
-    has_played = true;
+    gamestate.is_active = true;
 }
 
-void updateGameEntities(float dt, EntityManager* &entity_manager) {
+void updateGameEntities(float dt, EntityManager& entity_manager) {
     updateCameraMove(dt);
 
-    if (entity_manager->player != NULLID) {
-        auto player = (PlayerEntity*)entity_manager->getEntity(entity_manager->player);
+    if (entity_manager.player != NULLID) {
+        auto player = (PlayerEntity*)entity_manager.getEntity(entity_manager.player);
         if(player != nullptr) 
-            updatePlayerEntity(*entity_manager, dt, *player);
+            updatePlayerEntity(entity_manager, dt, *player);
     }
 }

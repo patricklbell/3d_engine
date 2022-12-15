@@ -4,11 +4,8 @@
 #include <camera/core.hpp>
 
 namespace Cameras {
-	extern Camera editor_camera;
-	extern Camera level_camera;
-	extern Camera game_camera;
-
 	Camera* get_active_camera();
+	void update_cameras_for_level();
 };
 
 #endif // CAMERA_GLOBALS_HPP

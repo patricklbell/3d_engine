@@ -1,8 +1,9 @@
 #ifndef LIGHTMAPPER_HPP
 #define LIGHTMAPPER_HPP
 
-#include "entities.hpp"
+#include "assets.hpp"
+#include "level.hpp"
 
-bool runLightmapper(EntityManager& entity_manager, AssetManager& asset_manager, Texture* skybox, Texture* skybox_irradiance, Texture* skybox_specular);
+bool runLightmapper(Level& level, AssetManager& asset_manager);
 
 #endif

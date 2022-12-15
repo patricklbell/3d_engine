@@ -29,22 +29,12 @@ namespace Shaders {
 	Shader volumetric_integration;
 	Shader volumetric_raymarch;
 
-	std::string glsl_version;
+	Shader lightmap_hemisphere;
+	Shader lightmap_downsample;
 
 	[[nodiscard]] bool init() {
-#ifdef __APPLE__
-		// GL 4.3 + GLSL 430
-		glsl_version = "#version 430\n";
-#elif __linux__
-		// GL 4.3 + GLSL 430
-		glsl_version = "#version 430\n";
-#elif _WIN32
-		// GL 4.3 + GLSL 430
-		glsl_version = "#version 430\n";
-#endif
-
 		bool success = true;
-		std::string prepend = graphics::shadow_shader_macro + graphics::animation_macro + graphics::volumetric_shader_macro + '\0';
+		std::string prepend = gl_state.glsl_version + graphics::shadow_shader_macro + graphics::animation_macro + graphics::volumetric_shader_macro + '\0';
 
 		success&=unified.load_file_compile("data/shaders/unified.gl", prepend);
 		success&=shadow.load_file_compile("data/shaders/null.gl", prepend);
@@ -62,12 +52,15 @@ namespace Shaders {
 		success&=downsample.load_file_compile("data/shaders/downsample.gl", prepend);
 		success&=blur_upsample.load_file_compile("data/shaders/blur_upsample.gl", prepend);
 
-		success&=plane_projection.load_file_compile("data/shaders/specular_convolution.gl", prepend);
+		success&=plane_projection.load_file_compile("data/shaders/plane_projection.gl", prepend);
 		success&=jump_flood.load_file_compile("data/shaders/jump_flood.gl", prepend);
 		success&=jfa_to_distance.load_file_compile("data/shaders/jfa_to_distance.gl", prepend);
 
 		success&=volumetric_integration.load_file_compile("data/shaders/volumetric_integration.gl", prepend);
 		success&=volumetric_raymarch.load_file_compile("data/shaders/volumetric_raymarch.gl", prepend);
+
+		success &= lightmap_hemisphere.load_file_compile("data/shaders/lightmapper/hemisphere.gl", prepend);
+		success &= lightmap_downsample.load_file_compile("data/shaders/lightmapper/downsample.gl", prepend);
 
 		return success;
 	}
@@ -95,6 +88,9 @@ namespace Shaders {
 
 		success&=volumetric_integration.update_from_dependencies();
 		success&=volumetric_raymarch.update_from_dependencies();
+
+		success &= lightmap_hemisphere.update_from_dependencies();
+		success &= lightmap_downsample.update_from_dependencies();
 
 		return success;
 	}

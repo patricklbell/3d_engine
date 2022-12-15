@@ -10,13 +10,13 @@ struct Frustrum {
 };
 
 struct Camera {
-    enum TYPE : uint8_t {
+    enum Type : uint8_t {
         TRACKBALL = 0,
         SHOOTER = 1,
         STATIC = 2,
-    } state;
+    } state = Type::STATIC;
 
-    Camera(Frustrum _frustrum = Frustrum(), glm::vec3 _position = glm::vec3(3.0));
+    Camera(Frustrum _frustrum = Frustrum(), glm::vec3 _position = glm::vec3(3.0), glm::vec3 _target = glm::vec3(0.0));
     void set_frustrum(Frustrum _frustrum = Frustrum());
     void set_position(glm::vec3 _position);
     void set_target(glm::vec3 _target);
@@ -27,7 +27,8 @@ struct Camera {
 
     glm::vec3 up = glm::vec3(0, 1, 0);
     glm::vec3 position;
-    glm::vec3 target = glm::vec3(0, 0, 0);
+    glm::vec3 target;
+
 
     glm::vec3 forward;
     glm::vec3 right;
@@ -38,6 +39,7 @@ struct Camera {
     glm::mat4 view;
     glm::mat4 projection;
     glm::mat4 vp;
+    glm::mat4 inv_vp;
 };
 
 #endif // CAMERA_CORE_HPP

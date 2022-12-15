@@ -77,6 +77,7 @@ struct Mesh {
 
     // A submesh is an indice group which is used to avoid rebinding VAOs and duplicating vertices
     uint64_t        num_submeshes = 0;
+    std::string* submesh_names = nullptr; // @editor @note !!!IMPORTANT!!! allocated with new
     glm::mat4x4*    transforms = nullptr;
     GLint*          draw_start = nullptr;
     GLint*          draw_count = nullptr;
@@ -300,7 +301,7 @@ enum class TextureSlot : uint64_t {
     AO          = 4,
     GI          = 4,
 
-    EMISSIVE    = 4,
+    EMISSIVE    = 11,
 
     // Shadows
     SHADOW_BUFFER = 5,
@@ -432,12 +433,13 @@ struct Material {
     MaterialType type = MaterialType::NONE;
     std::unordered_map<TextureSlot, Texture*> textures;
     std::unordered_map<std::string, Uniform> uniforms; // @note this string could be made into a binding location
-
-    ~Material();
 };
 
 extern Material* default_material;
 void initDefaultMaterial(AssetManager &asset_manager);
+std::string getMaterialName(const Material& mat);
+std::string getMaterialTypeName(const MaterialType& type);
+std::string getTextureSlotName(const Material& mat, TextureSlot slot);
 
 std::ostream &operator<<(std::ostream &os, const Texture &t);
 std::ostream &operator<<(std::ostream &os, const Material &m);

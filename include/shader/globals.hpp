@@ -27,7 +27,8 @@ namespace Shaders {
 	extern Shader volumetric_integration;
 	extern Shader volumetric_raymarch;
 
-	extern std::string glsl_version;
+	extern Shader lightmap_hemisphere;
+	extern Shader lightmap_downsample;
 
 	bool init();
 	bool live_update();

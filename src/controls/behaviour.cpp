@@ -13,173 +13,128 @@
 #include <controls/globals.hpp>
 
 #include <camera/globals.hpp>
+#include <utilities/math.hpp>
 
-#include "utilities.hpp"
 #include "entities.hpp"
 #include "editor.hpp"
 #include "game_behaviour.hpp"
 
-Entity* pickEntityWithMouse(Camera& camera, EntityManager& entity_manager) {
-    glm::vec3 out_origin;
-    glm::vec3 out_direction;
-    screenPosToWorldRay(Controls::mouse_position, camera.view, camera.projection, out_origin, out_direction);
-
-    Entity* closest_e = nullptr;
-    float min_collision_distance = std::numeric_limits<float>::max();
-
+Raycast raycastEntities(Raycast& raycast, EntityManager& entity_manager, bool colliders=false) {
+    auto tmp_raycast = raycast;
     for (int i = 0; i < ENTITY_COUNT; ++i) {
         auto e = entity_manager.entities[i];
         if (e == nullptr) continue;
 
-        // Collision with bounded plane
-        if (e->type & EntityType::WATER_ENTITY) {
+        tmp_raycast.result.hit = false;
+        if (!colliders && e->type & EntityType::WATER_ENTITY) {
             auto w_e = (WaterEntity*)e;
-            float t;
-            if (lineIntersectsPlane(w_e->position, glm::vec3(0, 1, 0), out_origin, out_direction, t)) {
-                auto p = glm::abs((out_origin + out_direction * t) - w_e->position);
-                if (p.x <= w_e->scale[0][0] && p.z <= w_e->scale[2][2]) {
-                    auto collision_distance = glm::length((out_origin + out_direction * t) - camera.position);
-                    if (collision_distance < min_collision_distance) {
-                        min_collision_distance = collision_distance;
-                        closest_e = w_e;
-                        camera.set_target(w_e->position);
-                    }
-                }
-            }
-        }
-        else if (e->type & EntityType::MESH_ENTITY && ((MeshEntity*)e)->mesh != nullptr) {
-            auto m_e = (MeshEntity*)e;
-            const auto& mesh = m_e->mesh;
-            const auto g_trans = createModelMatrix(m_e->position, m_e->rotation, m_e->scale);
 
-            for (int j = 0; j <= (int64_t)mesh->num_indices - 3; j += 3) {
-                if (mesh->indices[j] >= mesh->num_vertices ||
-                    mesh->indices[j + 1] >= mesh->num_vertices ||
-                    mesh->indices[j + 2] >= mesh->num_vertices)
-                    continue;
-                const auto p1 = mesh->vertices[mesh->indices[j]];
-                const auto p2 = mesh->vertices[mesh->indices[j + 1]];
-                const auto p3 = mesh->vertices[mesh->indices[j + 2]];
-                for (int k = 0; k < mesh->num_submeshes; k++) {
-                    auto trans = mesh->transforms[k] * g_trans;
-                    glm::vec3 triangle[3] = {
-                        glm::vec3(trans * glm::vec4(p1, 1.0)),
-                        glm::vec3(trans * glm::vec4(p2, 1.0)),
-                        glm::vec3(trans * glm::vec4(p3, 1.0))
-                    };
-                    double u, v, t;
-                    if (rayIntersectsTriangle(triangle, out_origin, out_direction, t, u, v)) {
-                        auto collision_distance = glm::length((out_origin + out_direction * (float)t) - camera.position);
-                        if (collision_distance < min_collision_distance) {
-                            min_collision_distance = collision_distance;
-                            closest_e = e;
-                            camera.set_target(m_e->position);
-                        }
+            glm::vec3 bounds{ w_e->scale[0][0], w_e->scale[1][1], w_e->scale[2][2] };
+            raycastBoundedPlane(w_e->position + bounds*glm::vec3(0.5,0,0.5), glm::vec3(0, 1, 0), bounds*0.5f, tmp_raycast);
+        }
+        else if (!colliders && e->type & EntityType::MESH_ENTITY && ((MeshEntity*)e)->mesh != nullptr) {
+            const auto& m_e = (MeshEntity*)e;
+            const auto& mesh = m_e->mesh;
+
+            for (int j = 0; j < mesh->num_submeshes; j++) {
+                auto model = createModelMatrix(mesh->transforms[j], m_e->position, m_e->rotation, 1.01f*m_e->scale);
+                if (raycastTriangles(mesh->vertices, mesh->indices, mesh->num_indices, model, tmp_raycast)) {
+                    if (tmp_raycast.result.hit && tmp_raycast.result.t < raycast.result.t) {
+                        raycast = tmp_raycast;
+                        raycast.result.indice = i;
                     }
                 }
             }
+            continue;
+        }
+        else if (colliders && (e->type & EntityType::COLLIDER_ENTITY)) {
+            auto c = (ColliderEntity*)entity_manager.entities[i];
+            auto bounds = glm::vec3(c->collider_scale[0][0], c->collider_scale[1][1], c->collider_scale[2][2]);
+            raycastCube(c->collider_position + bounds/2.0f, bounds, tmp_raycast);
+        }
+
+        if (tmp_raycast.result.hit && tmp_raycast.result.t < raycast.result.t) {
+            raycast = tmp_raycast;
+            raycast.result.indice = i;
         }
     }
 
-    return closest_e;
+    return raycast;
 }
 
-ColliderEntity* pickColliderWithMouse(Camera& camera, EntityManager& entity_manager, glm::vec3& normal, bool only_selectable = false) {
-    glm::vec3 out_origin;
-    glm::vec3 out_direction;
-    screenPosToWorldRay(Controls::mouse_position, camera.view, camera.projection, out_origin, out_direction);
+Raycast raycastEntityWithMouse(const Camera& camera, EntityManager& entity_manager) {
+    auto raycast = mouseToRaycast(Controls::mouse_position, glm::ivec2(window_width, window_height), camera.inv_vp);
+    return raycastEntities(raycast, entity_manager);
+}
 
-    float min_collision_distance = std::numeric_limits<float>::max();
-    std::cout << "Pick collider\n";
-
-    float min_t;
-    ColliderEntity* nearest_c = nullptr;
-    for (int i = 0; i < ENTITY_COUNT; ++i) {
-        auto c = (ColliderEntity*)entity_manager.entities[i];
-        if (c == nullptr || !entityInherits(c->type, COLLIDER_ENTITY)) continue;
-        if (only_selectable && !c->selectable) continue;
-        std::cout << "testing collider entity\n";
-
-        float t;
-        glm::vec3 n;
-        auto scl = glm::vec3(c->collider_scale[0][0], c->collider_scale[1][1], c->collider_scale[2][2]);
-        if (lineIntersectsCube(c->collider_position, scl, out_origin, out_direction, t, n)) {
-            if (nearest_c == nullptr || t < min_t) {
-                min_t = t;
-                normal = n;
-                nearest_c = c;
-                std::cout << "Collided at t " << min_t << " with normal " << normal << "\n";
-            }
-        }
-    }
-    return nearest_c;
+Raycast raycastColliderWithMouse(const Camera& camera, EntityManager& entity_manager) {
+    auto raycast = mouseToRaycast(Controls::mouse_position, glm::ivec2(window_width, window_height), camera.inv_vp);
+    return raycastEntities(raycast, entity_manager, true);
 }
 
 void handleEditorControls(EntityManager*& entity_manager, AssetManager& asset_manager, float dt) {
-    ImGuiIO& io = ImGui::GetIO();
     static float mouse_hold_threshold = 0.1; // The time past which a mouse press is considered a hold
 
-    if (Controls::editor.isAction("toggle_terminal"))
-        editor::do_terminal = !editor::do_terminal;
+    ImGuiIO& io = ImGui::GetIO();
+    Camera& camera = *Cameras::get_active_camera();
 
-    // @todo
-    Camera* camera_ptr = &Cameras::editor_camera;
-    if (editor::use_level_camera)
-        camera_ptr = &Cameras::level_camera;
-    Camera& camera = *camera_ptr;
+    if (Controls::editor.isAction("toggle_terminal"))
+        Editor::do_terminal = !Editor::do_terminal;
 
     if (!io.WantCaptureKeyboard) {
-        if (Controls::editor.isAction("delete_selection") && editor::selection.ids.size()) {
-            for (auto& id : editor::selection.ids) {
+        if (Controls::editor.isAction("delete_selection") && Editor::selection.ids.size()) {
+            for (auto& id : Editor::selection.ids) {
                 entity_manager->deleteEntity(id);
                 if (id == entity_manager->water) {
                     entity_manager->water = NULLID;
                 }
             }
-            editor::selection.clear();
+            Editor::selection.clear();
         }
         if (Controls::editor.isAction("toggle_collider_visibility"))
-            editor::draw_colliders = !editor::draw_colliders;
+            Editor::draw_colliders = !Editor::draw_colliders;
 
         if (Controls::editor.isAction("switch_cameras"))
-            editor::use_level_camera = !editor::use_level_camera;
+            Editor::use_level_camera = !Editor::use_level_camera;
 
         if (Controls::editor.isAction("switch_editor_mode")) {
-            editor::editor_mode = (EditorMode)(((int)editor::editor_mode + 1) % (int)EditorMode::NUM);
-            editor::selection.clear();
+            Editor::editor_mode = (EditorMode)(((int)Editor::editor_mode + 1) % (int)EditorMode::NUM);
+            Editor::selection.clear();
         }
 
         if (Controls::editor.isAction("copy") &&
-            editor::selection.ids.size() && !(editor::selection.type & WATER_ENTITY)) {
-            referenceToCopySelection(*entity_manager, editor::selection, editor::copy_selection);
+            Editor::selection.ids.size() && !(Editor::selection.type & WATER_ENTITY)) {
+            referenceToCopySelection(*entity_manager, Editor::selection, Editor::copy_selection);
             pushInfoMessage("Copied selection");
         }
 
-        if (Controls::editor.isAction("paste") && editor::copy_selection.entities.size() != 0) {
-            editor::selection.clear();
-            createCopySelectionEntities(*entity_manager, asset_manager, editor::copy_selection, editor::selection);
-            camera.set_target(editor::selection.avg_position);
+        if (Controls::editor.isAction("paste") && Editor::copy_selection.entities.size() != 0) {
+            Editor::selection.clear();
+            createCopySelectionEntities(*entity_manager, asset_manager, Editor::copy_selection, Editor::selection);
         }
 
         if (Controls::editor.isAction("toggle_debug_visibility")) {
-            editor::draw_debug_wireframe = !editor::draw_debug_wireframe;
-            pushInfoMessage(editor::draw_debug_wireframe ? "Debug wireframe on" : "Debug wireframe off");
+            Editor::draw_debug_wireframe = !Editor::draw_debug_wireframe;
+            pushInfoMessage(Editor::draw_debug_wireframe ? "Debug wireframe on" : "Debug wireframe off");
         }
 
+        if (Controls::editor.isAction("focus_camera") && Editor::selection.ids.size()) {
+            camera.set_target(Editor::selection.avg_position);
+            pushInfoMessage("Refocusing camera");
+        }
+
+
         if (Controls::editor.isAction("switch_camera_mode")) {
-            if (camera.state == Camera::TYPE::TRACKBALL) {
-                camera.state = Camera::TYPE::STATIC;
+            if (camera.state == Camera::Type::TRACKBALL) {
+                camera.state = Camera::Type::STATIC;
                 pushInfoMessage("Static camera");
             }
-            else if (camera.state == Camera::TYPE::SHOOTER) {
-                camera.state = Camera::TYPE::TRACKBALL;
-                if (editor::selection.ids.size() == 1) {
-                    camera.set_target(editor::selection.avg_position);
-                }
+            else if (camera.state == Camera::Type::SHOOTER) {
+                camera.state = Camera::Type::TRACKBALL;
                 pushInfoMessage("Orbit camera");
             }
-            else if (camera.state == Camera::TYPE::STATIC) {
-                camera.state = Camera::TYPE::SHOOTER;
+            else if (camera.state == Camera::Type::STATIC) {
+                camera.state = Camera::Type::SHOOTER;
 
                 Controls::mouse_position = glm::dvec2(window_width / 2, window_height / 2);
                 Controls::delta_mouse_position = glm::dvec2(0, 0);
@@ -188,65 +143,62 @@ void handleEditorControls(EntityManager*& entity_manager, AssetManager& asset_ma
         }
 
         if (Controls::editor.isAction("toggle_playing")) {
-            playGame(entity_manager);
+            playGame();
             pushInfoMessage("Playing");
         }
 
         if (Controls::editor.isAction("toggle_level_camera_visibility")) {
-            editor::draw_level_camera = !editor::draw_level_camera;
-            pushInfoMessage(editor::draw_level_camera ? "Camera wireframe on" : "Camera wireframe off");
+            Editor::draw_level_camera = !Editor::draw_level_camera;
+            pushInfoMessage(Editor::draw_level_camera ? "Camera wireframe on" : "Camera wireframe off");
         }
     }
 
     if (!io.WantCaptureMouse) {
         if (Controls::editor.right_mouse.state == Controls::RELEASE && (glfwGetTime() - Controls::editor.right_mouse.last_press) < mouse_hold_threshold) {
-            if (editor::editor_mode == EditorMode::COLLIDERS) {
+            if (Editor::editor_mode == EditorMode::COLLIDERS) {
                 glm::vec3 n;
-                auto collider = pickColliderWithMouse(camera, *entity_manager, n);
-                if (collider != nullptr) {
-                    entity_manager->deleteEntity(collider->id);
+                auto raycast = raycastColliderWithMouse(camera, *entity_manager);
+                if (raycast.result.hit) {
+                    entity_manager->deleteEntity(entity_manager->entities[raycast.result.indice]->id);
                 }
             }
             else {
-                editor::selection.clear();
+                Editor::selection.clear();
             }
         }
         if (Controls::editor.left_mouse.state == Controls::RELEASE && (glfwGetTime() - Controls::editor.left_mouse.last_press) < mouse_hold_threshold) {
-            switch (editor::editor_mode)
+            switch (Editor::editor_mode)
             {
             case EditorMode::ENTITY:
             {
-                auto e = pickEntityWithMouse(camera, *entity_manager);
-                if (e != nullptr) {
+                auto raycast = raycastEntityWithMouse(camera, *entity_manager);
+                if (raycast.result.hit) {
                     if (!glfwGetKey(window, GLFW_KEY_LEFT_SHIFT)) {
-                        editor::selection.clear();
+                        Editor::selection.clear();
                     }
-                    editor::selection.toggleEntity(*entity_manager, e);
 
-                    if (camera.state != Camera::TYPE::STATIC && editor::selection.avg_position_count) {
-                        camera.set_target(editor::selection.avg_position);
-                    }
-                }
-                else {
-                    editor::selection.clear();
+                    auto pick_e = entity_manager->entities[raycast.result.indice];
+                    Editor::selection.toggleEntity(*entity_manager, pick_e);
+                } else {
+                    Editor::selection.clear();
                 }
                 break;
             }
             case EditorMode::COLLIDERS:
             {
+                auto raycast = raycastColliderWithMouse(camera, *entity_manager);
+                if (raycast.result.hit) {
+                    auto pick_c = (ColliderEntity*)entity_manager->entities[raycast.result.indice];
 
-                glm::vec3 normal;
-                auto pick_c = pickColliderWithMouse(camera, *entity_manager, normal);
-                if (pick_c != nullptr) {
-                    std::cout << "Collided, normal: " << normal << "\n";
+                    std::cout << "Collided, normal: " << raycast.result.normal << "\n";
                     auto c = (ColliderEntity*)copyEntity((Entity*)pick_c);
                     c->id = entity_manager->getFreeId();
-                    c->mesh = pick_c->mesh;
+                    c->mesh = c->mesh;
 
-                    c->position = pick_c->position + normal;
+                    c->position = pick_c->position + raycast.result.normal;
                     c->scale = pick_c->scale;
                     c->rotation = pick_c->rotation;
-                    c->collider_position = pick_c->collider_position + normal;
+                    c->collider_position = pick_c->collider_position + raycast.result.normal;
                     c->collider_scale = pick_c->collider_scale;
                     c->collider_rotation = pick_c->collider_rotation;
 
@@ -262,8 +214,8 @@ void handleEditorControls(EntityManager*& entity_manager, AssetManager& asset_ma
         }
     }
 
-    bool camera_movement_active = !editor::transform_active && !io.WantCaptureMouse && !io.WantCaptureKeyboard;
-    if (camera.state == Camera::TYPE::TRACKBALL && camera_movement_active) {
+    bool camera_movement_active = !Editor::transform_active && !io.WantCaptureMouse && !io.WantCaptureKeyboard;
+    if (camera.state == Camera::Type::TRACKBALL && camera_movement_active) {
         if (Controls::editor.left_mouse.state == Controls::HELD && (glfwGetTime() - Controls::editor.left_mouse.last_press) > mouse_hold_threshold) {
             // Calculate the amount of rotation given the mouse movement.
             float delta_angle_x = (2 * PI / (float)window_width); // a movement from left to right = 2*PI = 360 deg
@@ -321,7 +273,7 @@ void handleEditorControls(EntityManager*& entity_manager, AssetManager& asset_ma
             camera.set_position(camera.target + glm::normalize(camera.position - camera.target) * distance);
         }
     }
-    else if (camera.state == Camera::TYPE::SHOOTER && camera_movement_active) {
+    else if (camera.state == Camera::Type::SHOOTER && camera_movement_active) {
         static glm::vec3 camera_velocity = glm::vec3(0.0);
         static const float camera_resistance = 50.0; // The "air resistance" the camera experiences
         static float camera_acceleration = 500.0;
@@ -403,32 +355,32 @@ void handleEditorControls(EntityManager*& entity_manager, AssetManager& asset_ma
 
 void handleGameControls(EntityManager*& entity_manager, AssetManager& asset_manager, float dt) {
     if (Controls::editor.isAction("toggle_terminal"))
-        editor::do_terminal = !editor::do_terminal;
+        Editor::do_terminal = !Editor::do_terminal;
 
     ImGuiIO& io = ImGui::GetIO();
     if (!io.WantCaptureKeyboard) {
         if (Controls::editor.isAction("toggle_playing")) {
-            pauseGame(entity_manager);
+            pauseGame();
             pushInfoMessage("Switched to editor");
         }
         if (Controls::game.isAction("reset")) {
-            resetGameEntities();
+            resetGameState();
             pushInfoMessage("Resetting");
         }
         if (Controls::game.isAction("toggle_animation_state_visibility"))
-            editor::debug_animations = !editor::debug_animations;
+            Editor::debug_animations = !Editor::debug_animations;
 
         if (Controls::game.isAction("slow_time")) {
-            global_time_warp *= 0.8;
-            pushInfoMessage("Time warp " + std::to_string(global_time_warp), InfoMessage::Urgency::NORMAL, 0.25, "#time-warp");
+            true_time_warp *= 0.8;
+            pushInfoMessage("Time warp " + std::to_string(true_time_warp), InfoMessage::Urgency::NORMAL, 0.25, "#time-warp");
         }
         if (Controls::game.isAction("fast_time")) {
-            global_time_warp *= 1.2;
-            pushInfoMessage("Time warp " + std::to_string(global_time_warp), InfoMessage::Urgency::NORMAL, 0.25, "#time-warp");
+            true_time_warp *= 1.2;
+            pushInfoMessage("Time warp " + std::to_string(true_time_warp), InfoMessage::Urgency::NORMAL, 0.25, "#time-warp");
         }
 
         if (Controls::game.isAction("pause"))
-            global_paused = !global_paused;
+            true_time_pause = !true_time_pause;
 
         // Handle player controls
         if (entity_manager->player != NULLID) {

@@ -1,10 +1,11 @@
 #include <camera/core.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
-Camera::Camera(Frustrum _frustrum, glm::vec3 _position) {
-    frustrum = _frustrum;
-    projection_updated = true;
-    view_updated = true;
+Camera::Camera(Frustrum _frustrum, glm::vec3 _position, glm::vec3 _target) {
+    set_frustrum(_frustrum);
+    set_position(_position);
+    set_target(_target);
+    update();
 }
 
 void Camera::set_frustrum(Frustrum _frustrum) {
@@ -43,6 +44,7 @@ bool Camera::update() {
     }
     if (update) {
         vp = projection * view;
+        inv_vp = glm::inverse(vp);
     }
 
     return update;
