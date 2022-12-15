@@ -1857,9 +1857,9 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
 
                             bool is_type = !!(mat.type & type);
                             if (ImGui::Checkbox(type_name.c_str(), &is_type)) {
-                                mat.type = is_type ? (mat.type | type) : (mat.type &= ~type);
+                                mat.type = is_type ? (mat.type | type) : (mat.type & (~type));
 
-                                static const auto add_mat_type = [&is_type, &mat, &type](TextureSlot slot, std::string uniform) {
+                                static const auto add_mat_type = [&is_type, &type](Material& mat, TextureSlot slot, std::string uniform) {
                                     if (is_type) {
                                         if (uniform != "")
                                             mat.uniforms.emplace(uniform, default_material->uniforms[uniform]);
@@ -1875,16 +1875,16 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
                                 switch (type)
                                 {
                                 case MaterialType::EMISSIVE:
-                                    add_mat_type(TextureSlot::EMISSIVE, "emissive_mult");
+                                    add_mat_type(mat, TextureSlot::EMISSIVE, "emissive_mult");
                                     break;
                                 case MaterialType::AO:
-                                    add_mat_type(TextureSlot::AO, "ambient_mult");
+                                    add_mat_type(mat, TextureSlot::AO, "ambient_mult");
                                     break;
                                 case MaterialType::LIGHTMAPPED:
-                                    add_mat_type(TextureSlot::GI, "ambient_mult");
+                                    add_mat_type(mat, TextureSlot::GI, "ambient_mult");
                                     break;
                                 case MaterialType::METALLIC:
-                                    add_mat_type(TextureSlot::METAL, "metal_mult");
+                                    add_mat_type(mat, TextureSlot::METAL, "metal_mult");
                                     break;
 
                                 default:

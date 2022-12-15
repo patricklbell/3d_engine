@@ -34,7 +34,7 @@ void tickAnimatedMesh(AnimatedMesh* animesh, std::array<glm::mat4, MAX_BONES>& b
             else {
                 auto& keyframe = event1->animation->bone_keyframes[lu->second];
 
-                assert(keyframe.id == node.id); // @debug
+                //assert(keyframe.id == node.id); // @debug
                 node_transform = tickBonesKeyframe(keyframe, event1->current_time * event1->animation->ticks_per_second, event1->loop);
             }
         }
