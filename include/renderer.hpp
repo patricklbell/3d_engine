@@ -66,12 +66,14 @@ struct RenderItem {
     Material* mat;
     uint64_t submesh_i;
     Mesh* mesh;
+    AABB* aabb;
 
     GlFlags flags;
 
     glm::mat4x4 model;
     std::array<glm::mat4, MAX_BONES>* bone_matrices = nullptr;
     bool draw_shadow = true;
+    bool culled = false;
 };
 
 struct WaterEntity;

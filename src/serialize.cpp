@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <functional>
 
+#include <utilities/math.hpp>
 #include "serialize.hpp"
 #include "entities.hpp"
 #include "globals.hpp"
@@ -214,6 +215,7 @@ void readCamera(Camera& camera, FILE* f) {
 
 void writeEnvironment(const Environment& env, FILE* f) {
     writeString(env.skybox->handle, f);
+
     fwrite(&env.fog.anisotropy, sizeof(env.fog.anisotropy), 1, f);
     fwrite(&env.fog.density, sizeof(env.fog.density), 1, f);
     fwrite(&env.fog.noise_amount, sizeof(env.fog.noise_amount), 1, f);
@@ -471,12 +473,19 @@ bool readMesh(Mesh& mesh, AssetManager& assets, FILE* f) {
     mesh.draw_start = reinterpret_cast<decltype(mesh.draw_start)>(malloc(sizeof(*mesh.draw_start) * mesh.num_submeshes));
     mesh.draw_count = reinterpret_cast<decltype(mesh.draw_count)>(malloc(sizeof(*mesh.draw_count) * mesh.num_submeshes));
     mesh.transforms = reinterpret_cast<decltype(mesh.transforms)>(malloc(sizeof(*mesh.transforms) * mesh.num_submeshes));
+    mesh.aabbs      = reinterpret_cast<decltype(mesh.aabbs     )>(malloc(sizeof(*mesh.aabbs     ) * (mesh.num_submeshes+1)));
     mesh.submesh_names = new std::string[mesh.num_submeshes];
     fread(mesh.material_indices, sizeof(*mesh.material_indices), mesh.num_submeshes, f);
     fread(mesh.draw_start, sizeof(*mesh.draw_start), mesh.num_submeshes, f);
     fread(mesh.draw_count, sizeof(*mesh.draw_count), mesh.num_submeshes, f);
     fread(mesh.transforms, sizeof(*mesh.transforms), mesh.num_submeshes, f);
     for (int i = 0; i < mesh.num_submeshes; i++) { readString(mesh.submesh_names[i], f); }
+
+    // @todo serialize aabb
+    for (uint64_t i = 0; i < mesh.num_submeshes; i++) {
+        calculateAABB(mesh.aabbs[i], mesh.vertices, mesh.num_vertices, &mesh.indices[mesh.draw_start[i]], mesh.draw_count[i]);
+    }
+    calculateAABB(mesh.aabbs[mesh.num_submeshes], mesh.vertices, mesh.num_vertices, mesh.indices, mesh.num_indices);
 }
 
 constexpr uint16_t LEVEL_FILE_VERSION = 2U;

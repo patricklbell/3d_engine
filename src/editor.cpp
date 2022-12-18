@@ -56,15 +56,19 @@ namespace Editor {
     GizmoMode gizmo_mode = GizmoMode::NONE;
     glm::vec3 translation_snap = glm::vec3(1.0);
 
-    ImGui::FileBrowser im_file_dialog = ImGui::FileBrowser(ImGuiFileBrowserFlags_EnterNewFilename | ImGuiFileBrowserFlags_NoTitleBar);
+    ImGui::FileBrowser im_file_dialog = ImGui::FileBrowser(ImGuiFileBrowserFlags_NoStatusBar | ImGuiFileBrowserFlags_NoTitleBar);
+    ImGui::FileBrowser im_directory_dialog = ImGui::FileBrowser(ImGuiFileBrowserFlags_NoStatusBar | ImGuiFileBrowserFlags_NoTitleBar | ImGuiFileBrowserFlags_SelectDirectory);
     std::string im_file_dialog_type;
+    std::string im_directory_dialog_type;
 
     bool do_terminal;
     bool draw_debug_wireframe = true;
     bool draw_colliders = false;
+    bool draw_aabbs = false;
     bool transform_active = false;
     bool use_level_camera = false, draw_level_camera = false;
     bool debug_animations = false;
+    bool show_environment_editor = false;
 
     ReferenceSelection selection;
     CopySelection copy_selection;
@@ -273,6 +277,7 @@ void initEditorGui(AssetManager &asset_manager){
     
     // create a file browser instance
     im_file_dialog_type = "";
+    im_directory_dialog_type = "";
 
     ImVec4* colors = ImGui::GetStyle().Colors;
     colors[ImGuiCol_Text] = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
@@ -1134,6 +1139,7 @@ bool editorRotationGizmo(glm::vec3& pos, glm::quat& rot, glm::mat3& scl, const C
     }
 
     // @todo add debug meshes to render queue for transparent objects and do proper sorting
+    bindBackbuffer();
     gl_state.set_flags(GlFlags::DEPTH_WRITE | GlFlags::BLEND | GlFlags::CULL);
     glClear(GL_DEPTH_BUFFER_BIT);
     
@@ -1231,6 +1237,7 @@ bool editorTranslationGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, Came
     }
 
     // @todo add debug meshes to render queue for transparent objects and do proper sorting
+    bindBackbuffer();
     gl_state.set_flags(GlFlags::DEPTH_WRITE | GlFlags::BLEND | GlFlags::CULL);
     glClear(GL_DEPTH_BUFFER_BIT);
 
@@ -1298,6 +1305,7 @@ bool editorScalingGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, Camera &
     }
 
     // @todo add debug meshes to render queue for transparent objects and do proper sorting
+    bindBackbuffer();
     gl_state.set_flags(GlFlags::DEPTH_WRITE | GlFlags::BLEND | GlFlags::CULL);
     glClear(GL_DEPTH_BUFFER_BIT);
 
@@ -1316,7 +1324,6 @@ void drawWaterDebug(WaterEntity* w, const Camera &camera, bool flash = false) {
 
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     glEnable(GL_LINE_SMOOTH);
-    glLineWidth(1.0);
 
     gl_state.bind_program(Shaders::debug.program());
     auto mvp = camera.vp * createModelMatrix(w->position, glm::quat(), w->scale);
@@ -1338,16 +1345,16 @@ void drawWaterDebug(WaterEntity* w, const Camera &camera, bool flash = false) {
 
 void drawMeshCube(const glm::vec3 &pos, const glm::quat &rot, const glm::mat3x3 &scl, const Camera &camera){
     bindBackbuffer();
-    gl_state.set_flags(GlFlags::CULL | GlFlags::DEPTH_READ);
+    gl_state.set_flags(GlFlags::CULL);
 
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     glEnable(GL_LINE_SMOOTH);
-    glLineWidth(1.0);
 
     gl_state.bind_program(Shaders::debug.program());
-    auto mvp = camera.vp * createModelMatrix(pos, rot, scl);
+    auto model = createModelMatrix(pos, rot, scl);
+    auto mvp = camera.vp * model;
     glUniformMatrix4fv(Shaders::debug.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
-    glUniformMatrix4fv(Shaders::debug.uniform("model"), 1, GL_FALSE, &pos[0]);
+    glUniformMatrix4fv(Shaders::debug.uniform("model"), 1, GL_FALSE, &model[0][0]);
     glUniform4f(Shaders::debug.uniform("color"), 1.0, 1.0, 1.0, 1.0);
     glUniform4f(Shaders::debug.uniform("color_flash_to"), 1.0, 0.0, 1.0, 1.0);
     glUniform1f(Shaders::debug.uniform("time"), glfwGetTime());
@@ -1355,6 +1362,33 @@ void drawMeshCube(const glm::vec3 &pos, const glm::quat &rot, const glm::mat3x3 
     glUniform1f(Shaders::debug.uniform("flashing"), 0.0);
 
     drawCube();
+
+    glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+}
+
+void drawAABB(AABB& aabb, glm::mat4 transform, const Camera& camera) {
+    bindBackbuffer();
+    gl_state.set_flags(GlFlags::CULL);
+
+    glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    glEnable(GL_LINE_SMOOTH);
+
+    gl_state.bind_program(Shaders::debug.program());
+
+    AABB t_aabb = transformAABB(aabb, transform);
+    //std::cout << "Drawing AABB min: " << t_aabb.min << ", max: " << t_aabb.max << "\n";
+
+    auto model = createModelMatrix(t_aabb.center, glm::quat(), t_aabb.size);
+    auto mvp = camera.vp * model;
+    glUniformMatrix4fv(Shaders::debug.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
+    glUniformMatrix4fv(Shaders::debug.uniform("model"), 1, GL_FALSE, &model[0][0]);
+    glUniform4f(Shaders::debug.uniform("color"), 0.5, 0.0, 0.0, 1.0);
+    glUniform4f(Shaders::debug.uniform("color_flash_to"), 0.5, 0.0, 0.0, 1.0);
+    glUniform1f(Shaders::debug.uniform("time"), glfwGetTime());
+    glUniform1f(Shaders::debug.uniform("shaded"), 0.0);
+    glUniform1f(Shaders::debug.uniform("flashing"), 0.0);
+
+    drawLineCube();
 
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 }
@@ -1368,7 +1402,7 @@ void drawFrustrum(Camera &drawn_camera, const Camera& camera) {
 
     gl_state.bind_program(Shaders::debug.program());
     // Transform into drawn camera's view space, then into world space
-    auto projection = glm::perspective(drawn_camera.frustrum.fov, drawn_camera.frustrum.aspect_ratio, drawn_camera.frustrum.near_plane, 2.0f);
+    auto projection = glm::perspective(drawn_camera.frustrum.fov_y, drawn_camera.frustrum.aspect_ratio, drawn_camera.frustrum.near_plane, 2.0f);
     auto model = glm::inverse(projection*drawn_camera.view);
     auto mvp = camera.vp * model;
     glUniformMatrix4fv(Shaders::debug.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
@@ -1422,8 +1456,7 @@ void drawEditor3DRing(const glm::vec3 &position, const glm::vec3 &direction, con
     bindBackbuffer();
     gl_state.set_flags(GlFlags::DEPTH_READ | GlFlags::DEPTH_READ | GlFlags::CULL | GlFlags::BLEND);
 
-    glEnablei(GL_BLEND, graphics::hdr_fbo);
-    glBlendFunci(graphics::hdr_fbo, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);  
+    gl_state.add_flags(GlFlags::BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);  
 
     gl_state.bind_program(Shaders::debug.program());
@@ -1440,14 +1473,15 @@ void drawEditor3DRing(const glm::vec3 &position, const glm::vec3 &direction, con
     glUniform1f(Shaders::debug.uniform("flashing"), 0);
     gl_state.bind_vao(ring_mesh.vao);
     glDrawElements(ring_mesh.draw_mode, ring_mesh.draw_count[0], ring_mesh.draw_type, (GLvoid*)(sizeof(GLubyte)*ring_mesh.draw_start[0]));
+
+    glBlendFunc(GL_ONE, GL_ZERO);
 }
 
 void drawEditor3DArrow(const glm::vec3 &position, const glm::vec3 &direction, const Camera &camera, const glm::vec4 &color, const glm::vec3 &scale, bool shaded, bool block){
     bindBackbuffer();
     gl_state.set_flags(GlFlags::DEPTH_READ | GlFlags::DEPTH_READ | GlFlags::CULL | GlFlags::BLEND);
 
-    glEnablei(GL_BLEND, graphics::hdr_fbo);
-    glBlendFunci(graphics::hdr_fbo, GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);  
+    gl_state.add_flags(GlFlags::BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);  
 
     gl_state.bind_program(Shaders::debug.program());
@@ -1468,8 +1502,9 @@ void drawEditor3DArrow(const glm::vec3 &position, const glm::vec3 &direction, co
     } else {
         gl_state.bind_vao(block_arrow_mesh.vao);
         glDrawElements(block_arrow_mesh.draw_mode, block_arrow_mesh.draw_count[0], block_arrow_mesh.draw_type, (GLvoid*)(sizeof(GLubyte)*block_arrow_mesh.draw_start[0]));
-
     }
+
+    glBlendFunc(GL_ONE, GL_ZERO);
 }
 
 void drawColliders(const EntityManager &entity_manager, const Camera &camera) {
@@ -1548,16 +1583,35 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
             auto e = entity_manager.getEntity(id);
             
             if (entityInherits(e->type, WATER_ENTITY)) {
-                drawWaterDebug((WaterEntity*)e, camera, true);
+                if (draw_debug_wireframe)
+                    drawWaterDebug((WaterEntity*)e, camera, true);
             }
             if (e != nullptr && (entityInherits(e->type, MESH_ENTITY))) {
                 auto m_e = (MeshEntity*)e;
-                if (m_e->mesh != nullptr) {
+                if (m_e->mesh) {
+                    auto& mesh = *m_e->mesh;
+
                     auto g_model_rot_scl = glm::mat4_cast(m_e->rotation) * glm::mat4x4(m_e->scale);
                     auto g_model_pos = glm::translate(glm::mat4x4(1.0), m_e->position);
-                    drawMeshWireframe(*m_e->mesh, g_model_rot_scl, g_model_pos, camera, true, selection.submesh_i);
+                    drawMeshWireframe(mesh, g_model_rot_scl, g_model_pos, camera, true, selection.submesh_i);
                 }
 
+            }
+        }
+    }
+
+    if (draw_aabbs) {
+        for (int i = 0; i < ENTITY_COUNT; i++) {
+            auto e = entity_manager.entities[i];
+            if (e && entityInherits(e->type, MESH_ENTITY)) {
+                auto m_e = (MeshEntity*)e;
+                if (m_e->mesh && m_e->mesh->complete) {
+                    auto& mesh = *m_e->mesh;
+
+                    for (uint64_t i = 0; i < mesh.num_submeshes; i++) {
+                        drawAABB(mesh.aabbs[i], createModelMatrix(mesh.transforms[i], m_e->position, m_e->rotation, m_e->scale), camera);
+                    }
+                }
             }
         }
     }
@@ -1566,6 +1620,62 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
+
+    if (show_environment_editor) {
+        ImGui::SetNextWindowPos(ImVec2(20, 50), ImGuiCond_Once);
+        ImGui::SetNextWindowSize(ImVec2(200, 300), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSizeConstraints(ImVec2(10, 10), ImVec2(window_width / 2.0, window_height));
+
+        ImGui::Begin("###environment", NULL);
+        auto& env = loaded_level.environment;
+
+        ImGui::Text("Sun color");
+        ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
+        ImGui::ColorEdit3("Sun color", &env.sun_color.x, ImGuiColorEditFlags_Float | ImGuiColorEditFlags_DisplayRGB | ImGuiColorEditFlags_HDR);
+
+        ImGui::Text("Sun direction");
+        ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
+        if (ImGui::InputFloat3("Sun direction", &env.sun_direction.x)) {
+            env.sun_direction = glm::normalize(env.sun_direction);
+        }
+
+        if (ImGui::CollapsingHeader("Skybox", ImGuiTreeNodeFlags_DefaultOpen)) {
+            ImGui::Indent(10);
+            
+            // @todo image button for cubemaps
+            if (ImGui::Button((env.skybox) ? env.skybox->handle.c_str() : "None", ImVec2(ImGui::GetColumnWidth(), 20))) {
+                im_directory_dialog.SetPwd(exepath + "/data/textures");
+                im_directory_dialog_type = "skybox";
+                im_directory_dialog.Open();
+            }
+
+            ImGui::Unindent(10);
+        }
+
+        if (ImGui::CollapsingHeader("Fog", ImGuiTreeNodeFlags_DefaultOpen)) {
+            ImGui::Indent(10);
+
+            ImGui::Text("Density");
+            ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
+            ImGui::SliderFloat("Density", &env.fog.density, 0.01, 1.0, "%.3f");
+
+            ImGui::Text("Anisotropy");
+            ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
+            ImGui::SliderFloat("Anisotropy", &env.fog.anisotropy, 0.01, 1.0, "%.3f");
+
+            ImGui::Text("Noise amount");
+            ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
+            ImGui::SliderFloat("Noise amount", &env.fog.noise_amount, 0.0, 1.0, "%.3f");
+
+            ImGui::Text("Noise scale");
+            ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
+            ImGui::SliderFloat("Noise scale", &env.fog.noise_scale, 0.0, 100.0, "%.3f");
+
+            ImGui::Unindent(10);
+        }
+
+        ImGui::End();
+    }
 
     constexpr float pad = 10;
     const static float sidebar_open_len = 0.2; // s
@@ -2126,6 +2236,22 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
             }
 
             im_file_dialog.ClearSelected();
+        }
+
+        im_directory_dialog.Display();
+        if (im_directory_dialog.HasSelected())
+        {
+            auto p = im_directory_dialog.GetSelected().string().erase(0, exepath.length() + 1);
+            std::replace(p.begin(), p.end(), '\\', '/');
+            std::cout << "Selected directory at path " << p << ".\n";
+            
+            if (im_directory_dialog_type == "skybox") {
+                createEnvironmentFromCubemap(loaded_level.environment, asset_manager, p, GL_RGB16F);
+            } else {
+                std::cerr << "Unhandled imgui directory dialog type at path " + p + ".\n";
+            }
+
+            im_directory_dialog.ClearSelected();
         }
     }
 

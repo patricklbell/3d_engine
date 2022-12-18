@@ -83,17 +83,21 @@ bool raycastTriangle(const glm::vec3 vertices[3], Raycast& raycast) {
     glm::vec3 edge2 = vertices[2] - vertices[0];
     glm::vec3 p = glm::cross(raycast.direction, edge2);
     float det = glm::dot(edge1, p);
-    if (det < epsilon && det > -epsilon) return false;
+    if (det < epsilon && det > -epsilon)
+        return false;
 
     float inv_det = 1.0f / det;
 
     auto t = raycast.origin - vertices[0];
     float u = glm::dot(t, p) * inv_det;
-    if (u < 0.0 || u > 1.0) return false;
+    if (u < 0.0 || u > 1.0)
+        return false;
 
     auto q = glm::cross(t, edge1);
+
     float v = glm::dot(raycast.direction, q) * inv_det;
-    if (v < 0.0 || u + v > 1.0) return false;
+    if (v < 0.0 || u + v > 1.0)
+        return false;
 
     raycast.result.t = glm::dot(edge2, q) * inv_det; // @note This could be skipped an intersection test is needed
     raycast.result.u = u;
@@ -130,18 +134,18 @@ bool raycastTriangleCull(const glm::vec3 vertices[3], Raycast& raycast) {
     return true;
 }
 
-bool raycastTriangles(glm::vec3* vertices, unsigned int* indices, const int num_indices, const glm::mat4x4& vertices_transform, Raycast& raycast) {
+bool raycastTriangles(glm::vec3* vertices, unsigned int* indices, const int num_indices, const glm::mat4x4& model, Raycast& raycast) {
     Raycast tri_raycast = raycast;
+
     glm::vec3 triangle[3];
-
     for (int j = 0; j < num_indices; j += 3) {
-        const auto& p1 = vertices[indices[j]];
-        const auto& p2 = vertices[indices[j + 1]];
-        const auto& p3 = vertices[indices[j + 2]];
+        const auto& p1 = vertices[indices[j  ]];
+        const auto& p2 = vertices[indices[j+1]];
+        const auto& p3 = vertices[indices[j+2]];
 
-        triangle[0] = glm::vec3(vertices_transform * glm::vec4(p1, 1.0));
-        triangle[1] = glm::vec3(vertices_transform * glm::vec4(p2, 1.0));
-        triangle[2] = glm::vec3(vertices_transform * glm::vec4(p3, 1.0));
+        triangle[0] = glm::vec3(model * glm::vec4(p1, 1.0));
+        triangle[1] = glm::vec3(model * glm::vec4(p2, 1.0));
+        triangle[2] = glm::vec3(model * glm::vec4(p3, 1.0));
         if (raycastTriangle(triangle, tri_raycast)) {
             if (tri_raycast.result.t < raycast.result.t) {
                 raycast = tri_raycast;
@@ -220,6 +224,20 @@ bool raycastCube(const glm::vec3& center, const glm::vec3& scale, Raycast& rayca
     return raycast.result.hit;
 }
 
+bool raycastAabb(const AABB& aabb, Raycast& raycast) {
+    auto min = aabb.center - aabb.size, max = aabb.center + aabb.size;
+
+    auto t1 = (min - raycast.origin) / raycast.direction;
+    auto t2 = (max - raycast.origin) / raycast.direction;
+
+    auto tmin = glm::max(glm::max(glm::min(t1.x, t2.x), glm::min(t1.y, t2.y)), glm::min(t1.z, t2.z));
+    auto tmax = glm::min(glm::min(glm::max(t1.x, t2.x), glm::max(t1.y, t2.y)), glm::max(t1.z, t2.z));
+
+    raycast.result.hit = tmax >= 0 && tmax >= tmin;
+    raycast.result.t = tmin;
+    return raycast.result.hit;
+}
+
 float distanceBetweenLines(const glm::vec3& l1_origin, const glm::vec3& l1_direction, const glm::vec3& l2_origin, const glm::vec3& l2_direction, float& l1_t, float& l2_t)
 {
     const glm::vec3 dp = l2_origin - l1_origin;
@@ -269,4 +287,28 @@ Raycast mouseToRaycast(glm::ivec2 mouse_position, glm::ivec2 screen_size, glm::m
     ray_end_world /= ray_end_world.w;
 
     return Raycast(glm::vec3(ray_start_world), glm::normalize(glm::vec3(ray_end_world - ray_start_world)));
+}
+
+AABB&& transformAABB(AABB& aabb, glm::mat4 transform) {
+    // Translate center
+    const glm::vec3 t_center{ transform * glm::vec4(aabb.center, 1.f) };
+
+    // Scaled orientation
+    const auto& right = glm::vec3(transform[0]) * aabb.size.x;
+    const auto& up = glm::vec3(transform[1]) * aabb.size.y;
+    const auto& forward = glm::vec3(transform[2]) * aabb.size.z;
+
+    const float t_x = std::abs(glm::dot(glm::vec3{ 1.f, 0.f, 0.f }, right)) +
+        std::abs(glm::dot(glm::vec3{ 1.f, 0.f, 0.f }, up)) +
+        std::abs(glm::dot(glm::vec3{ 1.f, 0.f, 0.f }, forward));
+
+    const float t_y = std::abs(glm::dot(glm::vec3{ 0.f, 1.f, 0.f }, right)) +
+        std::abs(glm::dot(glm::vec3{ 0.f, 1.f, 0.f }, up)) +
+        std::abs(glm::dot(glm::vec3{ 0.f, 1.f, 0.f }, forward));
+
+    const float t_z = std::abs(glm::dot(glm::vec3{ 0.f, 0.f, 1.f }, right)) +
+        std::abs(glm::dot(glm::vec3{ 0.f, 0.f, 1.f }, up)) +
+        std::abs(glm::dot(glm::vec3{ 0.f, 0.f, 1.f }, forward));
+
+    return AABB{ t_center, glm::vec3(t_x, t_y, t_z) };
 }

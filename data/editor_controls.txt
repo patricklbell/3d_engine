@@ -7,8 +7,10 @@ focus_camera 0 f
 switch_editor_mode 0 b
 toggle_collider_visibility 0 b left_shift
 toggle_debug_visibility 0 d left_shift
+toggle_aabbs_visibility 0 a left_shift
 copy 0 c left_control
 paste 0 v left_control
+toggle_environment_editor 0 e
 toggle_playing 0 p
 toggle_level_camera_visibility 0 f left_shift
 fly_left 1 a

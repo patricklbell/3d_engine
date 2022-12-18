@@ -210,6 +210,7 @@ Mesh::~Mesh(){
     delete[] submesh_names;
 
     free(material_indices);
+    free(aabbs);
 
     free(indices);
     free(vertices);
@@ -529,6 +530,28 @@ bool parameterizeAndPackMesh(Mesh* mesh) {
     return true;
 }
 
+void calculateAABB(AABB& aabb, glm::vec3* vertices, uint64_t num_vertices, unsigned int* indices, uint64_t num_indices) {
+    glm::vec3 min, max;
+    for (uint64_t i = 0; i < num_indices; ++i) {
+        assert(indices[i] >= 0 && indices[i] < num_vertices);
+        const auto& v = vertices[indices[i]];
+        if (i == 0) {
+            min = v;
+            max = v;
+        }
+        else {
+            min.x = v.x < min.x ? v.x : min.x;
+            min.y = v.y < min.y ? v.y : min.y;
+            min.z = v.z < min.z ? v.z : min.z;
+        
+            max.x = v.x > max.x ? v.x : max.x;
+            max.y = v.y > max.y ? v.y : max.y;
+            max.z = v.z > max.z ? v.z : max.z;
+        }
+    }
+    aabb = AABB::FromMinMax(min, max);
+}
+
 bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, const aiScene* scene, 
                                        const std::vector<aiMesh*> &ai_meshes, const std::vector<aiMatrix4x4>& ai_meshes_global_transforms) {
 
@@ -680,6 +703,7 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
     mesh->draw_start = reinterpret_cast<decltype(mesh->draw_start)>(malloc(sizeof(*mesh->draw_start) * mesh->num_submeshes));
     mesh->draw_count = reinterpret_cast<decltype(mesh->draw_count)>(malloc(sizeof(*mesh->draw_count) * mesh->num_submeshes));
     mesh->transforms = reinterpret_cast<decltype(mesh->transforms)>(malloc(sizeof(*mesh->transforms) * mesh->num_submeshes));
+    mesh->aabbs      = reinterpret_cast<decltype(mesh->aabbs     )>(malloc(sizeof(*mesh->aabbs     ) * (mesh->num_submeshes+1)));
     mesh->submesh_names = new std::string[mesh->num_submeshes];
 
     mesh->material_indices = reinterpret_cast<decltype(mesh->material_indices)>(malloc(sizeof(*mesh->material_indices) * mesh->num_submeshes));
@@ -811,6 +835,11 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
         vertices_offset += ai_mesh->mNumVertices;
         indices_offset += ai_mesh->mNumFaces*3;
     }
+
+    for (uint64_t i = 0; i < mesh->num_submeshes; i++) {
+        calculateAABB(mesh->aabbs[i], mesh->vertices, mesh->num_vertices, &mesh->indices[mesh->draw_start[i]], mesh->draw_count[i]);
+    }
+    calculateAABB(mesh->aabbs[mesh->num_submeshes], mesh->vertices, mesh->num_vertices, mesh->indices, mesh->num_indices);
 
     if (mesh->uvs == NULL)
         return parameterizeAndPackMesh(mesh);

@@ -153,7 +153,7 @@ static void writeBoneMatricesUbo(const std::array<glm::mat4, MAX_BONES>& final_b
 static glm::mat4x4 getShadowMatrixFromFrustrum(const Camera& camera, double near_plane, double far_plane, glm::vec3 light_direction) {
     // Make shadow's view target the center of the camera frustrum by averaging frustrum corners
     // maybe you can just calculate from view direction and near and far
-    const auto camera_projection_alt = glm::perspective((double)camera.frustrum.fov, (double)camera.frustrum.aspect_ratio, near_plane, far_plane);
+    const auto camera_projection_alt = glm::perspective((double)camera.frustrum.fov_y, (double)camera.frustrum.aspect_ratio, near_plane, far_plane);
     const auto inv_VP = glm::inverse(camera_projection_alt * glm::dmat4(camera.view));
 
     std::vector<glm::vec4> frustrum;
@@ -352,17 +352,13 @@ void initWaterColliderFbo() {
 }
 
 void bindDrawWaterColliderMap(const RenderQueue& q, WaterEntity* water) {
-
     gl_state.bind_framebuffer(water_collider_fbos[0]);
     gl_state.bind_viewport(WATER_COLLIDER_SIZE, WATER_COLLIDER_SIZE);
-
 
     gl_state.add_flags(GlFlags::DEPTH_WRITE);
     glClearColor(0, 0, 0, 1);
     glClear(GL_COLOR_BUFFER_BIT);
 
-
-    // Render entities only when they intersect water plane
     gl_state.bind_program(Shaders::plane_projection.program());
 
     auto water_grid_scale = water->scale;
@@ -586,25 +582,27 @@ static void writeSharedUbo(const Camera& camera, const Environment& env) {
 
 void initVolumetrics() {
     glGenTextures(1, &accumulated_volumetric_volume);
-    gl_state.bind_texture(0, accumulated_volumetric_volume, GL_TEXTURE_3D);
-    glTexImage3D(GL_TEXTURE_3D, 0, GL_RGBA16F, VOLUMETRIC_RESOLUTION.x, VOLUMETRIC_RESOLUTION.y, VOLUMETRIC_RESOLUTION.z, 0, GL_RGBA, GL_HALF_FLOAT, NULL);
+    gl_state.bind_texture_any(accumulated_volumetric_volume, GL_TEXTURE_3D);
     glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     // We don't want to volumetrics which we haven't calculated
     glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+    glTexStorage3D(GL_TEXTURE_3D, 1, GL_RGBA16F, VOLUMETRIC_RESOLUTION.x, VOLUMETRIC_RESOLUTION.y, VOLUMETRIC_RESOLUTION.z);
+    glTexSubImage3D(GL_TEXTURE_3D, 0, 0, 0, 0, VOLUMETRIC_RESOLUTION.x, VOLUMETRIC_RESOLUTION.y, VOLUMETRIC_RESOLUTION.z, GL_RGBA16F, GL_HALF_FLOAT, NULL);
 
     glGenTextures(NUM_TEMPORAL_VOLUMES, temporal_integration_volume);
     for (int i = 0; i < NUM_TEMPORAL_VOLUMES; ++i) {
-        gl_state.bind_texture(0, temporal_integration_volume[i], GL_TEXTURE_3D);
-        glTexImage3D(GL_TEXTURE_3D, 0, GL_RGBA16F, VOLUMETRIC_RESOLUTION.x, VOLUMETRIC_RESOLUTION.y, VOLUMETRIC_RESOLUTION.z, 0, GL_RGBA, GL_HALF_FLOAT, NULL);
+        gl_state.bind_texture_any(temporal_integration_volume[i], GL_TEXTURE_3D);
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         // We don't want to volumetrics which we haven't calculated
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+        glTexStorage3D(GL_TEXTURE_3D, 1, GL_RGBA16F, VOLUMETRIC_RESOLUTION.x, VOLUMETRIC_RESOLUTION.y, VOLUMETRIC_RESOLUTION.z);
+        glTexSubImage3D(GL_TEXTURE_3D, 0, 0, 0, 0, VOLUMETRIC_RESOLUTION.x, VOLUMETRIC_RESOLUTION.y, VOLUMETRIC_RESOLUTION.z, GL_RGBA16F, GL_HALF_FLOAT, NULL);
     }
 }
 
@@ -643,7 +641,7 @@ void computeVolumetrics(const Environment& env, uint64_t frame_i, const Camera& 
     }
 
     glBindImageTexture(0, temporal_integration_volume[frame_i % NUM_TEMPORAL_VOLUMES], 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA16F);
-    glm::ivec3 compute_size = glm::ceil(glm::fvec3(VOLUMETRIC_RESOLUTION) / glm::fvec3(VOLUMETRIC_LOCAL_SIZE));
+    glm::uvec3 compute_size = glm::ceil(glm::fvec3(VOLUMETRIC_RESOLUTION) / glm::fvec3(VOLUMETRIC_LOCAL_SIZE));
     glDispatchCompute(compute_size.x, compute_size.y, compute_size.z);
 
     glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT); // @todo do other rendering steps while waiting
@@ -833,6 +831,7 @@ void initGraphics(AssetManager& asset_manager) {
     initVolumetrics();
     initShadowFbo();
     initSharedUbo();
+    initBloomFbo();
     initBoneMatricesUbo();
     initWaterColliderFbo();
 }
@@ -915,8 +914,6 @@ void blurBloomFbo(double dt) {
     //
     // Enable additive blending
     gl_state.add_flags(GlFlags::BLEND);
-    glBlendFunc(GL_ONE, GL_ONE);
-    glBlendEquation(GL_FUNC_ADD);
 
     gl_state.bind_program(Shaders::blur_upsample.program());
     gl_state.bind_program(Shaders::blur_upsample.program());
@@ -1001,6 +998,7 @@ void createRenderQueue(RenderQueue& q, const EntityManager& entity_manager, cons
             sri.submesh_i = i;
             sri.model = createModelMatrix(mesh.transforms[i], m_e->position, m_e->rotation, m_e->scale);
             sri.draw_shadow = m_e->casts_shadow;
+            sri.aabb = &mesh.aabbs[i];
 
             const auto& lu = m_e->overidden_materials.find(i); // @note using the submesh index is intentional as it allows any part of a meshes material to be overriden
             if (lu == m_e->overidden_materials.end()) {
@@ -1028,8 +1026,32 @@ void createRenderQueue(RenderQueue& q, const EntityManager& entity_manager, cons
 
 }
 
+void frustrumCullRenderQueue(RenderQueue& q, const Camera& camera) {
+    auto f_planes = FrustrumCollider(camera);
+
+    for (int i = 0; i < 2; i++) {
+        auto& items = (i == 0) ? q.opaque_items : q.transparent_items;
+
+        for (auto& ri : items) {
+            auto t_aabb = transformAABB(*ri.aabb, ri.model);
+
+            ri.culled = !f_planes.isAabbInFrustrum(t_aabb);
+        }
+    }
+}
+
+void uncullRenderQueue(RenderQueue& q) {
+    for (int i = 0; i < 2; i++) {
+        auto& items = (i == 0) ? q.opaque_items : q.transparent_items;
+
+        for (auto& ri : items) {
+            ri.culled = false;
+        }
+    }
+}
+
 static void drawRenderItem(const RenderItem& ri, const glm::mat4x4* vp, const bool shadow=false) {
-    if (shadow && !ri.draw_shadow)
+    if ((shadow && !ri.draw_shadow) || (!shadow && ri.culled))
         return;
 
     if (shadow) { // Get rid of culling if we are drawing a shadow, its sometimes suggested to use front face culling but this doesn't seem to work well
@@ -1198,12 +1220,6 @@ void drawRenderQueueShadows(const RenderQueue& q) {
 void bindBackbuffer(){
     gl_state.bind_framebuffer(0);
 }
-
-enum class Test : uint64_t {
-    NONE = 0,
-    CULL = 1 << 0,
-    
-};
 
 void drawPost(const Camera &camera){
     // Draw screen space quad so clearing is unnecessary

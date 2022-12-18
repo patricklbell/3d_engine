@@ -32,6 +32,15 @@ struct Raycast {
     } result;
 };
 
+struct AABB {
+    glm::vec3 center;
+    glm::vec3 size;
+    static AABB&& FromMinMax(glm::vec3 min, glm::vec3 max) {
+        return AABB{ (max + min) * 0.5f, (max - min) * 0.5f };
+    }
+};
+AABB&& transformAABB(AABB& aabb, glm::mat4 transform);
+
 Raycast mouseToRaycast(glm::ivec2 mouse_position, glm::ivec2 screen_size, glm::mat4 inv_vp);
 bool raycastTriangleCull(const glm::vec3 vertices[3], Raycast& raycast);
 bool raycastTriangle(const glm::vec3 vertices[3], Raycast& raycast);
@@ -40,9 +49,9 @@ bool raycastTrianglesTest(glm::vec3* vertices, unsigned int* indices, const int 
 bool raycastPlane(const glm::vec3& center, const glm::vec3& normal, Raycast& raycast);
 bool raycastBoundedPlane(const glm::vec3& center, const glm::vec3& normal, const glm::vec3& bounds, Raycast& raycast);
 bool raycastCube(const glm::vec3& center, const glm::vec3& scale, Raycast& raycast);
+bool raycastAabb(const AABB& aabb, Raycast& raycast);
 
 float distanceBetweenLines(const glm::vec3& l1_origin, const glm::vec3& l1_direction, const glm::vec3& l2_origin, const glm::vec3& l2_direction, float& l1_t, float& l2_t);
-
 
 // ------------ constexpr function implementations ------------ 
 constexpr uint64_t log2(uint64_t n) {

@@ -448,7 +448,7 @@ struct X3DNodeElementLight : X3DNodeElementBase {
     /// is: "1 / max(attenuation[0] + attenuation[1] * r + attenuation[2] * r2, 1)", where r is the distance from the light to the surface being illuminated.
     aiVector3D Attenuation;
     aiVector3D Location; ///< Specifies a translation offset of the centre point of the light source from the light's local coordinate system origin.
-    float Radius; ///< Specifies the radial extent of the solid angle and the maximum distance from location that may be illuminated by the light source.
+    float Radius; ///< Specifies the radial size of the solid angle and the maximum distance from location that may be illuminated by the light source.
     float BeamWidth; ///< Specifies an inner solid angle in which the light source emits light at uniform full intensity.
     float CutOffAngle; ///< The light source's emission intensity drops off from the inner solid angle (beamWidth) to the outer solid angle (cutOffAngle).
 

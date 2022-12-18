@@ -2,10 +2,11 @@
 #define CAMERA_CORE_HPP
 
 #include <glm/glm.hpp>
+#include <utilities/math.hpp>
 
 struct Frustrum {
     float near_plane = 0.1f, far_plane = 100.0f;
-    float fov = glm::radians(45.0f);
+    float fov_y = glm::radians(45.0f);
     float aspect_ratio = 1.0; // width / height
 };
 
@@ -30,6 +31,7 @@ struct Camera {
     glm::vec3 target;
 
 
+    glm::vec3 world_up;
     glm::vec3 forward;
     glm::vec3 right;
 
@@ -40,6 +42,16 @@ struct Camera {
     glm::mat4 projection;
     glm::mat4 vp;
     glm::mat4 inv_vp;
+};
+
+struct FrustrumCollider {
+    /*glm::vec3 n_near, n_far, n_right, n_left, n_top, n_bottom;
+    glm::vec3 p_ntr, p_nbr, p_ntl, p_nbl, p_ftr, p_fbr, p_ftl, p_fbl;*/
+    glm::vec3 points[8];
+    glm::vec4 planes[6];
+
+    FrustrumCollider(const struct Camera& cam);
+    bool isAabbInFrustrum(AABB& aabb);
 };
 
 #endif // CAMERA_CORE_HPP

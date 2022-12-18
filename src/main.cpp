@@ -109,7 +109,8 @@ int main() {
             last_filesystem_hotswap_check = current_time;
             if (!Shaders::live_update()) {
                 std::cerr << "Failed to load shaders, you may have the wrong working directory."
-                             " Updating Opengl or your GPU drivers may also fix the problem.\n";
+                             " Updating Opengl or your GPU drivers may also fix the problem.\n"
+                             " P.S you're a faggot!\n";
                 cleanup();
                 return true;
             }
@@ -163,6 +164,7 @@ int main() {
 
         bindHdr();
         clearFramebuffer();
+        frustrumCullRenderQueue(render_queue, camera);
         drawRenderQueue(render_queue, loaded_level.environment, camera);
 
         if (graphics::do_bloom)

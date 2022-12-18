@@ -43,6 +43,8 @@ void clearFramebuffer();
 void bindHdr();
 
 void createRenderQueue(RenderQueue& q, const EntityManager& entity_manager, const bool lightmapping=false);
+void frustrumCullRenderQueue(RenderQueue& q, const Camera& camera);
+void uncullRenderQueue(RenderQueue& q);
 void drawRenderQueue(const RenderQueue& q, Environment& env, const Camera& camera);
 void drawRenderQueueShadows(const RenderQueue& q);
 void drawSkybox(const Texture* skybox, const Camera& camera);

@@ -192,20 +192,29 @@ bool runLightmapper(Level& level, AssetManager &asset_manager) {
 			while (lmBegin(ctx, viewport, &camera.view[0][0], &camera.projection[0][0])) {
 				// Place camera at sample, looking in direction of normal,
 				// set vp from the view and projection
-				camera.set_position(glm::vec3(
+				camera.position = glm::vec3(
 					ctx->meshPosition.sample.position.x,
 					ctx->meshPosition.sample.position.y,
 					ctx->meshPosition.sample.position.z
-				));
-				camera.set_target(camera.position + glm::vec3(
-					ctx->meshPosition.triangle.n->x,
-					ctx->meshPosition.triangle.n->y,
-					ctx->meshPosition.triangle.n->z
-				));
+				);
+				camera.forward = glm::vec3(
+					ctx->meshPosition.sample.direction.x,
+					ctx->meshPosition.sample.direction.y,
+					ctx->meshPosition.sample.direction.z
+				);
+				camera.up = glm::vec3(
+					ctx->meshPosition.sample.up.x,
+					ctx->meshPosition.sample.up.y,
+					ctx->meshPosition.sample.up.z
+				);
+				camera.right = glm::cross(camera.forward, camera.up);
 				camera.vp = camera.projection * camera.view;
 
 				gl_state.bind_viewport(viewport[0], viewport[1], viewport[2], viewport[3]);
+
+				frustrumCullRenderQueue(q, camera);
 				drawRenderQueue(q, level.environment, camera);
+				uncullRenderQueue(q);
 
 				// Used for debugging the hemicube's rendering
 				//using namespace std::this_thread; // sleep_for, sleep_until

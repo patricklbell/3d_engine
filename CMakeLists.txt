@@ -22,6 +22,7 @@ if( CMAKE_BINARY_DIR MATCHES " " )
 	message( "Your Build Directory contains spaces. If you experience problems when compiling, this can be the cause." )
 endif()
 
+add_compile_definitions(GLM_FORCE_SSE2)
 
 include_directories(
 	external/glfw-3.3.7/include/

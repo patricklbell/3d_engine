@@ -37,7 +37,11 @@ Raycast raycastEntities(Raycast& raycast, EntityManager& entity_manager, bool co
             const auto& mesh = m_e->mesh;
 
             for (int j = 0; j < mesh->num_submeshes; j++) {
-                auto model = createModelMatrix(mesh->transforms[j], m_e->position, m_e->rotation, 1.01f*m_e->scale);
+                auto model = createModelMatrix(mesh->transforms[j], m_e->position, m_e->rotation, m_e->scale);
+
+                auto t_aabb = transformAABB(mesh->aabbs[j], model);
+                if (!raycastAabb(t_aabb, tmp_raycast) || tmp_raycast.result.t > raycast.result.t)
+                    continue;
                 if (raycastTriangles(mesh->vertices, mesh->indices, mesh->num_indices, model, tmp_raycast)) {
                     if (tmp_raycast.result.hit && tmp_raycast.result.t < raycast.result.t) {
                         raycast = tmp_raycast;
@@ -73,7 +77,7 @@ Raycast raycastColliderWithMouse(const Camera& camera, EntityManager& entity_man
 }
 
 void handleEditorControls(EntityManager*& entity_manager, AssetManager& asset_manager, float dt) {
-    static float mouse_hold_threshold = 0.1; // The time past which a mouse press is considered a hold
+    static float mouse_hold_threshold = 0.2; // The time past which a mouse press is considered a hold
 
     ImGuiIO& io = ImGui::GetIO();
     Camera& camera = *Cameras::get_active_camera();
@@ -116,6 +120,16 @@ void handleEditorControls(EntityManager*& entity_manager, AssetManager& asset_ma
         if (Controls::editor.isAction("toggle_debug_visibility")) {
             Editor::draw_debug_wireframe = !Editor::draw_debug_wireframe;
             pushInfoMessage(Editor::draw_debug_wireframe ? "Debug wireframe on" : "Debug wireframe off");
+        }
+
+        if (Controls::editor.isAction("toggle_environment_editor")) {
+            Editor::show_environment_editor = !Editor::show_environment_editor;
+            pushInfoMessage(Editor::show_environment_editor ? "Environment editor on" : "Environment editor off");
+        }
+
+        if (Controls::editor.isAction("toggle_aabbs_visibility")) {
+            Editor::draw_aabbs = !Editor::draw_aabbs;
+            pushInfoMessage(Editor::draw_aabbs ? "AABBs shown" : "AABBs hidden");
         }
 
         if (Controls::editor.isAction("focus_camera") && Editor::selection.ids.size()) {
@@ -216,7 +230,8 @@ void handleEditorControls(EntityManager*& entity_manager, AssetManager& asset_ma
 
     bool camera_movement_active = !Editor::transform_active && !io.WantCaptureMouse && !io.WantCaptureKeyboard;
     if (camera.state == Camera::Type::TRACKBALL && camera_movement_active) {
-        if (Controls::editor.left_mouse.state == Controls::HELD && (glfwGetTime() - Controls::editor.left_mouse.last_press) > mouse_hold_threshold) {
+        if (Controls::editor.left_mouse.state == Controls::HELD) {
+            
             // Calculate the amount of rotation given the mouse movement.
             float delta_angle_x = (2 * PI / (float)window_width); // a movement from left to right = 2*PI = 360 deg
             float delta_angle_y = (PI / (float)window_height);  // a movement from top to bottom = PI = 180 deg
@@ -246,7 +261,7 @@ void handleEditorControls(EntityManager*& entity_manager, AssetManager& asset_ma
             // Update the camera view
             camera.set_position(camera_look + camera.target);
         }
-        else if (Controls::editor.right_mouse.state == Controls::HELD && (glfwGetTime() - Controls::editor.right_mouse.last_press) > mouse_hold_threshold) {
+        else if (Controls::editor.right_mouse.state == Controls::HELD) {
             auto inverse_vp = glm::inverse(camera.projection * camera.view);
 
             // Find Normalized Device coordinates mouse positions

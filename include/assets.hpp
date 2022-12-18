@@ -27,6 +27,7 @@
 #include <soloud_wavstream.h>
 
 #include <texture.hpp>
+#include <utilities/math.hpp>
 
 #include "scoped_enum_flag.hpp"
 
@@ -96,13 +97,12 @@ struct Mesh {
     GLuint          vao             = GL_FALSE;
 
     // Culling information @todo
-    struct AABB {
-        glm::vec4 data; // min x, min y, max x, max y
-    };
-    AABB* aabbs = nullptr;
+    AABB* aabbs = nullptr; // Is num_submeshes + 1 long, the last AABB is for the whole mesh
 
     ~Mesh();
 };
+
+void calculateAABB(AABB& aabb, glm::vec3* vertices, uint64_t num_vertices, unsigned int* indices, uint64_t num_indices);
 
 #define MAX_BONE_WEIGHTS 4
 // @todo in loading you could limit loaded bone rather than in tick step

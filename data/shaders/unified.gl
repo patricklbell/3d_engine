@@ -241,7 +241,7 @@ void main() {
 
 #if EMISSIVE
     vec3 emissive = emissive_mult * texture(emissive_map, texcoord).rgb;
-    hdr_color += emissive;
+    hdr_color += 100.0*emissive;
 #endif
 
     out_color = vec4(hdr_color, 1.0);

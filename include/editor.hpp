@@ -52,7 +52,7 @@ void drawGameGui(EntityManager& entity_manager, AssetManager& asset_manager);
 bool editorTranslationGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, Camera &camera, const glm::vec3 &snap, bool do_snap);
 bool editorRotationGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, const Camera &camera, float rot_snap, bool do_snap);
 bool editorScalingGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, Camera &camera, const glm::vec3 &snap, bool do_snap);
-TransformType editTransform(Camera &camera, glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, glm::vec3 &snap, TransformType type);
+TransformType editTransform(Camera& camera, glm::vec3& pos, glm::quat& rot, glm::mat3& scl, TransformType type);
 void drawWaterDebug(WaterEntity* w, const Camera &camera, bool flash);
 void drawMeshCube(const glm::vec3 &pos, const glm::quat &rot, const glm::mat3x3 &scl, const Camera &camera);
 void drawFrustrum(Camera& drawn_camera, const Camera& camera);
@@ -110,10 +110,12 @@ namespace Editor {
 
     extern bool do_terminal;
     extern bool draw_debug_wireframe;
+    extern bool draw_aabbs;
     extern bool draw_colliders;
     extern bool transform_active;
     extern bool use_level_camera, draw_level_camera;
     extern bool debug_animations;
+    extern bool show_environment_editor;
 
     extern ReferenceSelection selection;
     extern CopySelection copy_selection;
