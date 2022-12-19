@@ -118,6 +118,32 @@ bool GlState::remove_flags(GlFlags remove) {
     return !!disable;
 }
 
+bool GlState::set_blend_mode(GlBlendMode mode) {
+    if (mode != blend_mode) {
+        switch (mode)
+        {
+        case GlBlendMode::OVERWRITE:
+            glBlendFunc(GL_ONE, GL_ZERO);
+            break;
+        case GlBlendMode::ALPHA:
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            break;
+        case GlBlendMode::REVERSE_ALPHA:
+            glBlendFunc(GL_ONE_MINUS_SRC_ALPHA, GL_SRC_ALPHA);
+            break;
+        case GlBlendMode::ADDITIVE:
+            glBlendFunc(GL_ONE, GL_ONE);
+            break;
+        case GlBlendMode::MULTIPLICATIVE:
+            glBlendFunc(GL_DST_COLOR, GL_ZERO);
+            break;
+        }
+        blend_mode = mode;
+        return true;
+    }
+    return false;
+}
+
 bool GlState::bind_viewport(int x, int y, int w, int h) {
     if (viewport.x != x || viewport.y != y || viewport.z != w || viewport.w != h) {
         glViewport(x, y, w, h);

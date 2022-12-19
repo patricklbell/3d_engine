@@ -52,6 +52,7 @@ bool saveLevel(Level& level, const std::string& path) {
     return true;
 }
 
+// @note changes gl state, namely the bound framebuffer
 bool loadLevel(Level& level, AssetManager& assets, const std::string& path) {
     std::cout << "----------- Loading Level " << path << "----------\n";
 
@@ -74,6 +75,7 @@ bool loadLevel(Level& level, AssetManager& assets, const std::string& path) {
             createRenderQueue(q, entities);
             bindDrawWaterColliderMap(q, water);
             distanceTransformWaterFbo(water);
+            bindBackbuffer();
         }
         else {
             entities.water = NULLID;

@@ -352,10 +352,10 @@ void initWaterColliderFbo() {
 }
 
 void bindDrawWaterColliderMap(const RenderQueue& q, WaterEntity* water) {
-    gl_state.bind_framebuffer(water_collider_fbos[0]);
     gl_state.bind_viewport(WATER_COLLIDER_SIZE, WATER_COLLIDER_SIZE);
-
     gl_state.set_flags(GlFlags::DEPTH_WRITE);
+
+    gl_state.bind_framebuffer(water_collider_fbos[0]);
     glClear(GL_COLOR_BUFFER_BIT);
 
     gl_state.bind_program(Shaders::plane_projection.program());
@@ -372,8 +372,6 @@ void bindDrawWaterColliderMap(const RenderQueue& q, WaterEntity* water) {
         gl_state.bind_vao(mesh.vao);
         glDrawElements(mesh.draw_mode, mesh.draw_count[ri.submesh_i], mesh.draw_type, (GLvoid*)(sizeof(*mesh.indices) * mesh.draw_start[ri.submesh_i]));
     }
-
-    gl_state.bind_viewport(window_width, window_height);
 }
 
 void distanceTransformWaterFbo(WaterEntity* water) {
@@ -415,10 +413,6 @@ void distanceTransformWaterFbo(WaterEntity* water) {
 
         drawQuad();
     }
-    
-    // Reset viewport
-    gl_state.bind_framebuffer(GL_FALSE);
-    gl_state.bind_viewport(window_width, window_height);
 }
 
 void clearBloomFbo() {
@@ -864,7 +858,7 @@ double calculateExposureFromLuma(double L) {
 
 void blurBloomFbo(double dt) {
     gl_state.bind_framebuffer(bloom_fbo);
-    gl_state.set_flags(GlFlags::NONE); // Some unecessary calls
+    gl_state.set_flags(GlFlags::NONE);
 
     // 
     // Progressively downsample screen texture
@@ -914,8 +908,8 @@ void blurBloomFbo(double dt) {
     //
     // Enable additive blending
     gl_state.add_flags(GlFlags::BLEND);
+    gl_state.set_blend_mode(GlBlendMode::ADDITIVE);
 
-    gl_state.bind_program(Shaders::blur_upsample.program());
     gl_state.bind_program(Shaders::blur_upsample.program());
     for (int i = bloom_mip_infos.size() - 1; i > 0; i--) {
         const auto& mip = bloom_mip_infos[i];
@@ -929,12 +923,17 @@ void blurBloomFbo(double dt) {
         drawQuad();
     }
 
-    gl_state.bind_viewport(window_width, window_height);
-    gl_state.remove_flags(GlFlags::BLEND); // @todo removing kind of defeats the point of gl_state but blending will break everything so its best to disable immediately
+    gl_state.set_blend_mode(GlBlendMode::OVERWRITE);
 }
 
 void bindHdr() {
     gl_state.bind_framebuffer(hdr_fbo);
+    gl_state.bind_viewport(window_width, window_height);
+}
+
+void bindBackbuffer() {
+    gl_state.bind_framebuffer(GL_FALSE);
+    gl_state.bind_viewport(window_width, window_height);
 }
 
 void clearFramebuffer() {
@@ -943,8 +942,8 @@ void clearFramebuffer() {
 }
 
 static void resolveMultisampleHdrBuffer() {
-    glBindFramebuffer(GL_READ_FRAMEBUFFER, hdr_fbo);
-    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, hdr_fbo_resolve_multisample);
+    gl_state.bind_framebuffer(hdr_fbo, GlBufferFlags::READ);
+    gl_state.bind_framebuffer(hdr_fbo_resolve_multisample, GlBufferFlags::WRITE);
     glBlitFramebuffer(0, 0, window_width, window_height, 0, 0, window_width, window_height, GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT, GL_NEAREST);
 }
 
@@ -1157,23 +1156,16 @@ void drawRenderQueue(const RenderQueue& q, Environment& env, const Camera& camer
     
     // @todo integrate with transparent render queue
     if (q.water) {
-        gl_state.set_flags(GlFlags::NONE);
+        gl_state.set_flags(GlFlags::CULL | GlFlags::DEPTH_READ | GlFlags::BLEND);
+        gl_state.set_blend_mode(GlBlendMode::ALPHA);
 
-        Shaders::water.set_macro("SHADOWS", do_shadows);
-        Shaders::water.set_macro("VOLUMETRICS", do_volumetrics);
-
+        Shaders::water.set_macro("SHADOWS", do_shadows, false);
+        Shaders::water.set_macro("VOLUMETRICS", do_volumetrics, false);
+        Shaders::water.activate_macros();
         gl_state.bind_program(Shaders::water.program());
-        if (do_msaa) {
-            resolveMultisampleHdrBuffer();
-            bindHdr();
-            gl_state.bind_texture(TextureSlot::SCREEN_COLOR, hdr_buffer_resolve_multisample);
-        } else {
-            gl_state.bind_texture(TextureSlot::SCREEN_COLOR, hdr_buffer);
-        }
-
+        
         // Copy depth buffer
-        if(!do_msaa) // resolving copies depth already
-            glCopyTextureSubImage2D(hdr_depth_copy, 0, 0, 0, 0, 0, window_width, window_height);
+        glCopyTextureSubImage2D(hdr_depth_copy, 0, 0, 0, 0, 0, window_width, window_height);
         gl_state.bind_texture(TextureSlot::SCREEN_DEPTH, hdr_depth_copy);
 
         gl_state.bind_texture(TextureSlot::SIMPLEX_GRADIENT, simplex_gradient->id);
@@ -1193,6 +1185,8 @@ void drawRenderQueue(const RenderQueue& q, Environment& env, const Camera& camer
             glDrawElements(water_grid.draw_mode, water_grid.draw_count[0], water_grid.draw_type, 
                             (GLvoid*)(sizeof(*water_grid.indices)*water_grid.draw_start[0]));
         }
+
+        gl_state.set_blend_mode(GlBlendMode::OVERWRITE);
     }
     
     if (do_msaa) {
@@ -1213,12 +1207,6 @@ void drawRenderQueueShadows(const RenderQueue& q) {
     for (const auto& ri : q.opaque_items) {
         drawRenderItem(ri, nullptr, true);
     }
-
-    gl_state.bind_viewport(window_width, window_height);
-}
-
-void bindBackbuffer(){
-    gl_state.bind_framebuffer(0);
 }
 
 void drawPost(const Camera &camera){

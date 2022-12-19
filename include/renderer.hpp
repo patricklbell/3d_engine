@@ -29,6 +29,16 @@ enum class GlBufferFlags : uint64_t {
 };
 SCOPED_ENUM_FLAG(GlBufferFlags);
 
+enum class GlBlendMode : uint64_t {
+    NONE = 0,
+    OVERWRITE,
+    ALPHA,
+    REVERSE_ALPHA,
+    ADDITIVE,
+    MULTIPLICATIVE,
+
+};
+
 struct GlState {
     bool init();
 
@@ -46,6 +56,7 @@ struct GlState {
     bool set_flags(GlFlags desired);
     bool add_flags(GlFlags add);
     bool remove_flags(GlFlags remove);
+    bool set_blend_mode(GlBlendMode mode);
 
     bool check_errors(std::string_view file, const int line, std::string_view function);
 
@@ -55,6 +66,7 @@ struct GlState {
     GLuint read_framebuffer = GL_FALSE, write_framebuffer = GL_FALSE;
     GLuint renderbuffer = GL_FALSE;
     GlFlags flags = GlFlags::ALL;
+    GlBlendMode blend_mode = GlBlendMode::NONE;
     GLuint vao = GL_FALSE;
     GLuint program = GL_FALSE;
     glm::ivec4 viewport = glm::ivec4(0);

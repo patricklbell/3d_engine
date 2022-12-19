@@ -1,22 +1,70 @@
 #begin VERTEX
-layout (location = 0) in vec3 in_position;
+#macro WATER            0
+#macro VEGETATION       0
+#macro ANIMATED_BONES   0
+
+layout (location = 0) in vec3 in_vertex;
 layout (location = 1) in vec3 in_normal;
+
+#if ANIMATED_BONES
+layout (location = 5) in ivec4 in_bone_ids;
+layout (location = 6) in vec4  in_weights;
+#load lib/bone_ubo.gl
+#endif
+
+#if VEGETATION
+// R - edge stiffness, G - Phase offset, B - overall stiffnes, A - Precomputed ambient occlusion
+layout (location = 7) in vec4 in_color;
+#endif
 
 uniform mat4 mvp;
 uniform mat4 model;
 
-out vec3 normal;
+out vec3 vs_normal;
+#if WATER
+#load lib/water.gl
+uniform float time;
+out vec3 vs_vertex;
+#endif
 
 void main()
 {
-    gl_Position = mvp * vec4(in_position, 1.0);
-    normal = (model*vec4(in_normal, 1.0)).xyz;
+#if ANIMATED_BONES
+    mat4 bone_transform = mat4(0.0);
+    for(int i = 0 ; i < MAX_BONE_WEIGHTS; i++) {
+        if(in_bone_ids[i] == -1) 
+            continue;
+
+        bone_transform += bone_matrices[in_bone_ids[i]] * in_weights[i];
+    }
+
+    vec4 vertex = bone_transform * vec4(in_vertex, 1.0);
+#else
+    vec4 vertex = vec4(in_vertex, 1.0);
+#endif
+
+#if VEGETATION
+    vertex.xyz = applyWindToVegetation(vertex.xyz, in_normal, in_color.r, in_color.g, in_color.b, wind_direction, wind_strength, time);
+    vs_vertex = in_vertex.xyz;
+#endif
+
+#if WATER
+    vertex.xyz = gwaves(vertex.xyz, time);
+#endif
+
+    gl_Position = mvp * vertex;
+    vs_normal = (model*vec4(in_normal, 1.0)).xyz;
 }
 #end
 
 #begin FRAGMENT
+#macro WATER 0
 
-in vec3 normal;
+in vec3 vs_normal;
+#if WATER
+in vec3 vs_vertex;
+#load lib/water.gl
+#endif
 
 out vec4 out_color;
 
@@ -36,6 +84,11 @@ void main()
         color1 = mix(color, color_flash_to, (1.0f+sin(2.0f*PI*time - PI * 0.5f)) / 2.0f);
     }
     if(shaded==1.0f){
+#if WATER
+        vec3 normal = dgwaves(vs_vertex, time);
+#else
+        vec3 normal = vs_normal;
+#endif
         out_color = vec4((0.3 + max(0.7*dot(normal, -sun_direction), 0))*color1.rgb, color1.a);
     } else {
         out_color = color1;

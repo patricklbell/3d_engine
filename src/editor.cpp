@@ -1140,7 +1140,7 @@ bool editorRotationGizmo(glm::vec3& pos, glm::quat& rot, glm::mat3& scl, const C
 
     // @todo add debug meshes to render queue for transparent objects and do proper sorting
     bindBackbuffer();
-    gl_state.set_flags(GlFlags::DEPTH_WRITE | GlFlags::BLEND | GlFlags::CULL);
+    gl_state.set_flags(GlFlags::DEPTH_WRITE);
     glClear(GL_DEPTH_BUFFER_BIT);
     
     const bool active = selected_ring != -1;
@@ -1238,7 +1238,7 @@ bool editorTranslationGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, Came
 
     // @todo add debug meshes to render queue for transparent objects and do proper sorting
     bindBackbuffer();
-    gl_state.set_flags(GlFlags::DEPTH_WRITE | GlFlags::BLEND | GlFlags::CULL);
+    gl_state.set_flags(GlFlags::DEPTH_WRITE);
     glClear(GL_DEPTH_BUFFER_BIT);
 
     for (int i = 0; i < 3; ++i) {
@@ -1306,7 +1306,7 @@ bool editorScalingGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, Camera &
 
     // @todo add debug meshes to render queue for transparent objects and do proper sorting
     bindBackbuffer();
-    gl_state.set_flags(GlFlags::DEPTH_WRITE | GlFlags::BLEND | GlFlags::CULL);
+    gl_state.set_flags(GlFlags::DEPTH_WRITE);
     glClear(GL_DEPTH_BUFFER_BIT);
 
     for (int i = 0; i < 3; ++i) {
@@ -1325,11 +1325,12 @@ void drawWaterDebug(WaterEntity* w, const Camera &camera, bool flash = false) {
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     glEnable(GL_LINE_SMOOTH);
 
+    Shaders::debug.set_macro("WATER", true);
     gl_state.bind_program(Shaders::debug.program());
     auto model = createModelMatrix(w->position, glm::quat(), w->scale);
     auto mvp = camera.vp * model;
     glUniformMatrix4fv(Shaders::debug.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
-    glUniformMatrix4fv(Shaders::debug.uniform("model"), 1, GL_FALSE, &model[0][0]);
+    //glUniformMatrix4fv(Shaders::debug.uniform("model"), 1, GL_FALSE, &model[0][0]);
     glUniform4f(Shaders::debug.uniform("color"), 1.0, 1.0, 1.0, 1.0);
     glUniform4f(Shaders::debug.uniform("color_flash_to"), 1.0, 0.0, 1.0, 1.0);
     glUniform1f(Shaders::debug.uniform("time"), glfwGetTime());
@@ -1342,6 +1343,7 @@ void drawWaterDebug(WaterEntity* w, const Camera &camera, bool flash = false) {
     }
    
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+    Shaders::debug.set_macro("WATER", false);
 }
 
 void drawMeshCube(const glm::vec3 &pos, const glm::quat &rot, const glm::mat3x3 &scl, const Camera &camera){
@@ -1458,7 +1460,7 @@ void drawEditor3DRing(const glm::vec3 &position, const glm::vec3 &direction, con
     gl_state.set_flags(GlFlags::DEPTH_READ | GlFlags::DEPTH_READ | GlFlags::CULL | GlFlags::BLEND);
 
     gl_state.add_flags(GlFlags::BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);  
+    gl_state.set_blend_mode(GlBlendMode::ALPHA);
 
     gl_state.bind_program(Shaders::debug.program());
 
@@ -1475,7 +1477,7 @@ void drawEditor3DRing(const glm::vec3 &position, const glm::vec3 &direction, con
     gl_state.bind_vao(ring_mesh.vao);
     glDrawElements(ring_mesh.draw_mode, ring_mesh.draw_count[0], ring_mesh.draw_type, (GLvoid*)(sizeof(GLubyte)*ring_mesh.draw_start[0]));
 
-    glBlendFunc(GL_ONE, GL_ZERO);
+    gl_state.set_blend_mode(GlBlendMode::OVERWRITE);
 }
 
 void drawEditor3DArrow(const glm::vec3 &position, const glm::vec3 &direction, const Camera &camera, const glm::vec4 &color, const glm::vec3 &scale, bool shaded, bool block){
@@ -1483,7 +1485,7 @@ void drawEditor3DArrow(const glm::vec3 &position, const glm::vec3 &direction, co
     gl_state.set_flags(GlFlags::DEPTH_READ | GlFlags::DEPTH_READ | GlFlags::CULL | GlFlags::BLEND);
 
     gl_state.add_flags(GlFlags::BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);  
+    gl_state.set_blend_mode(GlBlendMode::ALPHA);
 
     gl_state.bind_program(Shaders::debug.program());
 
@@ -1505,7 +1507,7 @@ void drawEditor3DArrow(const glm::vec3 &position, const glm::vec3 &direction, co
         glDrawElements(block_arrow_mesh.draw_mode, block_arrow_mesh.draw_count[0], block_arrow_mesh.draw_type, (GLvoid*)(sizeof(GLubyte)*block_arrow_mesh.draw_start[0]));
     }
 
-    glBlendFunc(GL_ONE, GL_ZERO);
+    gl_state.set_blend_mode(GlBlendMode::OVERWRITE);
 }
 
 void drawColliders(const EntityManager &entity_manager, const Camera &camera) {
@@ -1627,7 +1629,7 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
         ImGui::SetNextWindowSize(ImVec2(200, 300), ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowSizeConstraints(ImVec2(10, 10), ImVec2(window_width / 2.0, window_height));
 
-        ImGui::Begin("###environment", NULL);
+        ImGui::Begin("Environment", NULL, ImGuiWindowFlags_NoCollapse);
         auto& env = loaded_level.environment;
 
         ImGui::Text("Sun color");
@@ -2070,13 +2072,13 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
                 glm::quat _r = glm::quat();
                 transform_active = editTransform(camera, w_e->position, _r, w_e->scale, TransformType::POS_SCL) != TransformType::NONE;
                 ImGui::TextWrapped("Shallow Color:");
-                ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - pad);
+                ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
                 ImGui::ColorEdit4("##shallow_color", (float*)(&w_e->shallow_color));
                 ImGui::TextWrapped("Deep Color:");
-                ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - pad);
+                ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
                 ImGui::ColorEdit4("##deep_color", (float*)(&w_e->deep_color));
                 ImGui::TextWrapped("Foam Color:");
-                ImGui::SetNextItemWidth(ImGui::GetWindowWidth() - pad);
+                ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
                 ImGui::ColorEdit4("##foam_color", (float*)(&w_e->foam_color));
 
                 if (ImGui::CollapsingHeader("Noise Textures")) {
@@ -2105,13 +2107,14 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
                     }
                 }
                 void* tex_water_collider = (void*)(intptr_t)graphics::water_collider_buffers[graphics::water_collider_final_fbo];
-                ImGui::Image(tex_water_collider, ImVec2(img_w, img_w));
+                ImGui::Image(tex_water_collider, ImVec2(sidebar_w - 5*pad, sidebar_w - 5*pad));
 
                 if (ImGui::Button("Update", button_size)) {
                     RenderQueue q;
                     createRenderQueue(q, entity_manager);
                     bindDrawWaterColliderMap(q, w_e);
                     distanceTransformWaterFbo(w_e);
+                    bindBackbuffer();
                 }
             }
             if (entityInherits(selection.type, ANIMATED_MESH_ENTITY) && selection.ids.size() == 1) {

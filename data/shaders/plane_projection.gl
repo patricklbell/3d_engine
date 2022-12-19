@@ -25,7 +25,7 @@ vec2 getIntersectionWithPlane(vec4 p1, vec4 p2) {
     return i;
 }
 
-#define THICKNESS 0.001
+#define THICKNESS 0.002
 
 void makeLine(vec2 p1, vec2 p2) {
     vec2 d = normalize(p2 - p1);

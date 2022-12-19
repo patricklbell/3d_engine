@@ -15,31 +15,10 @@ uniform mat4 mvp;
 uniform mat4 shadow_mvp;
 
 #load lib/shared.gl
-
-#define WAVE_SPEED 0.1f
-
-vec3 gwaves(in vec3 v) {
-    const int wn = 3;
-    const vec2  d[wn] = {normalize(vec2(0.2, 0.4)), normalize(vec2(0.3, 0.2)), normalize(vec2(0.5, 0.1))};
-    const float a[wn] = {0.02, 0.01, 0.01};
-    const float q[wn] = {2.7, 1.3, 4.3};
-    const float p[wn] = {1.7, 5.8, 15.9};
-    const float w[wn] = {5.0, 20.1, 50.0};
-
-    vec3 res = v;
-    for(int i = 0; i < wn; i++){
-        float c1 = dot(w[i]*d[i], v.xz) + p[i]*time*WAVE_SPEED;
-        float c2 = q[i]*a[i];
-        res.x += c2*d[i].x * v.x*cos(c1);
-        res.z += c2*d[i].y * v.z*cos(c1);
-
-        res.y += a[i]*sin(c1);
-    }
-    return res;
-}
+#load lib/water.gl
 
 void main(){
-    vec3 vertex = gwaves(in_vertex);
+    vec3 vertex = gwaves(in_vertex, time);
     vec4 v = vec4(vertex, 1.0);
     gl_Position = mvp * v;
     vs_out.position = (model * v).xyz;
@@ -157,6 +136,10 @@ void main(){
 #macro VOLUMETRICS 1
 
 #load lib/constants.gl
+#load lib/shared.gl
+#load lib/water.gl
+#load lib/pbr.gl
+#load lib/utilities.gl
 
 #if VOLUMETRICS
 #load lib/volumetrics.gl
@@ -165,7 +148,7 @@ void main(){
 #define EDGE_SCALE      1.252
 
 #define SPEED           0.5
-#define BEER_LAW_FACTOR 5.0
+#define BEER_LAW_FACTOR 1.0
 
 in VS_FS
 {
@@ -178,21 +161,14 @@ in VS_FS
 layout (depth_any) out float gl_FragDepth;
 layout (location = 0) out vec4 out_color;
 
-layout (binding = 0) uniform sampler2D screen_map;
 layout (binding = 1) uniform sampler2D depth_map;
 layout (binding = 2) uniform sampler2D simplex_gradient;
 layout (binding = 3) uniform sampler2D simplex_value;
 layout (binding = 4) uniform sampler2D collider;
 
-#load lib/shared.gl
 uniform vec4 shallow_color;
 uniform vec4 deep_color;
 uniform vec4 foam_color;
-
-#define WAVE_SPEED 0.1f
-
-#load lib/pbr.gl
-#load lib/utilities.gl
 
 // Use pre generated noise from
 // https://www.shadertoy.com/view/XdXBRH
@@ -201,28 +177,6 @@ float noise(vec2 v){
 }
 vec3 normalnoise(vec2 v){
    return texture(simplex_gradient, v).rgb;
-}
-
-vec3 dgwaves(in vec3 v) {
-    const int wn = 3;
-    const vec2  d[wn] = {normalize(vec2(0.2, 0.4)), normalize(vec2(0.3, 0.2)), normalize(vec2(0.5, 0.1))};
-    const float a[wn] = {0.02, 0.01, 0.01};
-    const float q[wn] = {2.7, 1.3, 4.3};
-    const float p[wn] = {1.7, 5.8, 15.9};
-    const float w[wn] = {5.0, 20.1, 50.0};
-
-    vec3 n = vec3(0.0, 10.0, 0.0);
-    for(int i = 0; i < wn; i++){
-        float wa = w[i]*a[i];
-        float cs = w[i]*dot(d[i], v.xz) + p[i]*time*WAVE_SPEED;
-        float s = sin(cs);
-        float c = cos(cs);
-
-        n.x -= d[i].x*wa*c;
-        n.z -= d[i].y*wa*c;
-        n.y -= q[i]*wa*s;
-    }
-    return n;
 }
 
 
@@ -244,24 +198,17 @@ float calcDepthFade(float scene_depth, float screen_depth){
 }
 
 void main(){
-  float t = time * SPEED;
-  vec2 screencoord = gl_FragCoord.xy / window_size.xy;
+    float t = time * SPEED;
+    vec2 screencoord = gl_FragCoord.xy / window_size.xy;
 
-  float screen_d = texture(depth_map, screencoord).x;
-  float scene_d  = gl_FragCoord.z;
-
-  vec4 alpha = texture(screen_map, screencoord);
-  if (scene_d > screen_d) {
-    out_color = alpha;
-
-    gl_FragDepth = screen_d;
-  } else {
+    float screen_d = texture(depth_map, screencoord).x;
+    float scene_d  = gl_FragCoord.z;
+  
     float n = noise(vs_in.texcoord + t*0.02);
     vec3 n1 = normalnoise(4.0*vs_in.texcoord + 0.01*t + 0.1*n);
 
-    vec3 normal = dgwaves(vs_in.vertex);
+    vec3 normal = dgwaves(vs_in.vertex, time);
     normal += 1.0*n1;
-    
 
     float screen_z = depthToDist(screen_d);
     float scene_z = depthToDist(scene_d);
@@ -287,30 +234,21 @@ void main(){
 
     float rad = exp(-dif*BEER_LAW_FACTOR);
 
-    vec4 mat = 0.6*mix(deep_color, shallow_color, 3.0*rad + 0.1*n);
-    //mat.g += 0.0*noise(vs_in.vertex.xz - t*0.12 + 0.3);
-    mat.xyz += 0.01*n1;
+    vec4 mat = mix(deep_color, shallow_color, 3.0*rad + 0.1*n);
 
-    vec4 col = mix(mat, alpha, min(rad*0.7 + 0.08, 0.8));
-
-    col = mix(col, foam_color, foam_dif);
-
-    vec3 albedo = col.xyz;
+    mat.w = mix(1.0, mat.w, rad*0.7 + 0.08);
+    vec4 col = mix(mat, foam_color, foam_dif);
 
     // Maybe full brdf is unnecessary? test performance
-    vec3 hdr_color = brdfSchlickGGX(vs_in.position, normal, albedo, 0.0f, 0.0f, -sun_direction, sun_color, camera_position, 1.0);
+    col.xyz = brdfSchlickGGX(vs_in.position, normal, col.xyz, 0.0f, 0.8f, -sun_direction, sun_color, camera_position, 1.0);
     
     //hdr_color = mix(deep_color.rgb, hdr_color, 1.0 - smoothstep(15.0, 25.0, scene_z));
 
 #if VOLUMETRICS
-    hdr_color.rgb = addInscatteredVolumetrics(hdr_color.rgb, gl_FragCoord.xyz);
+    col.rgb = addInscatteredVolumetrics(col.rgb, gl_FragCoord.xyz);
 #endif
 
-    out_color = vec4(hdr_color,  gl_FrontFacing ? 1.0 : 0.0);
-
-
-    gl_FragDepth = scene_d;
-  }
+    out_color = col;
 }
 
 #end
