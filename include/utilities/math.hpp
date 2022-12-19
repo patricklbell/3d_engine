@@ -22,14 +22,16 @@ struct Raycast {
     glm::vec3 direction;
 
     Raycast(glm::vec3 _origin, glm::vec3 _direction) : origin(_origin), direction(_direction) {}
+};
 
-    // This contains the result of a raycast, anything other than hit and t is not garaunteed to be updated
-    struct Result {
-        bool hit = false;
-        unsigned int indice; // @note this is the actual array index, so you don't need to multiply by 3
-        float t = FLT_MAX, u = -1.0, v = -1.0; // This distance to the intersection, the uv coordinates on the triangle
-        glm::vec3 normal;
-    } result;
+// This contains the result of a raycast, anything other than hit and t is not garaunteed to be updated
+struct RaycastResult {
+    bool hit = false;
+    operator bool() const { return hit;  }
+
+    unsigned int indice; // @note this is the actual array index, so you don't need to multiply by 3
+    float t = FLT_MAX, u = -1.0, v = -1.0; // This distance to the intersection, the uv coordinates on the triangle
+    glm::vec3 normal;
 };
 
 struct AABB {
@@ -42,14 +44,14 @@ struct AABB {
 AABB&& transformAABB(AABB& aabb, glm::mat4 transform);
 
 Raycast mouseToRaycast(glm::ivec2 mouse_position, glm::ivec2 screen_size, glm::mat4 inv_vp);
-bool raycastTriangleCull(const glm::vec3 vertices[3], Raycast& raycast);
-bool raycastTriangle(const glm::vec3 vertices[3], Raycast& raycast);
-bool raycastTriangles(glm::vec3* vertices, unsigned int* indices, const int num_indices, const glm::mat4x4& vertices_transform, Raycast& raycast);
-bool raycastTrianglesTest(glm::vec3* vertices, unsigned int* indices, const int num_indices, const glm::mat4x4& vertices_transform, Raycast& raycast);
-bool raycastPlane(const glm::vec3& center, const glm::vec3& normal, Raycast& raycast);
-bool raycastBoundedPlane(const glm::vec3& center, const glm::vec3& normal, const glm::vec3& bounds, Raycast& raycast);
-bool raycastCube(const glm::vec3& center, const glm::vec3& scale, Raycast& raycast);
-bool raycastAabb(const AABB& aabb, Raycast& raycast);
+RaycastResult raycastTriangleCull(const glm::vec3 vertices[3], Raycast& raycast);
+RaycastResult raycastTriangle(const glm::vec3 vertices[3], Raycast& raycast);
+RaycastResult raycastTriangles(glm::vec3* vertices, unsigned int* indices, const int num_indices, const glm::mat4x4& vertices_transform, Raycast& raycast);
+RaycastResult raycastTrianglesTest(glm::vec3* vertices, unsigned int* indices, const int num_indices, const glm::mat4x4& vertices_transform, Raycast& raycast);
+RaycastResult raycastPlane(const glm::vec3& center, const glm::vec3& normal, Raycast& raycast);
+RaycastResult raycastBoundedPlane(const glm::vec3& center, const glm::vec3& normal, const glm::vec3& bounds, Raycast& raycast);
+RaycastResult raycastCube(const glm::vec3& center, const glm::vec3& scale, Raycast& raycast);
+RaycastResult raycastAabb(const AABB& aabb, Raycast& raycast);
 
 float distanceBetweenLines(const glm::vec3& l1_origin, const glm::vec3& l1_direction, const glm::vec3& l2_origin, const glm::vec3& l2_direction, float& l1_t, float& l2_t);
 

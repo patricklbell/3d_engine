@@ -19,59 +19,60 @@
 #include "editor.hpp"
 #include "game_behaviour.hpp"
 
-Raycast raycastEntities(Raycast& raycast, EntityManager& entity_manager, bool colliders=false) {
-    auto tmp_raycast = raycast;
+RaycastResult raycastEntities(Raycast& raycast, EntityManager& entity_manager, bool colliders=false) {
+    RaycastResult result, entity_result, submesh_result;
     for (int i = 0; i < ENTITY_COUNT; ++i) {
         auto e = entity_manager.entities[i];
         if (e == nullptr) continue;
 
-        tmp_raycast.result.hit = false;
+        entity_result.hit = false;
         if (!colliders && e->type & EntityType::WATER_ENTITY) {
             auto w_e = (WaterEntity*)e;
 
             glm::vec3 bounds{ w_e->scale[0][0], w_e->scale[1][1], w_e->scale[2][2] };
-            raycastBoundedPlane(w_e->position + bounds*glm::vec3(0.5,0,0.5), glm::vec3(0, 1, 0), bounds*0.5f, tmp_raycast);
+            entity_result = raycastBoundedPlane(w_e->position + bounds*glm::vec3(0.5,0,0.5), glm::vec3(0, 1, 0), bounds, raycast);
         }
         else if (!colliders && e->type & EntityType::MESH_ENTITY && ((MeshEntity*)e)->mesh != nullptr) {
             const auto& m_e = (MeshEntity*)e;
             const auto& mesh = m_e->mesh;
 
+            submesh_result.hit = false;
             for (int j = 0; j < mesh->num_submeshes; j++) {
                 auto model = createModelMatrix(mesh->transforms[j], m_e->position, m_e->rotation, m_e->scale);
 
                 auto t_aabb = transformAABB(mesh->aabbs[j], model);
-                if (!raycastAabb(t_aabb, tmp_raycast) || tmp_raycast.result.t > raycast.result.t)
+                if (!(submesh_result = raycastAabb(t_aabb, raycast)) || submesh_result.t > result.t)
                     continue;
-                if (raycastTriangles(mesh->vertices, mesh->indices, mesh->num_indices, model, tmp_raycast)) {
-                    if (tmp_raycast.result.hit && tmp_raycast.result.t < raycast.result.t) {
-                        raycast = tmp_raycast;
-                        raycast.result.indice = i;
+
+                submesh_result.hit = false;
+                if (submesh_result = raycastTriangles(mesh->vertices, mesh->indices, mesh->num_indices, model, raycast)) {
+                    if (submesh_result.t < result.t) {
+                        entity_result = submesh_result;
                     }
                 }
             }
-            continue;
         }
         else if (colliders && (e->type & EntityType::COLLIDER_ENTITY)) {
             auto c = (ColliderEntity*)entity_manager.entities[i];
             auto bounds = glm::vec3(c->collider_scale[0][0], c->collider_scale[1][1], c->collider_scale[2][2]);
-            raycastCube(c->collider_position + bounds/2.0f, bounds, tmp_raycast);
+            entity_result = raycastCube(c->collider_position + bounds/2.0f, bounds, raycast);
         }
 
-        if (tmp_raycast.result.hit && tmp_raycast.result.t < raycast.result.t) {
-            raycast = tmp_raycast;
-            raycast.result.indice = i;
+        if (entity_result.hit && entity_result.t < result.t) {
+            result = entity_result;
+            result.indice = i;
         }
     }
 
-    return raycast;
+    return result;
 }
 
-Raycast raycastEntityWithMouse(const Camera& camera, EntityManager& entity_manager) {
+RaycastResult raycastEntityWithMouse(const Camera& camera, EntityManager& entity_manager) {
     auto raycast = mouseToRaycast(Controls::mouse_position, glm::ivec2(window_width, window_height), camera.inv_vp);
     return raycastEntities(raycast, entity_manager);
 }
 
-Raycast raycastColliderWithMouse(const Camera& camera, EntityManager& entity_manager) {
+RaycastResult raycastColliderWithMouse(const Camera& camera, EntityManager& entity_manager) {
     auto raycast = mouseToRaycast(Controls::mouse_position, glm::ivec2(window_width, window_height), camera.inv_vp);
     return raycastEntities(raycast, entity_manager, true);
 }
@@ -170,10 +171,8 @@ void handleEditorControls(EntityManager*& entity_manager, AssetManager& asset_ma
     if (!io.WantCaptureMouse) {
         if (Controls::editor.right_mouse.state == Controls::RELEASE && (glfwGetTime() - Controls::editor.right_mouse.last_press) < mouse_hold_threshold) {
             if (Editor::editor_mode == EditorMode::COLLIDERS) {
-                glm::vec3 n;
-                auto raycast = raycastColliderWithMouse(camera, *entity_manager);
-                if (raycast.result.hit) {
-                    entity_manager->deleteEntity(entity_manager->entities[raycast.result.indice]->id);
+                if (auto raycast = raycastColliderWithMouse(camera, *entity_manager)) {
+                    entity_manager->deleteEntity(entity_manager->entities[raycast.indice]->id);
                 }
             }
             else {
@@ -185,13 +184,12 @@ void handleEditorControls(EntityManager*& entity_manager, AssetManager& asset_ma
             {
             case EditorMode::ENTITY:
             {
-                auto raycast = raycastEntityWithMouse(camera, *entity_manager);
-                if (raycast.result.hit) {
+                if (auto raycast = raycastEntityWithMouse(camera, *entity_manager)) {
                     if (!glfwGetKey(window, GLFW_KEY_LEFT_SHIFT)) {
                         Editor::selection.clear();
                     }
 
-                    auto pick_e = entity_manager->entities[raycast.result.indice];
+                    auto pick_e = entity_manager->entities[raycast.indice];
                     Editor::selection.toggleEntity(*entity_manager, pick_e);
                 } else {
                     Editor::selection.clear();
@@ -200,19 +198,18 @@ void handleEditorControls(EntityManager*& entity_manager, AssetManager& asset_ma
             }
             case EditorMode::COLLIDERS:
             {
-                auto raycast = raycastColliderWithMouse(camera, *entity_manager);
-                if (raycast.result.hit) {
-                    auto pick_c = (ColliderEntity*)entity_manager->entities[raycast.result.indice];
+                if (auto result = raycastColliderWithMouse(camera, *entity_manager)) {
+                    auto pick_c = (ColliderEntity*)entity_manager->entities[result.indice];
 
-                    std::cout << "Collided, normal: " << raycast.result.normal << "\n";
+                    std::cout << "Collided, normal: " << result.normal << "\n";
                     auto c = (ColliderEntity*)copyEntity((Entity*)pick_c);
                     c->id = entity_manager->getFreeId();
                     c->mesh = c->mesh;
 
-                    c->position = pick_c->position + raycast.result.normal;
+                    c->position = pick_c->position + result.normal;
                     c->scale = pick_c->scale;
                     c->rotation = pick_c->rotation;
-                    c->collider_position = pick_c->collider_position + raycast.result.normal;
+                    c->collider_position = pick_c->collider_position + result.normal;
                     c->collider_scale = pick_c->collider_scale;
                     c->collider_rotation = pick_c->collider_rotation;
 

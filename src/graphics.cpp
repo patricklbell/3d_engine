@@ -355,8 +355,7 @@ void bindDrawWaterColliderMap(const RenderQueue& q, WaterEntity* water) {
     gl_state.bind_framebuffer(water_collider_fbos[0]);
     gl_state.bind_viewport(WATER_COLLIDER_SIZE, WATER_COLLIDER_SIZE);
 
-    gl_state.add_flags(GlFlags::DEPTH_WRITE);
-    glClearColor(0, 0, 0, 1);
+    gl_state.set_flags(GlFlags::DEPTH_WRITE);
     glClear(GL_COLOR_BUFFER_BIT);
 
     gl_state.bind_program(Shaders::plane_projection.program());
@@ -383,7 +382,6 @@ void distanceTransformWaterFbo(WaterEntity* water) {
     gl_state.set_flags(GlFlags::NONE);
     gl_state.bind_program(Shaders::jump_flood.program());
 
-
     glUniform1f(Shaders::jump_flood.uniform("num_steps"), (float)num_steps);
     glUniform2f(Shaders::jump_flood.uniform("resolution"), WATER_COLLIDER_SIZE, WATER_COLLIDER_SIZE);
 
@@ -404,7 +402,8 @@ void distanceTransformWaterFbo(WaterEntity* water) {
         drawQuad();
     }
 
-    glGenerateTextureMipmap(water_collider_buffers[(num_steps + 1) % 2]);
+    gl_state.bind_texture_any(water_collider_buffers[(num_steps + 1) % 2]);
+    glGenerateMipmap(GL_TEXTURE_2D);
     water_collider_final_fbo = (num_steps + 1) % 2;
 
     gl_state.bind_program(Shaders::gaussian_blur.program());
@@ -418,6 +417,7 @@ void distanceTransformWaterFbo(WaterEntity* water) {
     }
     
     // Reset viewport
+    gl_state.bind_framebuffer(GL_FALSE);
     gl_state.bind_viewport(window_width, window_height);
 }
 

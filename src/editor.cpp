@@ -1089,24 +1089,24 @@ TransformType editTransform(Camera &camera, glm::vec3 &pos, glm::quat &rot, glm:
     return change_type;
 }
 
-bool raycastGizmoMeshAxis(Raycast& raycast, Mesh& mesh, glm::mat3 axis, glm::mat3 positions, glm::mat3 scales) {
-    auto tmp_raycast = raycast;
+static RaycastResult raycastGizmoMeshAxis(Raycast& raycast, Mesh& mesh, glm::mat3 axis, glm::mat3 positions, glm::mat3 scales) {
+    RaycastResult result;
     for (int i = 0; i < 3; ++i) {
         const auto direction = axis[i];
 
         static const auto mesh_up = glm::vec3(0, 1, 0); // The up direction of the mesh should be aligned with y axis
         auto transform = createModelMatrix(positions[i], glm::quat(direction, mesh_up), scales[i]);
 
-        if (raycastTriangles(mesh.vertices, mesh.indices, mesh.num_indices, transform, tmp_raycast)) {
-            if (tmp_raycast.result.t < raycast.result.t) {
-                if (raycastPlane(positions[i], direction, tmp_raycast)) {
-                    raycast = tmp_raycast;
-                    raycast.result.indice = i;
+        if (auto tmp_result = raycastTriangles(mesh.vertices, mesh.indices, mesh.num_indices, transform, raycast)) {
+            if (tmp_result.t < result.t) {
+                if (raycastPlane(positions[i], direction, raycast)) {
+                    result = tmp_result;
+                    result.indice = i;
                 }
             }
         }
     }
-    return raycast.result.hit;
+    return result;
 }
 
 bool editorRotationGizmo(glm::vec3& pos, glm::quat& rot, glm::mat3& scl, const Camera& camera, float snap = 1.0, bool do_snap = false) {
@@ -1130,8 +1130,8 @@ bool editorRotationGizmo(glm::vec3& pos, glm::quat& rot, glm::mat3& scl, const C
 
     bool initial_selection = false;
     if(Controls::editor.left_mouse.state == Controls::PRESS) {
-        if (raycastGizmoMeshAxis(raycast, ring_mesh, axis, positions, distance * scales)) {
-            selected_ring = raycast.result.indice;
+        if (auto result = raycastGizmoMeshAxis(raycast, ring_mesh, axis, positions, distance * scales)) {
+            selected_ring = result.indice;
             initial_selection = true;
         }
     } else if (Controls::editor.left_mouse.state & Controls::RELEASED) {
@@ -1148,8 +1148,8 @@ bool editorRotationGizmo(glm::vec3& pos, glm::quat& rot, glm::mat3& scl, const C
         const auto normal = axis[selected_ring];
 
         // Calculate which direction on the gizmo the user has moved to
-        if (raycastPlane(pos, normal, raycast)) {
-            glm::vec3 rot_dir = glm::normalize(raycast.origin + raycast.result.t * raycast.direction - pos);
+        if (auto result = raycastPlane(pos, normal, raycast)) {
+            glm::vec3 rot_dir = glm::normalize(raycast.origin + result.t * raycast.direction - pos);
             if (initial_selection)
                 rot_dir_prev = rot_dir;
 
@@ -1204,9 +1204,9 @@ bool editorTranslationGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, Came
     
     bool initial_selection = false;
     if (Controls::editor.left_mouse.state == Controls::PRESS) {
-        if (raycastGizmoMeshAxis(raycast, arrow_mesh, axis, positions, distance * scales * 1.1f)) {
-            selected_arrow = raycast.result.indice;
-            selection_offset = glm::normalize(raycast.origin + raycast.result.t * raycast.direction - pos);
+        if (auto result = raycastGizmoMeshAxis(raycast, arrow_mesh, axis, positions, distance * scales * 1.1f)) {
+            selected_arrow = result.indice;
+            selection_offset = glm::normalize(raycast.origin + result.t * raycast.direction - pos);
             initial_selection = true;
         }
     }
@@ -1270,9 +1270,9 @@ bool editorScalingGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, Camera &
 
     bool initial_selection = false;
     if (Controls::editor.left_mouse.state == Controls::PRESS) {
-        if (raycastGizmoMeshAxis(raycast, block_arrow_mesh, axis, positions, distance * scales * 1.1f)) {
-            selected_arrow = raycast.result.indice;
-            selection_offset = glm::normalize(raycast.origin + raycast.result.t * raycast.direction - pos);
+        if (auto result = raycastGizmoMeshAxis(raycast, block_arrow_mesh, axis, positions, distance * scales * 1.1f)) {
+            selected_arrow = result.indice;
+            selection_offset = glm::normalize(raycast.origin + result.t * raycast.direction - pos);
             initial_selection = true;
         }
     }
@@ -1320,15 +1320,16 @@ bool editorScalingGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, Camera &
 
 void drawWaterDebug(WaterEntity* w, const Camera &camera, bool flash = false) {
     bindBackbuffer();
-    gl_state.set_flags(GlFlags::CULL | GlFlags::DEPTH_READ);
+    gl_state.set_flags(GlFlags::CULL);
 
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
     glEnable(GL_LINE_SMOOTH);
 
     gl_state.bind_program(Shaders::debug.program());
-    auto mvp = camera.vp * createModelMatrix(w->position, glm::quat(), w->scale);
+    auto model = createModelMatrix(w->position, glm::quat(), w->scale);
+    auto mvp = camera.vp * model;
     glUniformMatrix4fv(Shaders::debug.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
-    glUniformMatrix4fv(Shaders::debug.uniform("model"), 1, GL_FALSE, &w->position[0]);
+    glUniformMatrix4fv(Shaders::debug.uniform("model"), 1, GL_FALSE, &model[0][0]);
     glUniform4f(Shaders::debug.uniform("color"), 1.0, 1.0, 1.0, 1.0);
     glUniform4f(Shaders::debug.uniform("color_flash_to"), 1.0, 0.0, 1.0, 1.0);
     glUniform1f(Shaders::debug.uniform("time"), glfwGetTime());
@@ -1715,7 +1716,7 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
             else 
                 ImGui::TextWrapped("Multiple Entities Selected");
 
-            const float img_w = glm::min(sidebar_w - pad, 70.0f);
+            const float img_w = glm::min(sidebar_w - pad, 150.0f);
             static const std::vector<std::string> image_file_extensions = { ".jpg", ".png", ".bmp", ".tiff", ".tga" };
             static bool editing_gizmo_position_offset = false;
 
@@ -2104,7 +2105,7 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
                     }
                 }
                 void* tex_water_collider = (void*)(intptr_t)graphics::water_collider_buffers[graphics::water_collider_final_fbo];
-                ImGui::Image(tex_water_collider, ImVec2(sidebar_w, sidebar_w));
+                ImGui::Image(tex_water_collider, ImVec2(img_w, img_w));
 
                 if (ImGui::Button("Update", button_size)) {
                     RenderQueue q;

@@ -88,6 +88,7 @@ int main() {
 
     AssetManager local_assets;
     initDefaultLevel(loaded_level, local_assets);
+    //loadLevel(loaded_level, local_assets, "data/levels/water_test.level");
     Cameras::update_cameras_for_level();
 
     double last_time = glfwGetTime();

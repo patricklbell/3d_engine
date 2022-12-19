@@ -78,66 +78,69 @@ float angleBetweenDirections(const glm::vec3& a, const glm::vec3& b, const glm::
 // https://cadxfem.org/inf/Fast%20MinimumStorage%20RayTriangle%20Intersection.pdf
 // Cornell university paper describing ray intersection algorithms
 static const double epsilon = 0.000001;
-bool raycastTriangle(const glm::vec3 vertices[3], Raycast& raycast) {
+RaycastResult raycastTriangle(const glm::vec3 vertices[3], Raycast& raycast) {
+    RaycastResult result;
+
     glm::vec3 edge1 = vertices[1] - vertices[0];
     glm::vec3 edge2 = vertices[2] - vertices[0];
     glm::vec3 p = glm::cross(raycast.direction, edge2);
     float det = glm::dot(edge1, p);
     if (det < epsilon && det > -epsilon)
-        return false;
+        return result;
 
     float inv_det = 1.0f / det;
 
     auto t = raycast.origin - vertices[0];
     float u = glm::dot(t, p) * inv_det;
     if (u < 0.0 || u > 1.0)
-        return false;
+        return result;
 
     auto q = glm::cross(t, edge1);
 
     float v = glm::dot(raycast.direction, q) * inv_det;
     if (v < 0.0 || u + v > 1.0)
-        return false;
+        return result;
 
-    raycast.result.t = glm::dot(edge2, q) * inv_det; // @note This could be skipped an intersection test is needed
-    raycast.result.u = u;
-    raycast.result.v = v;
-    raycast.result.hit = true;
-    return true;
+    result.t = glm::dot(edge2, q) * inv_det; // @note This could be skipped an intersection test is needed
+    result.u = u;
+    result.v = v;
+    result.hit = true;
+    return result;
 }
 
-bool raycastTriangleCull(const glm::vec3 vertices[3], Raycast& raycast) {
+RaycastResult raycastTriangleCull(const glm::vec3 vertices[3], Raycast& raycast) {
+    RaycastResult result;
+
     auto edge1 = vertices[1] - vertices[0];
     auto edge2 = vertices[2] - vertices[0];
     auto p = glm::cross(raycast.direction, edge2);
     float det = glm::dot(edge1, p);
-    if (det < epsilon) return false;
+    if (det < epsilon) 
+        return result;
 
     auto t_vec = raycast.origin - vertices[0];
-    float u = glm::dot(t_vec, p);
-    if (u < 0.0 || u > det) return false;
+    result.u = glm::dot(t_vec, p);
+    if (result.u < 0.0 || result.u > det)
+        return result;
 
     auto q = glm::cross(t_vec, edge1);
-    float v = glm::dot(raycast.direction, q);
-    if (v < 0.0 || u + v > det) return false;
+    result.v = glm::dot(raycast.direction, q);
+    if (result.v < 0.0 || result.u + result.v > det)
+        return result;
 
-    float t = glm::dot(edge2, q);
+    result.t = glm::dot(edge2, q);
     float inv_det = 1.0f / det;
-    t *= inv_det;
-    u *= inv_det;
-    v *= inv_det;
+    result.t *= inv_det;
+    result.u *= inv_det;
+    result.v *= inv_det;
 
-    raycast.result.t = t; // @note This could be skipped an intersection test is needed
-    raycast.result.u = u;
-    raycast.result.v = v;
-    raycast.result.hit = true;
-    return true;
+    result.hit = true;
+    return result;
 }
 
-bool raycastTriangles(glm::vec3* vertices, unsigned int* indices, const int num_indices, const glm::mat4x4& model, Raycast& raycast) {
-    Raycast tri_raycast = raycast;
-
+RaycastResult raycastTriangles(glm::vec3* vertices, unsigned int* indices, const int num_indices, const glm::mat4x4& model, Raycast& raycast) {
     glm::vec3 triangle[3];
+    RaycastResult tri_result, result;
     for (int j = 0; j < num_indices; j += 3) {
         const auto& p1 = vertices[indices[j  ]];
         const auto& p2 = vertices[indices[j+1]];
@@ -146,16 +149,18 @@ bool raycastTriangles(glm::vec3* vertices, unsigned int* indices, const int num_
         triangle[0] = glm::vec3(model * glm::vec4(p1, 1.0));
         triangle[1] = glm::vec3(model * glm::vec4(p2, 1.0));
         triangle[2] = glm::vec3(model * glm::vec4(p3, 1.0));
-        if (raycastTriangle(triangle, tri_raycast)) {
-            if (tri_raycast.result.t < raycast.result.t) {
-                raycast = tri_raycast;
+        if (tri_result = raycastTriangle(triangle, raycast)) {
+            if (tri_result.t < result.t) {
+                result = tri_result;
             }
         }
     }
-    return raycast.result.hit;
+
+    return result;
 }
 
-bool raycastTrianglesTest(glm::vec3* vertices, unsigned int* indices, const int num_indices, const glm::mat4x4& vertices_transform, Raycast& raycast) {
+RaycastResult raycastTrianglesTest(glm::vec3* vertices, unsigned int* indices, const int num_indices, const glm::mat4x4& vertices_transform, Raycast& raycast) {
+    RaycastResult result;
     for (int j = 0; j < num_indices; j += 3) {
         const auto p1 = vertices[indices[j]];
         const auto p2 = vertices[indices[j + 1]];
@@ -165,17 +170,20 @@ bool raycastTrianglesTest(glm::vec3* vertices, unsigned int* indices, const int 
             glm::vec3(vertices_transform * glm::vec4(p2, 1.0)),
             glm::vec3(vertices_transform * glm::vec4(p3, 1.0))
         };
-        if (raycastTriangle(triangle, raycast)) {
-            return true;
+        if (result = raycastTriangle(triangle, raycast)) {
+            break;
         }
     }
-    return false;
+    return result;
 }
 
-bool raycastPlane(const glm::vec3& center, const glm::vec3& normal, Raycast& raycast) {
+RaycastResult raycastPlane(const glm::vec3& center, const glm::vec3& normal, Raycast& raycast) {
+    RaycastResult result;
+
     float pn_ld = glm::dot(normal, raycast.direction);
     // Line parallel to plane
-    if (glm::abs(pn_ld) < epsilon) return false;
+    if (glm::abs(pn_ld) < epsilon) 
+        return result;
 
     // Napkin math justification:
     // p = lo + t*ld
@@ -183,48 +191,48 @@ bool raycastPlane(const glm::vec3& center, const glm::vec3& normal, Raycast& ray
     // pn . (lo + t*ld - po) = 0
     // t*(pn . ld) = pn . (po - lo)
     // t = pn . (po - lo) / (pn . ld)
-    raycast.result.t = glm::dot(normal, center - raycast.origin) / pn_ld;
-    raycast.result.normal = normal;
-    raycast.result.hit = true;
+    result.t = glm::dot(normal, center - raycast.origin) / pn_ld;
+    result.normal = normal;
+    result.hit = true;
 
-    return true;
+    return result;
 }
 
 // Bounds is the distance from center to the edge in each direction
-bool raycastBoundedPlane(const glm::vec3& center, const glm::vec3& normal, const glm::vec3& bounds, Raycast& raycast) {
-    if (raycastPlane(center, normal, raycast)) {
-        auto P = raycast.origin + raycast.result.t * raycast.direction;
+RaycastResult raycastBoundedPlane(const glm::vec3& center, const glm::vec3& normal, const glm::vec3& bounds, Raycast& raycast) {
+    RaycastResult result;
+    if (result = raycastPlane(center, normal, raycast)) {
+        auto P = raycast.origin + result.t * raycast.direction;
         auto O = glm::abs(P - center);
 
         // Make sure point lies within face
         if (glm::any(glm::greaterThan(O, bounds))) {
-            raycast.result.hit = false;
+            result.hit = false;
         }
     }
-    return raycast.result.hit;
+    return result;
 }
 
-bool raycastCube(const glm::vec3& center, const glm::vec3& scale, Raycast& raycast) {
-    Raycast plane_raycast = raycast;
-
+RaycastResult raycastCube(const glm::vec3& center, const glm::vec3& scale, Raycast& raycast) {
+    RaycastResult plane_result, result;
     // Loop through each face and calculate the intersection point with a ray
     for (int i = 0; i < 3; i++) {
         for (int d = -1; d <= 1; d += 2) {
             auto face_N = glm::vec3(d * (i == 0), d * (i == 1), d * (i == 2));
             auto face_P = center + scale * face_N;
 
-            if (raycastBoundedPlane(face_P, face_N, scale/2.0f, plane_raycast)) {
-                if (plane_raycast.result.t < raycast.result.t) {
-                    raycast = plane_raycast;
-                    raycast.result.normal = face_N;
+            if (plane_result = raycastBoundedPlane(face_P, face_N, scale/2.0f, raycast)) {
+                if (plane_result.t < result.t) {
+                    result = plane_result;
+                    result.normal = face_N;
                 }
             }
         }
     }
-    return raycast.result.hit;
+    return result;
 }
 
-bool raycastAabb(const AABB& aabb, Raycast& raycast) {
+RaycastResult raycastAabb(const AABB& aabb, Raycast& raycast) {
     auto min = aabb.center - aabb.size, max = aabb.center + aabb.size;
 
     auto t1 = (min - raycast.origin) / raycast.direction;
@@ -233,9 +241,10 @@ bool raycastAabb(const AABB& aabb, Raycast& raycast) {
     auto tmin = glm::max(glm::max(glm::min(t1.x, t2.x), glm::min(t1.y, t2.y)), glm::min(t1.z, t2.z));
     auto tmax = glm::min(glm::min(glm::max(t1.x, t2.x), glm::max(t1.y, t2.y)), glm::max(t1.z, t2.z));
 
-    raycast.result.hit = tmax >= 0 && tmax >= tmin;
-    raycast.result.t = tmin;
-    return raycast.result.hit;
+    RaycastResult result;
+    result.hit = tmax >= 0 && tmax >= tmin;
+    result.t = tmin >= 0 ? tmin : tmax;
+    return result;
 }
 
 float distanceBetweenLines(const glm::vec3& l1_origin, const glm::vec3& l1_direction, const glm::vec3& l2_origin, const glm::vec3& l2_direction, float& l1_t, float& l2_t)
