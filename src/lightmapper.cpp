@@ -75,11 +75,11 @@ void createShadowMapForGeometry(RenderQueue& q, Environment& env, Camera &camera
 
 bool runLightmapper(Level& level, AssetManager &asset_manager) {
 	lm_context* ctx = lmCreate(
-		64,               // hemicube rendering resolution/quality
-		0.1f, 100.0f,     // zNear, zFar
+		16,               // hemicube rendering resolution/quality
+		0.1f, 10.0f,      // zNear, zFar
 		1.0f, 1.0f, 1.0f, // sky/clear color
 		2, 0.1f,          // hierarchical selective interpolation for speedup (passes, threshold)
-		0.0f);            // modifier for camera-to-surface distance for hemisphere rendering.
+		0.1f);            // modifier for camera-to-surface distance for hemisphere rendering.
 						  // tweak this to trade-off between interpolated vertex normal quality and other artifacts (see declaration).
 	if (!ctx) {
 		std::cerr << "Could not initialize lightmapper.\n";
@@ -87,12 +87,16 @@ bool runLightmapper(Level& level, AssetManager &asset_manager) {
 	}
 
 	// @todo dynamic lightmap resolution / editor
-	constexpr int w = 640; //image width
-	constexpr int h = 640; //image height
-	constexpr int c = 4;
+	constexpr int max_w = 1024;
+	constexpr int max_h = 1024;
+	constexpr int min_w = 128;
+	constexpr int min_h = 128;
+	constexpr float min_aabb_size = 0.5;
+	constexpr float max_aabb_size = 10.0;
+	constexpr int c = 3;
 
 	// Buffer used during post processing
-	float* temp = (float*)malloc(w * h * c * sizeof(float));
+	float* temp = (float*)malloc(max_w * max_h * c * sizeof(float));
 
 	// @todo make global state of renderer contained in a struct
 	auto old_window_width = window_width;
@@ -106,14 +110,14 @@ bool runLightmapper(Level& level, AssetManager &asset_manager) {
 	graphics::do_shadows = false;
 	graphics::do_volumetrics = false;
 	graphics::do_msaa = false;
-	window_width = w;
-	window_height = h;
+	window_width = max_w;
+	window_height = max_h;
 	initHdrFbo(true);
 
 	// Camera which is moved by the lightmapper
 	Frustrum frustrum;
 	frustrum.near_plane = 0.1f;
-	frustrum.far_plane = 100.0f;
+	frustrum.far_plane = 10.0f;
 	Camera camera(frustrum);
 
 	std::cout << "====================================================================================\n"
@@ -121,6 +125,8 @@ bool runLightmapper(Level& level, AssetManager &asset_manager) {
 				 "====================================================================================\n";
 
 	std::vector<float*> lightmaps;
+	std::vector<glm::ivec2> dimensions;
+	std::vector<glm::mat4> models;
 	std::vector<MeshEntity*> mesh_entities;
 	std::vector<uint64_t> submesh_indices;
 	for (int i = 0; i < ENTITY_COUNT; ++i) {
@@ -130,9 +136,15 @@ bool runLightmapper(Level& level, AssetManager &asset_manager) {
 			entityInherits(m_e->type, ANIMATED_MESH_ENTITY))
 			continue;
 
-		for (int j = 0; j < m_e->mesh->num_submeshes; j++) {
-			float* img = (float*)malloc(w * h * c * sizeof(float));
-			assert(img != NULL);
+		for (int j = m_e->mesh->num_submeshes-1; j >= m_e->mesh->num_submeshes - 1; j--) {
+			auto& model = models.emplace_back(createModelMatrix(m_e->mesh->transforms[j], m_e->position, m_e->rotation, m_e->scale));
+			auto t_aabb = transformAABB(m_e->mesh->aabbs[j], model);
+			float dimension_t = linearstep(min_aabb_size, max_aabb_size, glm::length(t_aabb.size));
+			auto& dimension = dimensions.emplace_back(glm::mix(glm::vec2(min_w, min_h), glm::vec2(max_w, max_h), dimension_t));
+
+			float* img = (float*)malloc(dimension.x * dimension.y * c * sizeof(float));
+			assert(img);
+
 			lightmaps.push_back(img);
 			mesh_entities.push_back(m_e);
 			submesh_indices.push_back(j);
@@ -167,18 +179,19 @@ bool runLightmapper(Level& level, AssetManager &asset_manager) {
 			const auto& img = lightmaps[i];
 			const auto& m_e = mesh_entities[i];
 			const auto& submesh_i = submesh_indices[i];
+			const auto& dimension = dimensions[i];
+			const auto& model = models[i];
 			auto& mesh = m_e->mesh;
 
 			// @note relies on 0 bits representing 0.0 in floating format which is true for almost all standards
-			memset(img, 0, sizeof(float) * w * h * c); // clear lightmap to black
-			lmSetTargetLightmap(ctx, img, w, h, c);
+			memset(img, 0, sizeof(float) * dimension.x * dimension.y * c); // clear lightmap to black
+			lmSetTargetLightmap(ctx, img, dimension.x, dimension.y, c);
 
 			indicators::ProgressBar bar{ indicators::option::BarWidth{50}, indicators::option::Start{"["}, indicators::option::Fill{"="}, indicators::option::Lead{">"}, indicators::option::Remainder{" "}, indicators::option::End{" ]"}, indicators::option::PostfixText{""}, indicators::option::ForegroundColor{indicators::Color::white}, indicators::option::FontStyles{std::vector<indicators::FontStyle>{indicators::FontStyle::bold}} };
 			bar.set_option(indicators::option::ShowPercentage{ true });
 			
 			//createShadowMapForGeometry(q, camera, m_e->position);
-
-			auto model = glm::translate(glm::mat4x4(1.0), m_e->position) * mesh->transforms[submesh_i] * glm::mat4_cast(m_e->rotation) * glm::mat4x4(m_e->scale);
+			
 			lmSetGeometry(ctx, (float*)&model[0][0],
 				LM_FLOAT, mesh->vertices,	sizeof(*mesh->vertices),
 				LM_FLOAT, mesh->normals,	sizeof(*mesh->normals),
@@ -250,16 +263,17 @@ bool runLightmapper(Level& level, AssetManager &asset_manager) {
 		for (int i = 0; i < lightmaps.size(); ++i) {
 			const auto& img = lightmaps[i];
 			const auto& m_e = mesh_entities[i];
+			const auto& dimension = dimensions[i];
 			const auto& submesh_i = submesh_indices[i];
 			const auto& mesh = *m_e->mesh;
 
 			bar.set_progress((float)(count) / (float)lightmaps.size());
 			bar.set_option(indicators::option::PostfixText{ "Postprocessing " + std::to_string(count) + " / " + std::to_string(lightmaps.size()) });
 
-			lmImageSmooth(img, temp, w, h, c);
-			lmImageDilate(temp, img, w, h, c);
+			lmImageSmooth(img, temp, dimension.x, dimension.y, c);
+			lmImageDilate(temp, img, dimension.x, dimension.y, c);
 			// @hardcoded gamma
-			lmImagePower(img, w, h, c, 1.0f / 2.2f, 0x7); // gamma correct color channels
+			lmImagePower(img, dimension.x, dimension.y, c, 1.0f / 2.2f, 0x7); // gamma correct color channels
 
 			// Generate a new texture seperate from the color texture (which is still stored by asset manager)
 			Texture* lightmap;
@@ -271,10 +285,10 @@ bool runLightmapper(Level& level, AssetManager &asset_manager) {
 				assert(lightmap);
 			}
 			lightmap->format = GL_RGB16F;
-			lightmap->resolution = glm::ivec2(w, h);
+			lightmap->resolution = glm::ivec2(dimension.x, dimension.y);
 
 			gl_state.bind_texture_any(lightmap->id);
-			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, w, h, 0, GL_RGBA, GL_FLOAT, img);
+			glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, dimension.x, dimension.y, 0, GL_RGB, GL_FLOAT, img);
 
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
@@ -293,7 +307,7 @@ bool runLightmapper(Level& level, AssetManager &asset_manager) {
 				const auto& m_e = mesh_entities[i];
 
 				bar.set_option(indicators::option::PostfixText{ "Writing TGA " + std::to_string(count) + " / " + std::to_string(lightmaps.size()) });
-				lmImageSaveTGAf(lightmap->handle.c_str(), img, w, h, c, 1.0);
+				lmImageSaveTGAf(lightmap->handle.c_str(), img, dimension.x, dimension.y, c, 1.0);
 			}
 
 			count++;

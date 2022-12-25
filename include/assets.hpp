@@ -42,21 +42,21 @@ enum AssetType : char {
 
 struct Material;
 
-enum MeshAttributes : char {
-    MESH_ATTRIBUTES_NONE        = 0,
-    MESH_ATTRIBUTES_VERTICES    = 1 << 0,
-    MESH_ATTRIBUTES_NORMALS     = 1 << 1,
-    MESH_ATTRIBUTES_TANGENTS    = 1 << 2,
-    MESH_ATTRIBUTES_UVS         = 1 << 3,
-    MESH_ATTRIBUTES_BONES       = 1 << 4,
-    MESH_ATTRIBUTES_COLORS      = 1 << 5,
-};
-
 struct Mesh {
     bool complete = false;
     std::string handle;
 
-    MeshAttributes attributes = MESH_ATTRIBUTES_NONE;
+    enum class Attributes : char {
+        NONE        = 0,
+        VERTICES    = 1 << 0,
+        NORMALS     = 1 << 1,
+        TANGENTS    = 1 << 2,
+        UVS         = 1 << 3,
+        BONES       = 1 << 4,
+        COLORS      = 1 << 5,
+    };
+
+    Attributes attributes = Attributes::NONE;
 
     unsigned int    num_indices = 0;
     unsigned int*   indices = nullptr;
@@ -101,6 +101,9 @@ struct Mesh {
 
     ~Mesh();
 };
+void createMeshVao(Mesh* mesh);
+
+SCOPED_ENUM_FLAG(Mesh::Attributes);
 
 void calculateAABB(AABB& aabb, glm::vec3* vertices, uint64_t num_vertices, unsigned int* indices, uint64_t num_indices);
 
@@ -281,6 +284,7 @@ enum class MaterialType : uint64_t {
     LIGHTMAPPED = 1 << 6,
     AO          = 1 << 7,
     WATER       = 1 << 8,
+    SPRITESHEETS= 1 << 9,
 };
 SCOPED_ENUM_FLAG(MaterialType);
 
@@ -319,9 +323,11 @@ enum class TextureSlot : uint64_t {
     // so the slots are pretty weird
     SCREEN_COLOR        = 0,
     SCREEN_DEPTH        = 1,
-    SIMPLEX_GRADIENT    = 2,
-    SIMPLEX_VALUE       = 3,
-    WATER_COLLIDER      = 4, // In future this could store fluid info, for now just a collider
+    WATER_NOISE         = 2,
+    WATER_FOAM          = 3,
+    WATER_NORMALS_1     = 4,
+    WATER_NORMALS_2     = 11,
+    WATER_COLLIDER      = 12, // In future this could store fluid info, for now just a collider
 
     BLOOM = 2,
     SKYBOX = 3,

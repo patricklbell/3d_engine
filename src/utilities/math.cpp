@@ -247,6 +247,29 @@ RaycastResult raycastAabb(const AABB& aabb, Raycast& raycast) {
     return result;
 }
 
+RaycastResult raycastSphere(const glm::vec3& center, const float radius, Raycast& raycast) {
+    RaycastResult result;
+
+    const auto& d = raycast.direction;
+    const auto& o = raycast.origin;
+    const auto& c = center;
+
+    auto A = glm::dot(d, d);
+    auto B = 2.0f * (glm::dot(d, o - c));
+    auto C = glm::dot(o, o - 2.0f * c) + glm::dot(c, c) - radius * radius;
+
+    auto delta = B*B - 4*A*C;
+    if (delta < 0.0)
+        return result;
+
+    result.t = (-B - glm::sqrt(delta)) / (2.0f * A); // Choose closer point
+    if (result.t < 0) {
+        result.t = (-B + glm::sqrt(delta)) / (2.0f * A); // Or the one in front
+    }
+    result.hit = result.t > 0.0;
+    return result;
+}
+
 float distanceBetweenLines(const glm::vec3& l1_origin, const glm::vec3& l1_direction, const glm::vec3& l2_origin, const glm::vec3& l2_direction, float& l1_t, float& l2_t)
 {
     const glm::vec3 dp = l2_origin - l1_origin;
@@ -273,6 +296,16 @@ float distanceBetweenLines(const glm::vec3& l1_origin, const glm::vec3& l1_direc
         const glm::vec3 a = glm::cross(dp, l1_direction);
         return std::sqrt(dot(a, a) / v12);
     }
+}
+
+float distanceToAabb(const AABB& aabb, glm::vec3& point) {
+    auto min = aabb.center - aabb.size, max = aabb.center + aabb.size;
+
+    auto dx = glm::max(glm::max(min.x - point.x, 0.0f), point.x - max.x);
+    auto dy = glm::max(glm::max(min.y - point.y, 0.0f), point.y - max.y);
+    auto dz = glm::max(glm::max(min.z - point.z, 0.0f), point.z - max.z);
+    
+    return glm::sqrt(dx*dx + dy*dy + dz*dz);
 }
 
 Raycast mouseToRaycast(glm::ivec2 mouse_position, glm::ivec2 screen_size, glm::mat4 inv_vp) {

@@ -79,6 +79,10 @@ void initDefaultMaterial(AssetManager &asset_manager){
     default_material->uniforms.emplace("emissive_mult", glm::vec3(1));
     default_material->uniforms.emplace("ambient_mult", 1.0f);
     default_material->uniforms.emplace("metal_mult", 1.0f);
+    default_material->uniforms.emplace("spritesheet_speed", 1.0f);
+    default_material->uniforms.emplace("spritesheet_time_offset", 0.0f);
+    default_material->uniforms.emplace("spritesheet_tile_width", 0.0f);
+    default_material->uniforms.emplace("spritesheet_tile_number", 1);
 
     default_material->type = MaterialType::PBR;
 }
@@ -95,6 +99,7 @@ std::string getMaterialTypeName(const MaterialType& type) {
     case MaterialType::EMISSIVE:        return "Emissive";
     case MaterialType::METALLIC:        return "Metal";
     case MaterialType::VEGETATION:      return "Vegetation";
+    case MaterialType::SPRITESHEETS:    return "Spritesheets";
 
     default: return "Unknown";
     }
@@ -225,39 +230,39 @@ Mesh::~Mesh(){
     free(draw_count);
 }
 
-static void createMeshVao(Mesh *mesh){
+void createMeshVao(Mesh *mesh) {
 	glGenVertexArrays(1, &mesh->vao);
-	glBindVertexArray(mesh->vao);
+    gl_state.bind_vao(mesh->vao);
 
-    if (mesh->attributes & MESH_ATTRIBUTES_VERTICES) {
+    if (!!(mesh->attributes & Mesh::Attributes::VERTICES)) {
 	    glGenBuffers(1, &mesh->vertices_vbo);
 	    glBindBuffer(GL_ARRAY_BUFFER, mesh->vertices_vbo);
 	    glBufferData(GL_ARRAY_BUFFER, mesh->num_vertices * sizeof(*mesh->vertices), &mesh->vertices[0], GL_STATIC_DRAW);
-	    glVertexAttribPointer(0, 3, GL_FLOAT, false, 0, 0);
+	    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
 	    glEnableVertexAttribArray(0);
     }
-    if (mesh->attributes & MESH_ATTRIBUTES_NORMALS) {
+    if (!!(mesh->attributes & Mesh::Attributes::NORMALS)) {
 	    glGenBuffers(1, &mesh->normals_vbo);
         glBindBuffer(GL_ARRAY_BUFFER, mesh->normals_vbo);
         glBufferData(GL_ARRAY_BUFFER, mesh->num_vertices * sizeof(*mesh->normals), &mesh->normals[0], GL_STATIC_DRAW);
-        glVertexAttribPointer(1, 3, GL_FLOAT, false, 0, 0);
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, 0);
         glEnableVertexAttribArray(1);
     }
-    if (mesh->attributes & MESH_ATTRIBUTES_TANGENTS) {
+    if (!!(mesh->attributes & Mesh::Attributes::TANGENTS)) {
 	    glGenBuffers(1, &mesh->tangents_vbo);
         glBindBuffer(GL_ARRAY_BUFFER, mesh->tangents_vbo);
         glBufferData(GL_ARRAY_BUFFER, mesh->num_vertices * sizeof(*mesh->tangents), &mesh->tangents[0], GL_STATIC_DRAW);
-        glVertexAttribPointer(2, 3, GL_FLOAT, false, 0, 0);
+        glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 0, 0);
         glEnableVertexAttribArray(2);
     }
-    if (mesh->attributes & MESH_ATTRIBUTES_UVS) {
+    if (!!(mesh->attributes & Mesh::Attributes::UVS)) {
 	    glGenBuffers(1, &mesh->uvs_vbo);
         glBindBuffer(GL_ARRAY_BUFFER, mesh->uvs_vbo);
         glBufferData(GL_ARRAY_BUFFER, mesh->num_vertices * sizeof(*mesh->uvs), &mesh->uvs[0], GL_STATIC_DRAW);
-        glVertexAttribPointer(3, 2, GL_FLOAT, false, 0, 0);
+        glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, 0, 0);
         glEnableVertexAttribArray(3);
     }
-    if (mesh->attributes & MESH_ATTRIBUTES_BONES) {
+    if (!!(mesh->attributes & Mesh::Attributes::BONES)) {
         glGenBuffers(1, &mesh->bone_ids_vbo);
         glBindBuffer(GL_ARRAY_BUFFER, mesh->bone_ids_vbo);
         glBufferData(GL_ARRAY_BUFFER, mesh->num_vertices * sizeof(*mesh->bone_ids), &mesh->bone_ids[0], GL_STATIC_DRAW);
@@ -267,23 +272,24 @@ static void createMeshVao(Mesh *mesh){
         glGenBuffers(1, &mesh->weights_vbo);
         glBindBuffer(GL_ARRAY_BUFFER, mesh->weights_vbo);
         glBufferData(GL_ARRAY_BUFFER, mesh->num_vertices * sizeof(*mesh->weights), &mesh->weights[0], GL_STATIC_DRAW);
-        glVertexAttribPointer(6, 4, GL_FLOAT, false, 0, 0);
+        glVertexAttribPointer(6, 4, GL_FLOAT, GL_FALSE, 0, 0);
         glEnableVertexAttribArray(6);
     }
-    if (mesh->attributes & MESH_ATTRIBUTES_COLORS) {
+    if (!!(mesh->attributes & Mesh::Attributes::COLORS)) {
         glGenBuffers(1, &mesh->colors_vbo);
         glBindBuffer(GL_ARRAY_BUFFER, mesh->colors_vbo);
         glBufferData(GL_ARRAY_BUFFER, mesh->num_vertices * sizeof(*mesh->colors), &mesh->colors[0], GL_STATIC_DRAW);
-        glVertexAttribPointer(7, 4, GL_FLOAT, false, 0, 0);
+        glVertexAttribPointer(7, 4, GL_FLOAT, GL_FALSE, 0, 0);
         glEnableVertexAttribArray(7);
     }
 
-	glGenBuffers(1, &mesh->indices_vbo);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh->indices_vbo);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, mesh->num_indices * sizeof(*mesh->indices), &mesh->indices[0], GL_STATIC_DRAW);
+    if (mesh->indices) {
+	    glGenBuffers(1, &mesh->indices_vbo);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh->indices_vbo);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, mesh->num_indices * sizeof(*mesh->indices), &mesh->indices[0], GL_STATIC_DRAW);
+    }
    
-	glBindVertexArray(0); // Unbind the VAO @perf
-
+    gl_state.bind_vao(GL_FALSE);
     mesh->complete = true;
 }
 
@@ -421,11 +427,11 @@ bool parameterizeAndPackMesh(Mesh* mesh) {
         meshDecl.vertexPositionData = mesh->vertices;
         meshDecl.vertexPositionStride = sizeof(*mesh->vertices);
 
-        if (mesh->attributes & MESH_ATTRIBUTES_NORMALS) {
+        if (!!(mesh->attributes & Mesh::Attributes::NORMALS)) {
             meshDecl.vertexNormalData = mesh->normals;
             meshDecl.vertexNormalStride = sizeof(*mesh->normals);
         }
-        if (mesh->attributes & MESH_ATTRIBUTES_UVS) {
+        if (!!(mesh->attributes & Mesh::Attributes::UVS)) {
             meshDecl.vertexUvData = mesh->uvs;
             meshDecl.vertexUvStride = sizeof(*mesh->uvs);
         }
@@ -462,7 +468,7 @@ bool parameterizeAndPackMesh(Mesh* mesh) {
     uvs = reinterpret_cast<decltype(uvs)>(malloc(sizeof(*uvs) * num_vertices));
     mallocs_failed |= uvs == NULL;
 
-    if (mesh->attributes & MESH_ATTRIBUTES_NORMALS) {
+    if (!!(mesh->attributes & Mesh::Attributes::NORMALS)) {
         normals = reinterpret_cast<decltype(normals)>(malloc(sizeof(*normals) * num_vertices));
         mallocs_failed |= normals == NULL;
 
@@ -470,7 +476,7 @@ bool parameterizeAndPackMesh(Mesh* mesh) {
         tangents = reinterpret_cast<decltype(tangents)>(malloc(sizeof(*tangents) * num_vertices));
         mallocs_failed |= tangents == NULL;
     }
-    if (mesh->attributes & MESH_ATTRIBUTES_COLORS) {
+    if (!!(mesh->attributes & Mesh::Attributes::COLORS)) {
         colors = reinterpret_cast<decltype(colors)>(malloc(sizeof(*colors) * num_vertices));
         mallocs_failed |= mesh->colors == NULL;
     }
@@ -493,23 +499,23 @@ bool parameterizeAndPackMesh(Mesh* mesh) {
         uvs[v] = glm::vec2(vertex.uv[0] / uv_w, vertex.uv[1] / uv_h);
 
         vertices[v] = mesh->vertices[vertex.xref];
-        if (mesh->attributes & MESH_ATTRIBUTES_NORMALS) {
+        if (!!(mesh->attributes & Mesh::Attributes::NORMALS)) {
             normals[v] = mesh->normals[vertex.xref];
         }
-        if (mesh->attributes & MESH_ATTRIBUTES_COLORS) {
+        if (!!(mesh->attributes & Mesh::Attributes::COLORS)) {
             colors[v] = mesh->colors[vertex.xref];
         }
     }
 
     memcpy(mesh->indices, xmesh.indexArray, mesh->num_indices * sizeof(*mesh->indices));
 
-    if (mesh->attributes & MESH_ATTRIBUTES_NORMALS) {
+    if (!!(mesh->attributes & Mesh::Attributes::NORMALS)) {
         // Recalculate tangents @todo assimp load flags
         calculateTangentArray(num_vertices, vertices, normals, uvs, mesh->num_indices, mesh->indices, tangents);
-        mesh->attributes = (MeshAttributes)(mesh->attributes | MESH_ATTRIBUTES_TANGENTS);
+        mesh->attributes |= Mesh::Attributes::TANGENTS;
     }
 
-    mesh->attributes = (MeshAttributes)(mesh->attributes | MESH_ATTRIBUTES_UVS);
+    mesh->attributes |= Mesh::Attributes::UVS;
     mesh->num_vertices = num_vertices;
 
     // Copy from temporary buffer to actual mesh
@@ -708,7 +714,7 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
 
     mesh->material_indices = reinterpret_cast<decltype(mesh->material_indices)>(malloc(sizeof(*mesh->material_indices) * mesh->num_submeshes));
 
-    mesh->attributes = (MeshAttributes)(MESH_ATTRIBUTES_VERTICES | MESH_ATTRIBUTES_NORMALS | MESH_ATTRIBUTES_TANGENTS | MESH_ATTRIBUTES_UVS | MESH_ATTRIBUTES_COLORS);
+    mesh->attributes = Mesh::Attributes::VERTICES | Mesh::Attributes::NORMALS | Mesh::Attributes::TANGENTS | Mesh::Attributes::UVS | Mesh::Attributes::COLORS;
     mesh->num_indices  = 0;
     mesh->num_vertices = 0;
 	for (int i = 0; i < mesh->num_submeshes; ++i) {
@@ -726,17 +732,17 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
         if (mesh->submesh_names[i] == "") mesh->submesh_names[i] = "submesh " + std::to_string(i);
 
         // If every mesh has attribute then it is valid
-        if (mesh->attributes & MESH_ATTRIBUTES_NORMALS && ai_mesh->mNormals == NULL) {
-            mesh->attributes = (MeshAttributes)(mesh->attributes ^ MESH_ATTRIBUTES_NORMALS);
+        if (!!(mesh->attributes & Mesh::Attributes::NORMALS) && ai_mesh->mNormals == NULL) {
+            mesh->attributes ^= Mesh::Attributes::NORMALS;
         }
-        if (mesh->attributes & MESH_ATTRIBUTES_TANGENTS && ai_mesh->mTangents == NULL) {
-            mesh->attributes = (MeshAttributes)(mesh->attributes ^ MESH_ATTRIBUTES_TANGENTS);
+        if (!!(mesh->attributes & Mesh::Attributes::TANGENTS) && ai_mesh->mTangents == NULL) {
+            mesh->attributes ^= Mesh::Attributes::TANGENTS;
         }
-        if (mesh->attributes & MESH_ATTRIBUTES_UVS && ai_mesh->mTextureCoords[0] == NULL) {
-            mesh->attributes = (MeshAttributes)(mesh->attributes ^ MESH_ATTRIBUTES_UVS);
+        if (!!(mesh->attributes & Mesh::Attributes::UVS) && ai_mesh->mTextureCoords[0] == NULL) {
+            mesh->attributes ^= Mesh::Attributes::UVS;
         }
-        if (mesh->attributes & MESH_ATTRIBUTES_COLORS && ai_mesh->mColors[0] == NULL) {
-            mesh->attributes = (MeshAttributes)(mesh->attributes ^ MESH_ATTRIBUTES_COLORS);
+        if (!!(mesh->attributes & Mesh::Attributes::COLORS) && ai_mesh->mColors[0] == NULL) {
+            mesh->attributes ^= Mesh::Attributes::COLORS;
         }
 	}
     std::cout << "Mesh attributes are " << (int)mesh->attributes << "\n";
@@ -746,19 +752,19 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
     mesh->vertices      = reinterpret_cast<decltype(mesh->vertices)>(malloc(sizeof(*mesh->vertices)*mesh->num_vertices));
     mallocs_failed     |= mesh->vertices == NULL;
 
-    if (mesh->attributes & MESH_ATTRIBUTES_NORMALS) {
+    if (!!(mesh->attributes & Mesh::Attributes::NORMALS)) {
         mesh->normals   = reinterpret_cast<decltype(mesh->normals )>(malloc(sizeof(*mesh->normals )*mesh->num_vertices));
         mallocs_failed |= mesh->normals == NULL;
     }
-    if (mesh->attributes & MESH_ATTRIBUTES_TANGENTS) {
+    if (!!(mesh->attributes & Mesh::Attributes::TANGENTS)) {
         mesh->tangents  = reinterpret_cast<decltype(mesh->tangents)>(malloc(sizeof(*mesh->tangents)*mesh->num_vertices));
         mallocs_failed |= mesh->normals == NULL;
     }
-    if (mesh->attributes & MESH_ATTRIBUTES_UVS) {
+    if (!!(mesh->attributes & Mesh::Attributes::UVS)) {
         mesh->uvs       = reinterpret_cast<decltype(mesh->uvs     )>(malloc(sizeof(*mesh->uvs     )*mesh->num_vertices));
         mallocs_failed |= mesh->uvs == NULL;
     }
-    if (mesh->attributes & MESH_ATTRIBUTES_COLORS) {
+    if (!!(mesh->attributes & Mesh::Attributes::COLORS)) {
         mesh->colors    = reinterpret_cast<decltype(mesh->colors  )>(malloc(sizeof(*mesh->colors  )*mesh->num_vertices));
         mallocs_failed |= mesh->colors == NULL;
     }
@@ -788,7 +794,7 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
                 ai_mesh->mVertices[i].z
             );
 		}
-        if (mesh->attributes & MESH_ATTRIBUTES_NORMALS) {
+        if (!!(mesh->attributes & Mesh::Attributes::NORMALS)) {
             for(unsigned int i=0; i<ai_mesh->mNumVertices; i++){
                 mesh->normals[vertices_offset + i] = glm::fvec3(
                     ai_mesh->mNormals[i].x,
@@ -797,7 +803,7 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
                 );
             }
 		}
-        if (mesh->attributes & MESH_ATTRIBUTES_TANGENTS) {
+        if (!!(mesh->attributes & Mesh::Attributes::TANGENTS)) {
             for(unsigned int i=0; i<ai_mesh->mNumVertices; i++){
                 mesh->tangents[vertices_offset + i] = glm::fvec3(
                     ai_mesh->mTangents[i].x,
@@ -806,7 +812,7 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
                 );
             }
 		}
-        if (mesh->attributes & MESH_ATTRIBUTES_UVS) {
+        if (!!(mesh->attributes & Mesh::Attributes::UVS)) {
             for(unsigned int i=0; i<ai_mesh->mNumVertices; i++){
                 mesh->uvs[vertices_offset + i] = glm::fvec2(
                     ai_mesh->mTextureCoords[0][i].x,
@@ -814,7 +820,7 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
                 );
 		    }
 		}
-        if (mesh->attributes & MESH_ATTRIBUTES_COLORS) {
+        if (!!(mesh->attributes & Mesh::Attributes::COLORS)) {
             for (unsigned int i = 0; i < ai_mesh->mNumVertices; i++) {
                 mesh->colors[vertices_offset + i] = glm::fvec4(
                     ai_mesh->mColors[0][i].r,
@@ -1062,7 +1068,7 @@ bool AssetManager::loadAnimatedMeshAssimp(AnimatedMesh* animesh, Mesh *mesh, con
         createMeshVao(mesh);
         return false;
     }
-    mesh->attributes = (MeshAttributes)(mesh->attributes | MESH_ATTRIBUTES_BONES);
+    mesh->attributes |= Mesh::Attributes::BONES;
     // Fill bone ids with -1 as a flag that this id is unmapped @note type dependant
     for (uint64_t i = 0; i < mesh->num_vertices; ++i) {
         mesh->bone_ids[i] = glm::ivec4(-1);

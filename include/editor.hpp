@@ -56,7 +56,7 @@ TransformType editTransform(Camera& camera, glm::vec3& pos, glm::quat& rot, glm:
 void drawWaterDebug(WaterEntity* w, const Camera &camera, bool flash);
 void drawMeshCube(const glm::vec3 &pos, const glm::quat &rot, const glm::mat3x3 &scl, const Camera &camera);
 void drawFrustrum(Camera& drawn_camera, const Camera& camera);
-void drawMeshWireframe(const Mesh& mesh, const glm::mat4& g_model_rot_scl, const glm::mat4& g_model_pos, const Camera& camera, bool flash, int submesh_i);
+void drawMeshWireframe(const Mesh& mesh, const glm::mat4& g_model_rot_scl, const glm::mat4& g_model_pos, const Camera& camera, bool flash, int submesh_i, bool cull);
 void drawEditor3DRing(const glm::vec3 &position, const glm::vec3 &direction, const Camera &camera, const glm::vec4 &color, const glm::vec3 &scale, bool shaded=true);
 void drawEditor3DArrow(const glm::vec3 &position, const glm::vec3 &direction, const Camera &camera, const glm::vec4 &color, const glm::vec3 &scale, bool shaded=true, bool block=false);
 void drawColliders(const EntityManager& entity_manager, const Camera& camera);
@@ -110,6 +110,7 @@ namespace Editor {
 
     extern bool do_terminal;
     extern bool draw_debug_wireframe;
+    extern bool draw_lights;
     extern bool draw_aabbs;
     extern bool draw_colliders;
     extern bool transform_active;

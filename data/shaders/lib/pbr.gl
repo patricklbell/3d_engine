@@ -1,185 +1,115 @@
 #load lib/constants.gl
+#load lib/pbr_helpers.gl
+
+#load lib/shared.gl
 #if SHADOWS
 #load lib/shadows.gl
 #endif
+#if LIGHTS
+#load lib/lights_ubo.gl
+#endif
 
-#define IBL 1
-
+#macro IBL 1
 #if IBL
 layout(binding = 7) uniform samplerCube irradiance_map;
 layout(binding = 8) uniform samplerCube prefiltered_map;
 layout(binding = 9) uniform sampler2D   brdf_lut_map;  
 #endif
 
-// Takes N, halfway vector between view angle and light angle
-// Parameter a -> alpha describing roughness usually alpha = roughness^2
-float distributionGGX(float NdotH, float roughness)
-{
-    float nom    = roughness*roughness;
-    float NdotH2 = NdotH*NdotH;
-	
-    float denom  = (NdotH2 * (nom - 1.0) + 1.0);
-    denom        = PI * denom * denom;
-	
-    return nom / denom;
-}
-// Takes multiplier between 0 -> 1 with 0 being complete microfacet shadowing 
-// and roughness
-float geometrySchlickGGX(float NdotV, float roughness)
-{
-    float r = (roughness + 1.0);
-    float k = (r*r) / 8.0;
+vec3 brdfDirect(vec3 N, vec3 V, float NdotV, vec3 F0, vec3 L, vec3 radiance, vec3 albedo, float roughness, float metallic) {
+    vec3 H = normalize(V + L);
+    float NdotH = max(dot(N, H), 0.0);
+    float NdotL = max(dot(N, L), 0.0);
+    float HdotV = max(dot(H, V), 0.0);
 
-    float num   = NdotV;
-    float denom = NdotV * (1.0 - k) + k;
+    float NDF = distributionGGX(NdotH, roughness);   
+    float G   = geometrySmith(NdotV, NdotL, roughness);       
+    vec3  F   = fresnelSchlick(HdotV, F0);
 
-    return num / denom;
-}
-float geometrySchlickGGXIBL(float NdotV, float roughness)
-{
-    float a = roughness;
-    float k = (a * a) / 2.0;
+    // Actually calculate Cook-Torrance brdf integral for one light direction
+    vec3 numerator    = NDF * G * F;
+    float denominator = 4.0 * NdotV * NdotL + EPSILON; // stops divide by zero
+    vec3 specular     = numerator / denominator;
 
-    float nom   = NdotV;
-    float denom = NdotV * (1.0 - k) + k;
+    // kS is equal to Fresnel
+    vec3 kS = F;
+    // for energy conservation, the diffuse and specular light can't
+    // be above 1.0 (unless the surface emits light); to preserve this
+    // relationship the diffuse component (kD) should equal 1.0 - kS.
+    vec3 kD = vec3(1.0) - kS;
+    // multiply kD by the inverse metalness such that only non-metals 
+    // have diffuse lighting, or a linear blend if partly metal (pure metals
+    // have no diffuse light).
+    kD *= 1.0 - metallic;
 
-    return nom / denom;
-}
-// Takes N, camera view direction, light direction vector, surface roughness
-float geometrySmith(float NdotV, float NdotL, float roughness)
-{
-    float ggx2  = geometrySchlickGGX(NdotV, roughness);
-    float ggx1  = geometrySchlickGGX(NdotL, roughness);
-	
-    return ggx1 * ggx2;
-}
-float geometrySmithIBL(float NdotV, float NdotL, float roughness)
-{
-    float ggx2  = geometrySchlickGGXIBL(NdotV, roughness);
-    float ggx1  = geometrySchlickGGXIBL(NdotL, roughness);
-	
-    return ggx1 * ggx2;
-}
-vec3 fresnelSchlick(float cosTheta, vec3 F0)
-{
-    return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
-}
-
-vec3 fresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness)
-{
-    return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
-} 
-
-vec3 importanceSampleGGX(vec2 Xi, vec3 N, vec3 tangent, vec3 bitangent, float roughness)
-{
-    float a = roughness*roughness;
-	
-    float phi = 2.0 * PI * Xi.x;
-    float cosTheta = sqrt((1.0 - Xi.y) / (1.0 + (a*a - 1.0) * Xi.y));
-    float sinTheta = sqrt(1.0 - cosTheta*cosTheta);
-	
-    // from spherical coordinates to cartesian coordinates
-    vec3 s;
-    s.x = cos(phi) * sinTheta;
-    s.y = sin(phi) * sinTheta;
-    s.z = cosTheta;
-	
-    // from tangent-space vector to world-space sample vector
-    s = tangent * s.x + bitangent * s.y + N * s.z;
-    return normalize(s);
+    return (kD * albedo / PI + specular) * radiance * NdotL;
 }
 
 const float MAX_REFLECTION_LOD = 4.0;
+vec3 brdfAmbient(vec3 N, vec3 V, float NdotV, vec3 F0, vec3 irradiance, vec3 albedo, float roughness, float metallic, float reflectivity) {
+#if IBL
+    vec3 F = fresnelSchlickRoughness(NdotV, F0, roughness);
+    vec3 kS = F;
+    vec3 kD = 1.0 - kS;
+    kD *= 1.0 - metallic;
+
+    vec3 R = reflect(-V, N);
+    vec3 prefiltered_color = textureLod(prefiltered_map, R, roughness * MAX_REFLECTION_LOD).rgb; 
+
+    vec2 brdf = texture(brdf_lut_map, vec2(NdotV, roughness)).rg;
+    vec3 specular = reflectivity * prefiltered_color * (F * brdf.x + brdf.y);
+
+    vec3 diffuse = irradiance * albedo;
+    return kD * diffuse + specular;
+#else // !IBL
+    return albedo * irradiance;
+#endif // IBL
+}
 
 // Modified from https://learnopengl.com/PBR
-#if GLOBAL_ILLUMINATION
-vec3 brdfSchlickGGX(vec3 position, vec3 N, vec3 albedo, float metallic, float roughness, vec3 L, vec3 light_col, vec3 camera_position, vec3 GI) {
-#else
-vec3 brdfSchlickGGX(vec3 position, vec3 N, vec3 albedo, float metallic, float roughness, vec3 L, vec3 light_col, vec3 camera_position, float ao) {
-#endif
-    vec3 V = normalize(camera_position - position);
-    vec3 R = reflect(-V, N);   
-    vec3 radiance    = light_col; 
+vec3 brdf(vec3 P, vec3 N, vec3 albedo, float metallic, float roughness, vec3 illumination) {
+    vec3 V = normalize(camera_position - P);
     float NdotV = max(dot(N, V), 0.0);
 
-    // calculate reflectance at N incidence; if dia-electric (like plastic) use F0 
-    // of 0.04 and if it's a metal, use the albedo color as F0 (metallic workflow)
+    // Calculate the amount of fresnel contribution for direct lighting
+    // if dia-electric (like plastic) use 0.04 and if it's a metal, use the albedo color as F0 (metallic workflow)
     vec3 F0 = mix(vec3(0.04), albedo, metallic);
 
-    // Direct contributions from sun and other light sources later
-    vec3 Lo = vec3(0.0);
-    {
-        vec3 H = normalize(V + L);
-        float NdotH = max(dot(N, H), 0.0);
-        float NdotL = max(dot(N, L), 0.0);
-        float HdotV = max(dot(H, V), 0.0);
-
-        float NDF = distributionGGX(NdotH, roughness);   
-        float G   = geometrySmith(NdotV, NdotL, roughness);       
-        vec3  F   = fresnelSchlick(HdotV, F0);
-
-        // Actually calculate Cook-Torrance brdf integral for one light direction
-        vec3 numerator    = NDF * G * F;
-        float denominator = 4.0 * NdotV * NdotL  + 0.0001; // stops divide by zero
-        vec3 specular     = numerator / denominator;
-
-        // kS is equal to Fresnel
-        vec3 kS = F;
-        // for energy conservation, the diffuse and specular light can't
-        // be above 1.0 (unless the surface emits light); to preserve this
-        // relationship the diffuse component (kD) should equal 1.0 - kS.
-        vec3 kD = vec3(1.0) - kS;
-        // multiply kD by the inverse metalness such that only non-metals 
-        // have diffuse lighting, or a linear blend if partly metal (pure metals
-        // have no diffuse light).
-        kD *= 1.0 - metallic;
-
-        vec3 lo = (kD * albedo / PI + specular) * radiance * NdotL;
-
-        Lo += lo;
-    }
+    // Direct contributions from sun with shadowing
+    vec3 direct = brdfDirect(N, V, NdotV, F0, -sun_direction, sun_color, albedo, roughness, metallic);
 #if SHADOWS
-    float shadow = shadowness(max(dot(N, L), 0.0), position);
-    Lo *=  1.0 - shadow;
+    float shadowing = 1.0 - shadowness(max(dot(N, sun_direction), 0.0), P);
+    direct *= shadowing;
 #endif
 
-    // Ambient contribution, be it from IBL or just a constant factor
-    vec3 ambient;
-    {
-#if IBL
-        vec3 F = fresnelSchlickRoughness(NdotV, F0, roughness);
-        vec3 kS = F;
-        vec3 kD = 1.0 - kS;
-        kD *= 1.0 - metallic;
+#if LIGHTS
+    for (int i = 0; i < MAX_LIGHTS; i++) {
+        if (any(greaterThan(light_radiances[i], vec3(0)))) {
+            vec3 L = light_positions[i] - P;
+            float L_sqr = max(dot(L, L), EPSILON);
 
-        vec3 prefiltered_color = textureLod(prefiltered_map, R, roughness * MAX_REFLECTION_LOD).rgb; 
-
-        vec2 brdf = texture(brdf_lut_map, vec2(NdotV, roughness)).rg;
-        vec3 specular = prefiltered_color * (F * brdf.x + brdf.y);
-
-        // Im not sure how the specular contribution should be handled, but since 
-        // reflection should require direct illumination I think it should respect shadowing
-        //specular *=  clamp(length(Lo), 0.0, 1.0);
-
-#if GLOBAL_ILLUMINATION
-        vec3 irradiance = GI;
-#else
-        vec3 irradiance = texture(irradiance_map, N).rgb;
-#endif
-        vec3 diffuse = irradiance * albedo;
-        ambient = kD * diffuse + specular;
-#if !GLOBAL_ILLUMINATION
-        ambient *= ao;
-#endif
-
-#else // !IBL
-#if GLOBAL_ILLUMINATION
-        ambient = albedo * GI;
-#else
-        ambient = albedo * ao * 0.01;
-#endif
-#endif // IBL
+            vec3 radiance = light_radiances[i] / L_sqr;
+            direct += brdfDirect(N, V, NdotV, F0, L / sqrt(L_sqr), radiance, albedo, roughness, metallic);
+        }
     }
+#endif
+
+    // Irradiance here is the total ambient light hitting the point
+#if GLOBAL_ILLUMINATION || !IBL
+    vec3 irradiance = illumination;
+    float reflectivity = 0.0;
+#else
+    vec3 irradiance = illumination*texture(irradiance_map, N).rgb;
+
+#if SHADOWS
+    float reflectivity = 0.1 + 0.9*shadowing;
+#else
+    float reflectivity = 1.0;
+#endif
+#endif
+
+    // Ambient contribution, be it from IBL or just the irradiance x albedo
+    vec3 ambient = brdfAmbient(N, V, NdotV, F0, irradiance, albedo, roughness, metallic, reflectivity);
     
-    return ambient + Lo;
+    return ambient + direct;
 }

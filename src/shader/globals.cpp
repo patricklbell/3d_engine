@@ -9,7 +9,6 @@ namespace Shaders {
 	Shader unified;
 	Shader shadow;
 	Shader water;
-	Shader vegetation;
 	Shader debug;
 	Shader post;
 	Shader skybox;
@@ -34,12 +33,11 @@ namespace Shaders {
 
 	[[nodiscard]] bool init() {
 		bool success = true;
-		std::string prepend = gl_state.glsl_version + graphics::shadow_shader_macro + graphics::animation_macro + graphics::volumetric_shader_macro + '\0';
+		std::string prepend = gl_state.glsl_version + graphics::shadow_shader_macro + graphics::animation_macro + graphics::volumetric_shader_macro + graphics::lights_macro + '\0';
 
 		success&=unified.load_file_compile("data/shaders/unified.gl", prepend);
 		success&=shadow.load_file_compile("data/shaders/null.gl", prepend);
 		success&=water.load_file_compile("data/shaders/water.gl", prepend);
-		success&=vegetation.load_file_compile("data/shaders/vegetation.gl", prepend);
 		success&=debug.load_file_compile("data/shaders/debug.gl", prepend);
 		success&=post.load_file_compile("data/shaders/post.gl", prepend);
 		success&=skybox.load_file_compile("data/shaders/skybox.gl", prepend);
@@ -70,7 +68,6 @@ namespace Shaders {
 		success&=unified.update_from_dependencies();
 		success&=shadow.update_from_dependencies();
 		success&=water.update_from_dependencies();
-		success&=vegetation.update_from_dependencies();
 		success&=debug.update_from_dependencies();
 		success&=post.update_from_dependencies();
 		success&=skybox.update_from_dependencies();

@@ -1,4 +1,5 @@
 #include <iostream>
+#include <sstream>
 
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
@@ -97,6 +98,7 @@ int main() {
     window_resized = true;
 
     RenderQueue render_queue;
+    LightQueue light_queue;
     Camera *camera_ptr = nullptr; // The currently active camera
     EntityManager* entities_ptr = nullptr; // The currently active entities
     do {
@@ -110,8 +112,7 @@ int main() {
             last_filesystem_hotswap_check = current_time;
             if (!Shaders::live_update()) {
                 std::cerr << "Failed to load shaders, you may have the wrong working directory."
-                             " Updating Opengl or your GPU drivers may also fix the problem.\n"
-                             " P.S you're a faggot!\n";
+                             " Updating Opengl or your GPU drivers may also fix the problem.\n";
                 cleanup();
                 return true;
             }
@@ -156,12 +157,14 @@ int main() {
         // 
         // Draw entities
         //
+        createLightQueue(light_queue, entities);
         createRenderQueue(render_queue, entities);
+        addLightsToRenderQueue(render_queue, light_queue);
 
         if (graphics::do_shadows)
             drawRenderQueueShadows(render_queue);
         if (graphics::do_volumetrics)
-            computeVolumetrics(loaded_level.environment, frame_num, camera);
+            computeVolumetrics(loaded_level.environment, light_queue, frame_num, camera);
 
         bindHdr();
         clearFramebuffer();
@@ -172,6 +175,17 @@ int main() {
             blurBloomFbo(true_dt);
         bindBackbuffer();
         drawPost(camera);
+
+        if (Controls::editor.isAction("screenshot")) {
+            auto t = std::time(nullptr);
+            auto tm = *std::localtime(&t);
+
+            std::ostringstream oss;
+            oss << std::put_time(&tm, "%d-%m-%Y-%H-%M-%S");
+            auto path = "data/screenshots/" + oss.str() + ".tga";
+            pushInfoMessage("Screenshot " + path);
+            writeFramebufferToTga(path);
+        }
 
         // 
         // Draw guis

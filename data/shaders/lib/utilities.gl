@@ -25,3 +25,10 @@ float linearToDepth(float z_linear) {
 float depthToLinear(float z_exp) {
     return 1.0 / (z_exp*(1 - FAR/NEAR) + FAR/NEAR);
 }
+
+vec3 depthToWorldPosition(float depth, vec2 uv, mat4 inv_vp) {
+    vec4 p = inv_vp * vec4(vec3(uv, depth)*2.0 - 1.0, 1.0);
+    p.xyz /= abs(p.w) < EPSILON ? EPSILON :  p.w;
+
+    return p.xyz;
+}

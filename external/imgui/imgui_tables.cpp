@@ -434,7 +434,7 @@ bool    ImGui::BeginTableEx(const char* name, ImGuiID id, int columns_count, ImG
     table->IsUnfrozenRows = true;
     table->DeclColumnsCount = 0;
 
-    // Using opaque colors facilitate overlapping elements of the grid
+    // Using opaque colors facilitate overlapping elements of the tesselated_grid
     table->BorderColorStrong = GetColorU32(ImGuiCol_TableBorderStrong);
     table->BorderColorLight = GetColorU32(ImGuiCol_TableBorderLight);
 

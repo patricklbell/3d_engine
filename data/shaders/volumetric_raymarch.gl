@@ -21,7 +21,7 @@ vec4 accumulate(int z, int z_max, inout vec3 accum_scattering, inout float accum
     const float thickness = slice_thickness(z + 0.5, float(z_max));
     const float slice_transmittance = exp(-slice_density * thickness / (FAR - NEAR));
 
-    vec3 slice_scattering_integral = slice_scattering * (1.0 - slice_transmittance) / slice_density;
+    vec3 slice_scattering_integral = slice_scattering * (1.0 - slice_transmittance) / max(slice_density, EPSILON);
 
     accum_scattering += slice_scattering_integral * accum_transmittance;
     accum_transmittance *= slice_transmittance;

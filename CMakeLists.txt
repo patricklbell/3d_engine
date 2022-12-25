@@ -80,6 +80,7 @@ set(SOURCES
 	src/texture.cpp
 	src/editor.cpp
 	src/assets.cpp
+	src/primitives.cpp
 	src/entities.cpp
 	src/game_behaviour.cpp
 	src/lightmapper.cpp

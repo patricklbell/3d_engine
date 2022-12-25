@@ -15,9 +15,7 @@ struct Shader {
     bool compile(std::string_view _prepend = "");
     void clear_loaded();
     bool update_from_dependencies();
-    constexpr GLuint program() {
-        return active_program;
-    }
+    constexpr GLuint program() { return active_program; }
     bool Shader::activate_macros(); // Returns true if recompile was necessary
     bool set_macro(std::string_view macro, bool value, bool activate = true);
     GLuint uniform(std::string_view name);
@@ -29,6 +27,8 @@ struct Shader {
         FRAGMENT,
         GEOMETRY,
         COMPUTE,
+        TESSELLATION_CONTROL,
+        TESSELLATION_EVALUATION,
         NUM,
         NONE,
     };

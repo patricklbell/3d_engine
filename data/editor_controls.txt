@@ -8,6 +8,7 @@ switch_editor_mode 0 b
 toggle_collider_visibility 0 b left_shift
 toggle_debug_visibility 0 d left_shift
 toggle_aabbs_visibility 0 a left_shift
+toggle_lights_visibility 0 l left_shift
 copy 0 c left_control
 paste 0 v left_control
 toggle_environment_editor 0 e
@@ -28,3 +29,4 @@ toggle_translate 0 t
 toggle_scale 0 s
 toggle_rotate 0 r
 toggle_snap 0 n
+screenshot 0 p left_shift left_control

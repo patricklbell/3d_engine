@@ -3610,7 +3610,7 @@ namespace xatlas {
 				return false;
 			}
 
-			// If edges is empty, checks for intersection with all edges in the grid.
+			// If edges is empty, checks for intersection with all edges in the tesselated_grid.
 			bool intersect(float epsilon, ConstArrayView<uint32_t> edges = ConstArrayView<uint32_t>(), ConstArrayView<uint32_t> ignoreEdges = ConstArrayView<uint32_t>())
 			{
 				bool bruteForce = m_edges.size() <= 20;
@@ -3709,7 +3709,7 @@ namespace xatlas {
 		private:
 			bool createGrid()
 			{
-				// Compute edge extents. Min will be the grid origin.
+				// Compute edge extents. Min will be the tesselated_grid origin.
 				const uint32_t edgeCount = m_edges.size();
 				Extents2 edgeExtents;
 				edgeExtents.reset();
@@ -3719,7 +3719,7 @@ namespace xatlas {
 					edgeExtents.add(edgePosition1(edge));
 				}
 				m_gridOrigin = edgeExtents.min;
-				// Size grid to approximately one edge per cell in the largest dimension.
+				// Size tesselated_grid to approximately one edge per cell in the largest dimension.
 				const Vector2 extentsSize(edgeExtents.max - edgeExtents.min);
 				m_cellSize = max(extentsSize.x, extentsSize.y) / (float)clamp(edgeCount, 32u, 512u);
 				if (m_cellSize <= 0.0f)
@@ -6637,7 +6637,7 @@ namespace xatlas {
 							m_texcoords[vertex] = texcoords[i];
 						}
 						addFaceToPatch(seed);
-						// Initialize the boundary grid.
+						// Initialize the boundary tesselated_grid.
 						m_boundaryGrid.reset(m_texcoords, m_mesh->indices());
 						for (Mesh::FaceEdgeIterator it(m_mesh, seed); !it.isDone(); it.advance())
 							m_boundaryGrid.append(it.edge());
@@ -6726,7 +6726,7 @@ namespace xatlas {
 								addFaceToPatch(it.current()->face);
 							// Successfully added candidate face(s) to patch.
 							removeLinkedCandidates(bestCandidate);
-							// Reset the grid with all edges on the patch boundary.
+							// Reset the tesselated_grid with all edges on the patch boundary.
 							XA_PROFILE_START(parameterizeChartsPiecewiseBoundaryIntersection)
 								m_boundaryGrid.reset(m_texcoords, m_mesh->indices());
 							for (uint32_t i = 0; i < m_patch.size(); i++) {

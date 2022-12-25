@@ -1,7 +1,7 @@
 #begin VERTEX
 
 layout (location = 0) in vec3 in_vertex;
-layout (location = 1) in vec2 in_texcoord;
+layout (location = 3) in vec2 in_texcoord;
 
 out vec2 texcoord;
 
@@ -15,11 +15,11 @@ void main(){
 
 in vec2 texcoord;
 
-out vec3 out_color;
+out vec2 out_color;
 
 #load lib/constants.gl
 #load lib/noise.gl
-#load lib/pbr.gl
+#load lib/pbr_helpers.gl
 
 // https://learnopengl.com/PBR/IBL/Specular-IBL
 // Creates LUT for each NdotL and roughness, to precompute brdf geometry function
@@ -52,7 +52,7 @@ vec2 integrateBRDF(float NdotV, float roughness)
             float NdotH = max(H.z, 0.0);
             float VdotH = max(dot(V, H), 0.0);
 
-            float G = geometrySmithIBL(NdotV, NdotL, roughness);
+            float G = geometrySmithIBL(max(dot(N, V), 0.0), max(dot(N, L), 0.0), roughness);
             float G_Vis = (G * VdotH) / (NdotH * NdotV);
             float Fc = pow(1.0 - VdotH, 5.0);
 
@@ -67,8 +67,7 @@ vec2 integrateBRDF(float NdotV, float roughness)
 
 void main()
 {
-    vec2 integrated_brdf = integrateBRDF(texcoord.x, texcoord.y);
-    out_color = vec3(integrated_brdf, 0.0f);
+    out_color = integrateBRDF(texcoord.x, texcoord.y);
 }
 
 #end

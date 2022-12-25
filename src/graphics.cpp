@@ -22,6 +22,7 @@
 #include "entities.hpp"
 #include "editor.hpp"
 #include "game_behaviour.hpp"
+#include "primitives.hpp"
 
 #include "graphics.hpp"
 
@@ -40,14 +41,12 @@ namespace graphics {
     // 
     // HDR
     //
-    GLuint hdr_fbo = { GL_FALSE };
-    GLuint hdr_fbo_resolve_multisample = { GL_FALSE };
-    GLuint hdr_buffer = { GL_FALSE };
-    GLuint hdr_buffer_resolve_multisample = { GL_FALSE };
-    GLuint hdr_depth = { GL_FALSE };
-    // Used by water pass to write and read from same depth buffer
-    // and resolved to by msaa
-    GLuint hdr_depth_copy;
+    GLuint hdr_fbo          = GL_FALSE;
+    GLuint hdr_fbo_copy     = GL_FALSE;
+    GLuint hdr_buffer       = GL_FALSE;
+    GLuint hdr_depth        = GL_FALSE;
+    GLuint hdr_buffer_copy  = GL_FALSE;
+    GLuint hdr_depth_copy   = GL_FALSE;
 
     // 
     // SHADOWS
@@ -93,11 +92,16 @@ namespace graphics {
                                       "\n#define MAX_BONE_WEIGHTS " + std::to_string(MAX_BONE_WEIGHTS) + "\n";
 
     //
+    // Light
+    //
+    GLuint lights_ubo;
+    const std::string lights_macro = "#define MAX_LIGHTS " + std::to_string(MAX_LIGHTS) + "\n";
+
+    //
     // ASSETS
     //
-    Mesh quad, cube, line_cube, water_grid;
-    Texture* simplex_gradient;
-    Texture* simplex_value;
+    Mesh *quad, *cube, *line_cube, *tessellated_grid;
+    Texture *water_noise, *water_normal1, *water_normal2, *water_foam;
     Texture* brdf_lut;
 
     // 
@@ -150,71 +154,121 @@ static void writeBoneMatricesUbo(const std::array<glm::mat4, MAX_BONES>& final_b
     glBindBuffer(GL_UNIFORM_BUFFER, 0);
 }
 
-static glm::mat4x4 getShadowMatrixFromFrustrum(const Camera& camera, double near_plane, double far_plane, glm::vec3 light_direction) {
-    // Make shadow's view target the center of the camera frustrum by averaging frustrum corners
-    // maybe you can just calculate from view direction and near and far
-    const auto camera_projection_alt = glm::perspective((double)camera.frustrum.fov_y, (double)camera.frustrum.aspect_ratio, near_plane, far_plane);
-    const auto inv_VP = glm::inverse(camera_projection_alt * glm::dmat4(camera.view));
+static void initLightsUbo() {
+    glGenBuffers(1, &lights_ubo);
+    glBindBuffer(GL_UNIFORM_BUFFER, lights_ubo);
+    glBufferData(GL_UNIFORM_BUFFER, 2 * sizeof(glm::vec4) * MAX_LIGHTS, nullptr, GL_DYNAMIC_DRAW);
+    glBindBufferBase(GL_UNIFORM_BUFFER, 3, lights_ubo);
+}
 
-    std::vector<glm::vec4> frustrum;
-    auto center = glm::dvec3(0.0);
-    for (int x = -1; x < 2; x += 2) {
-        for (int y = -1; y < 2; y += 2) {
-            for (int z = -1; z < 2; z += 2) {
-                auto p = inv_VP * glm::vec4(x, y, z, 1.0f);
-                auto wp = p / p.w;
-                center += glm::vec3(wp);
-                frustrum.push_back(wp);
-            }
+static void writeLightsUbo(const LightQueue& lights) {
+    const static glm::vec3 zero{ 0.0 };
+    // @note if something else binds another ubo to 1 then this will be overwritten
+    // Reloads ubo everytime, @todo integrate this with gl_state to avoid rebinding/copying
+    glBindBuffer(GL_UNIFORM_BUFFER, lights_ubo);
+    for (size_t i = 0; i < MAX_LIGHTS; ++i)
+    {
+        if (i < lights.point_lights.size()) {
+            glBufferSubData(GL_UNIFORM_BUFFER, i * sizeof(glm::vec4), sizeof(glm::vec3), &lights.point_lights[i]->position);
+            glBufferSubData(GL_UNIFORM_BUFFER, (MAX_LIGHTS + i) * sizeof(glm::vec4), sizeof(glm::vec3), &lights.point_lights[i]->radiance);
+        }
+        else {
+            glBufferSubData(GL_UNIFORM_BUFFER, i * sizeof(glm::vec4), sizeof(glm::vec3), &zero);
+            glBufferSubData(GL_UNIFORM_BUFFER, (MAX_LIGHTS + i) * sizeof(glm::vec4), sizeof(glm::vec3), &zero);
         }
     }
-    center /= frustrum.size();
+    glBindBuffer(GL_UNIFORM_BUFFER, 0);
+}
 
-    const auto shadow_view = glm::lookAt(-glm::dvec3(light_direction) + center, center, glm::dvec3(camera.up));
-    using lim = std::numeric_limits<float>;
-    double min_x = lim::max(), min_y = lim::max(), min_z = lim::max();
-    double max_x = lim::min(), max_y = lim::min(), max_z = lim::min();
-    for (const auto& wp : frustrum) {
-        const glm::dvec4 shadow_p = shadow_view * wp;
-        //printf("shadow position: %f, %f, %f, %f\n", shadow_p.x, shadow_p.y, shadow_p.z, shadow_p.w);
-        min_x = std::min(shadow_p.x, min_x);
-        min_y = std::min(shadow_p.y, min_y);
-        min_z = std::min(shadow_p.z, min_z);
-        max_x = std::max(shadow_p.x, max_x);
-        max_y = std::max(shadow_p.y, max_y);
-        max_z = std::max(shadow_p.z, max_z);
-    }
-    //printf("x: %f %f y: %f %f z: %f %f\n", min_x, max_x, min_y, max_y, min_z, max_z);
+static glm::mat4x4 getShadowMatrixFromFrustrum(const Camera& camera, float near_plane, float far_plane, glm::vec3 light_direction) {
+    // Make shadow's view target the center of the camera frustrum by averaging frustrum corners
+    // maybe you can just calculate from view direction and near and far
+    const auto camera_projection_alt = glm::perspective(camera.frustrum.fov_y, camera.frustrum.aspect_ratio, near_plane, far_plane);
+    const auto inv_VP = glm::inverse(camera_projection_alt * glm::mat4(camera.view));
 
-    // @todo Tune this parameter according to the scene
-    constexpr float z_mult = 10.0f;
-    if (min_z < 0) {
-        min_z *= z_mult;
+    std::array<glm::vec3, 8> wfrustrum = {
+        glm::vec3{-1.0,  1.0,  0.0},
+        glm::vec3{ 1.0,  1.0,  0.0},
+        glm::vec3{ 1.0, -1.0,  0.0},
+        glm::vec3{-1.0, -1.0,  0.0},
+        glm::vec3{-1.0,  1.0,  1.0},
+        glm::vec3{ 1.0,  1.0,  1.0},
+        glm::vec3{ 1.0, -1.0,  1.0},
+        glm::vec3{-1.0, -1.0,  1.0},
+    };
+    auto wcenter = glm::vec3(0.0);
+    for (auto& cp : wfrustrum) {
+        auto wp = inv_VP * glm::vec4(cp, 1.0f);
+        cp = glm::vec3(wp) / wp.w;
+        wcenter += cp;
     }
-    else {
-        min_z /= z_mult;
-    } if (max_z < 0) {
-        max_z /= z_mult;
-    }
-    else {
-        max_z *= z_mult;
-    }
+    wcenter /= wfrustrum.size();
 
-    // Round bounds to reduce artifacts when moving camera
-    // @note Relies on shadow map being square
-    //float max_world_units_per_texel = (glm::tan(glm::radians(45.0f)) * (near_plane+far_plane)) / shadow_size;
-    ////printf("World units per texel %f\n", max_world_units_per_texel);
-    //min_x = glm::floor(min_x / max_world_units_per_texel) * max_world_units_per_texel;
-    //max_x = glm::floor(max_x / max_world_units_per_texel) * max_world_units_per_texel;    
-    //min_y = glm::floor(min_y / max_world_units_per_texel) * max_world_units_per_texel;
-    //max_y = glm::floor(max_y / max_world_units_per_texel) * max_world_units_per_texel;    
-    //min_z = glm::floor(min_z / max_world_units_per_texel) * max_world_units_per_texel;
-    //max_z = glm::floor(max_z / max_world_units_per_texel) * max_world_units_per_texel;
+    // Square cascades, waste more texels:
+    float wradius = glm::length(wfrustrum[0] - wfrustrum[6]) * 0.5;
+    float texel_size = shadow_size / (wradius * 2.0);
+    auto scale = glm::scale(glm::mat4(1.0), glm::vec3(texel_size));
 
-    const auto shadow_projection = glm::ortho(min_x, max_x, min_y, max_y, min_z, max_z);
-    //const auto shadow_projection = glm::ortho(min_x, max_x, min_y, max_y, -max_z, -min_z);
-    //const auto shadow_projection = glm::ortho(50.0f, -50.0f, 50.0f, -50.0f, camera.near_plane, camera.frustrum.far_plane);
+    // Un-snapped, untranslated shadow view
+    auto shadow_view = glm::lookAt(glm::vec3(0.0), -light_direction, camera.up);
+    shadow_view *= scale;
+    
+    auto scenter = shadow_view * glm::vec4(wcenter, 1.0);
+    scenter.x = glm::floor(scenter.x);
+    scenter.y = glm::floor(scenter.y);
+    wcenter = glm::vec3(glm::inverse(shadow_view) * scenter);
+
+    // True view based on snapped coordinates
+    shadow_view = glm::lookAt(wcenter - light_direction*wradius*2.0f, wcenter, camera.up);
+    const auto shadow_projection = glm::ortho(-wradius, wradius, -wradius, wradius, -wradius*6.0f, wradius*6.0f); // @todo tune depth parameter to scene
     return shadow_projection * shadow_view;
+
+    // Non square cascades, cause more shadow shimmering:
+    //const auto shadow_view = glm::lookAt(-glm::dvec3(light_direction) + center, center, glm::dvec3(camera.up));
+    //using lim = std::numeric_limits<float>;
+    //double min_x = lim::max(), min_y = lim::max(), min_z = lim::max();
+    //double max_x = lim::min(), max_y = lim::min(), max_z = lim::min();
+    //for (const auto& wp : frustrum) {
+    //    const glm::dvec3 shadow_p{ shadow_view * glm::dvec4(wp, 1.0) };
+    //    //printf("shadow position: %f, %f, %f, %f\n", shadow_p.x, shadow_p.y, shadow_p.z, shadow_p.g);
+    //    min_x = std::min(shadow_p.x, min_x);
+    //    min_y = std::min(shadow_p.y, min_y);
+    //    min_z = std::min(shadow_p.z, min_z);
+    //    max_x = std::max(shadow_p.x, max_x);
+    //    max_y = std::max(shadow_p.y, max_y);
+    //    max_z = std::max(shadow_p.z, max_z);
+    //}
+    ////printf("x: %f %f y: %f %f z: %f %f\n", min_x, max_x, min_y, max_y, min_z, max_z);
+
+    //// @todo Tune this parameter according to the scene
+    //constexpr float z_mult = 10.0f;
+    //if (min_z < 0) {
+    //    min_z *= z_mult;
+    //}
+    //else {
+    //    min_z /= z_mult;
+    //} if (max_z < 0) {
+    //    max_z /= z_mult;
+    //}
+    //else {
+    //    max_z *= z_mult;
+    //}
+
+    //// Round bounds to reduce artifacts when moving camera
+    //// @note Relies on shadow map being square
+    ////float max_world_units_per_texel = (glm::tan(glm::radians(45.0f)) * (near_plane+far_plane)) / shadow_size;
+    //////printf("World units per texel %f\n", max_world_units_per_texel);
+    ////min_x = glm::floor(min_x / max_world_units_per_texel) * max_world_units_per_texel;
+    ////max_x = glm::floor(max_x / max_world_units_per_texel) * max_world_units_per_texel;    
+    ////min_y = glm::floor(min_y / max_world_units_per_texel) * max_world_units_per_texel;
+    ////max_y = glm::floor(max_y / max_world_units_per_texel) * max_world_units_per_texel;    
+    ////min_z = glm::floor(min_z / max_world_units_per_texel) * max_world_units_per_texel;
+    ////max_z = glm::floor(max_z / max_world_units_per_texel) * max_world_units_per_texel;
+
+    //const auto shadow_projection = glm::ortho(min_x, max_x, min_y, max_y, min_z, max_z);
+    ////const auto shadow_projection = glm::ortho(min_x, max_x, min_y, max_y, -max_z, -min_z);
+    ////const auto shadow_projection = glm::ortho(50.0f, -50.0f, 50.0f, -50.0f, camera.near_plane, camera.frustrum.far_plane);
+    //return shadow_projection * shadow_view;
 }
 
 static void initShadowVpsUbo() {
@@ -327,6 +381,9 @@ void initBRDFLut(AssetManager& asset_manager) {
     drawQuad();
 
     gl_state.bind_renderbuffer(GL_FALSE);
+    gl_state.bind_framebuffer(GL_FALSE);
+    glDeleteFramebuffers(1, &FBO);
+    glDeleteRenderbuffers(1, &RBO);
 }
 
 void initWaterColliderFbo() {
@@ -360,10 +417,7 @@ void bindDrawWaterColliderMap(const RenderQueue& q, WaterEntity* water) {
 
     gl_state.bind_program(Shaders::plane_projection.program());
 
-    auto water_grid_scale = water->scale;
-    // Remove y component of scale, shouldn't technically be necessary but helps with debugging
-    water_grid_scale[1][1] = 1.0f;
-    auto inv_water_grid = glm::inverse(createModelMatrix(water->position, glm::quat(), water_grid_scale));
+    auto inv_water_grid = glm::inverse(createModelMatrix(water->position, glm::quat(), 50.0f*water->scale));
     for (const auto& ri : q.opaque_items) {
         auto model_inv_water_grid = inv_water_grid * ri.model;
         glUniformMatrix4fv(Shaders::plane_projection.uniform("model"), 1, GL_FALSE, &model_inv_water_grid[0][0]);
@@ -391,7 +445,7 @@ void distanceTransformWaterFbo(WaterEntity* water) {
         }
         else {
             gl_state.bind_program(Shaders::jfa_to_distance.program());
-            glUniform2f(Shaders::jfa_to_distance.uniform("dimensions"), water->scale[0][0], water->scale[2][2]);
+            glUniform2f(Shaders::jfa_to_distance.uniform("dimensions"), 50.0f * water->scale[0][0], 50.0f * water->scale[2][2]);
         }
 
         gl_state.bind_framebuffer(water_collider_fbos[(step + 1) % 2]);
@@ -415,69 +469,27 @@ void distanceTransformWaterFbo(WaterEntity* water) {
     }
 }
 
-void clearBloomFbo() {
-    for (auto& mip : bloom_mip_infos) {
-        glDeleteTextures(1, &mip.texture);
-    }
-    bloom_mip_infos.clear();
-    glDeleteFramebuffers(1, &bloom_fbo);
-    bloom_fbo = GL_FALSE;
-}
-
-void initBloomFbo(bool resize) {
-    clearBloomFbo();
-
-    glGenFramebuffers(1, &bloom_fbo);
-    gl_state.bind_framebuffer(bloom_fbo);
-
-    auto mip_size = glm::vec2(window_width, window_height);
-    for (int i = 0; i < BLOOM_DOWNSAMPLES; ++i) {
-        auto& mip = bloom_mip_infos.emplace_back();
-
-        mip_size *= 0.5f;
-        mip.size = mip_size;
-
-        glGenTextures(1, &mip.texture);
-        gl_state.bind_texture(0, mip.texture);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_R11F_G11F_B10F, mip_size.x, mip_size.y, 0, GL_RGB, GL_FLOAT, NULL);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        // we clamp to the edge as the blur filter would otherwise sample repeated texture values
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-        if (mip.size.x <= 1 || mip.size.y <= 1)
-            break;
-    }
-
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, bloom_mip_infos[0].texture, 0);
-    unsigned int attachments[1] = { GL_COLOR_ATTACHMENT0 };
-    glDrawBuffers(1, attachments);
-
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-        std::cerr << "Bloom framebuffer not complete.\n";
-    }
-}
-
 void initHdrFbo(bool resize) {
     if (!resize || hdr_fbo == GL_FALSE) {
         glGenFramebuffers(1, &hdr_fbo);
+        glGenFramebuffers(1, &hdr_fbo_copy);
 
         glGenTextures(1, &hdr_buffer);
-    }
-    if (do_msaa && (!resize || hdr_fbo_resolve_multisample == GL_FALSE)) {
-        glGenFramebuffers(1, &hdr_fbo_resolve_multisample);
-        glGenTextures(1, &hdr_buffer_resolve_multisample);
+        glGenTextures(1, &hdr_depth);
+        glGenTextures(1, &hdr_buffer_copy);
+        glGenTextures(1, &hdr_depth_copy);
     }
 
     gl_state.bind_framebuffer(hdr_fbo);
-
     if (do_msaa) {
         gl_state.bind_texture_any(hdr_buffer, GL_TEXTURE_2D_MULTISAMPLE);
         glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, MSAA_SAMPLES, GL_RGBA16F, window_width, window_height, GL_TRUE);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D_MULTISAMPLE, hdr_buffer, 0);
-    }
-    else {
+
+        gl_state.bind_texture_any(hdr_depth, GL_TEXTURE_2D_MULTISAMPLE);
+        glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, MSAA_SAMPLES, GL_DEPTH24_STENCIL8, window_width, window_height, GL_TRUE);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D_MULTISAMPLE, hdr_depth, 0);
+    } else {
         gl_state.bind_texture_any(hdr_buffer);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, window_width, window_height, 0, GL_RGBA, GL_FLOAT, NULL);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -485,22 +497,7 @@ void initHdrFbo(bool resize) {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, hdr_buffer, 0);
-    }
 
-    // Initialize depth textures if necessary
-    if (!resize || hdr_depth == GL_FALSE) {
-        // create and attach depth buffer
-        glGenTextures(1, &hdr_depth);
-        glGenTextures(1, &hdr_depth_copy);
-    }
-
-    // Create actual depth texture, multisampled if necessary
-    if (do_msaa) {
-        gl_state.bind_texture_any(hdr_depth, GL_TEXTURE_2D_MULTISAMPLE);
-        glTexImage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, MSAA_SAMPLES, GL_DEPTH24_STENCIL8, window_width, window_height, GL_TRUE);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D_MULTISAMPLE, hdr_depth, 0);
-    }
-    else {
         gl_state.bind_texture_any(hdr_depth);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH24_STENCIL8, window_width, window_height, 0, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8, NULL);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -510,35 +507,35 @@ void initHdrFbo(bool resize) {
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, hdr_depth, 0);
     }
 
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-        std::cerr << "Hdr framebuffer not complete, error code: " << glCheckFramebufferStatus(GL_FRAMEBUFFER) << ".\n";
-
     static const GLuint attachments[] = { GL_COLOR_ATTACHMENT0 };
     glDrawBuffers(1, attachments);
 
-    // Create copy of depth texture which is sampled by water shader and/or msaa post processing
-    // @fix if there is no water (and not msaa) this texture is unnecessary (and might be unnecessary anyway)
-    gl_state.bind_texture_any(hdr_depth_copy);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH24_STENCIL8, window_width, window_height, 0, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8, NULL);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        std::cerr << "Hdr framebuffer not complete, error code: " << glCheckFramebufferStatus(GL_FRAMEBUFFER) << ".\n";
 
-    // Since we perform post processing on screen texture we need an intermediate fbo to resolve to
-    if (do_msaa) {
-        gl_state.bind_framebuffer(hdr_fbo_resolve_multisample);
+    // Create copy of hdr textures which is sampled by water shader and/or msaa post processing
+    // Since we perform post processing on screen texture and with transparency, so we need an intermediate fbo to resolve to
+    // @fix if there is no water (and not msaa) these texture is unnecessary
+    {
+        gl_state.bind_framebuffer(hdr_fbo_copy);
 
-        gl_state.bind_texture_any(hdr_depth_copy); // @note Might be redundant
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, hdr_depth_copy, 0);
-
-        gl_state.bind_texture_any(hdr_buffer_resolve_multisample);
+        gl_state.bind_texture_any(hdr_buffer_copy);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, window_width, window_height, 0, GL_RGBA, GL_FLOAT, NULL);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, hdr_buffer_resolve_multisample, 0);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, hdr_buffer_copy, 0);
+
+        gl_state.bind_texture_any(hdr_depth_copy);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH24_STENCIL8, window_width, window_height, 0, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8, NULL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, hdr_depth_copy, 0);
+
+        glDrawBuffers(1, attachments);
 
         if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
             std::cerr << "Hdr resolve framebuffer not complete, error code: " << glCheckFramebufferStatus(GL_FRAMEBUFFER) << ".\n";
@@ -550,24 +547,25 @@ void initHdrFbo(bool resize) {
 static void initSharedUbo() {
     glGenBuffers(1, &shared_uniforms_ubo);
     glBindBuffer(GL_UNIFORM_BUFFER, shared_uniforms_ubo);
-    glBufferData(GL_UNIFORM_BUFFER, 192, NULL, GL_STATIC_DRAW);
+    glBufferData(GL_UNIFORM_BUFFER, 256, NULL, GL_STATIC_DRAW);
     glBindBufferBase(GL_UNIFORM_BUFFER, 0, shared_uniforms_ubo);
     glBindBuffer(GL_UNIFORM_BUFFER, 0);
 }
 
+// @note if something else binds another ubo to 0 then this will be overwritten
 static void writeSharedUbo(const Camera& camera, const Environment& env) {
-    // @note if something else binds another ubo to 0 then this will be overwritten
-    glBindBuffer(GL_UNIFORM_BUFFER, shared_uniforms_ubo);
+    float time = glfwGetTime();
+    glm::ivec2 window_size(window_width, window_height);
+
     int offset = 0;
+    glBindBuffer(GL_UNIFORM_BUFFER, shared_uniforms_ubo);
+    glBufferSubData(GL_UNIFORM_BUFFER, offset, 64, &camera.projection[0][0]); offset += 4 * 16;
     glBufferSubData(GL_UNIFORM_BUFFER, offset, 64, &camera.view[0][0]); offset += 4 * 16;
-    glm::mat4 vp = camera.projection * camera.view;
-    glBufferSubData(GL_UNIFORM_BUFFER, offset, 64, &vp[0][0]); offset += 4 * 16;
+    glBufferSubData(GL_UNIFORM_BUFFER, offset, 64, &camera.vp[0][0]); offset += 4 * 16;
     glBufferSubData(GL_UNIFORM_BUFFER, offset, 16, &env.sun_direction[0]); offset += 16;
     glBufferSubData(GL_UNIFORM_BUFFER, offset, 16, &env.sun_color[0]); offset += 16;
     glBufferSubData(GL_UNIFORM_BUFFER, offset, 16, &camera.position[0]); offset += 12;
-    float time = glfwGetTime();
     glBufferSubData(GL_UNIFORM_BUFFER, offset, 4, &time); offset += 4;
-    glm::ivec2 window_size(window_width, window_height);
     glBufferSubData(GL_UNIFORM_BUFFER, offset, 8, &window_size[0]); offset += 8;
     glBufferSubData(GL_UNIFORM_BUFFER, offset, 4, &camera.frustrum.far_plane); offset += 4;
     glBufferSubData(GL_UNIFORM_BUFFER, offset, 4, &exposure); offset += 4;
@@ -579,34 +577,44 @@ void initVolumetrics() {
     gl_state.bind_texture_any(accumulated_volumetric_volume, GL_TEXTURE_3D);
     glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    // We don't want to volumetrics which we haven't calculated
     glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
     glTexStorage3D(GL_TEXTURE_3D, 1, GL_RGBA16F, VOLUMETRIC_RESOLUTION.x, VOLUMETRIC_RESOLUTION.y, VOLUMETRIC_RESOLUTION.z);
-    glTexSubImage3D(GL_TEXTURE_3D, 0, 0, 0, 0, VOLUMETRIC_RESOLUTION.x, VOLUMETRIC_RESOLUTION.y, VOLUMETRIC_RESOLUTION.z, GL_RGBA16F, GL_HALF_FLOAT, NULL);
+    //glTexSubImage3D(GL_TEXTURE_3D, 0, 0, 0, 0, VOLUMETRIC_RESOLUTION.x, VOLUMETRIC_RESOLUTION.y, VOLUMETRIC_RESOLUTION.z, GL_RGBA, GL_FLOAT, NULL);
 
     glGenTextures(NUM_TEMPORAL_VOLUMES, temporal_integration_volume);
     for (int i = 0; i < NUM_TEMPORAL_VOLUMES; ++i) {
         gl_state.bind_texture_any(temporal_integration_volume[i], GL_TEXTURE_3D);
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        // We don't want to volumetrics which we haven't calculated
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
         glTexStorage3D(GL_TEXTURE_3D, 1, GL_RGBA16F, VOLUMETRIC_RESOLUTION.x, VOLUMETRIC_RESOLUTION.y, VOLUMETRIC_RESOLUTION.z);
-        glTexSubImage3D(GL_TEXTURE_3D, 0, 0, 0, 0, VOLUMETRIC_RESOLUTION.x, VOLUMETRIC_RESOLUTION.y, VOLUMETRIC_RESOLUTION.z, GL_RGBA16F, GL_HALF_FLOAT, NULL);
+        //glTexSubImage3D(GL_TEXTURE_3D, 0, 0, 0, 0, VOLUMETRIC_RESOLUTION.x, VOLUMETRIC_RESOLUTION.y, VOLUMETRIC_RESOLUTION.z, GL_RGBA, GL_FLOAT, NULL);
     }
 }
 
-void computeVolumetrics(const Environment& env, uint64_t frame_i, const Camera& camera) {
+void computeVolumetrics(const Environment& env, LightQueue& lights, uint64_t frame_i, const Camera& camera) {
+    auto& vi = Shaders::volumetric_integration;
+
     // @todo integrate with draw entities so we don't send ubo,
     // in future it would be better to have a system for write ubos easily and checking if something has changed
     writeSharedUbo(camera, env);
 
+    // @todo frustrum cull lights and select closest
+    if (lights.point_lights.size()) {
+        writeLightsUbo(lights);
+
+        vi.set_macro("LIGHTS", true, false);
+    } else {
+        vi.set_macro("LIGHTS", false, false);
+    }
+    vi.set_macro("ANISOTROPY", env.fog.anisotropy > 0.0, false);
+    vi.activate_macros();
+
     // Convert fog volumes, for now just a global fog, into camera fitted color&density 3D texture
-    auto& vi = Shaders::volumetric_integration;
     gl_state.bind_program(vi.program());
 
     const auto& properties = env.fog;
@@ -654,162 +662,24 @@ void computeVolumetrics(const Environment& env, uint64_t frame_i, const Camera& 
 }
 
 void initGraphics(AssetManager& asset_manager) {
-    // @hardcoded
-    static const float quad_vertices[] = {
-        // positions        // texture Coords
-        -1.0f,  1.0f, 0.0f, 0.0f, 1.0f,
-        -1.0f, -1.0f, 0.0f, 0.0f, 0.0f,
-         1.0f,  1.0f, 0.0f, 1.0f, 1.0f,
-         1.0f, -1.0f, 0.0f, 1.0f, 0.0f,
-    };
-    glGenVertexArrays(1, &quad.vao);
-    GLuint quad_vbo;
-    glGenBuffers(1, &quad_vbo);
-
-    gl_state.bind_vao(quad.vao);
-    glBindBuffer(GL_ARRAY_BUFFER, quad_vbo);
-
-    glBufferData(GL_ARRAY_BUFFER, sizeof(quad_vertices), &quad_vertices, GL_STATIC_DRAW);
-    glEnableVertexAttribArray(0);
-
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(1);
-
-    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(3 * sizeof(float)));
-
-    quad.draw_count = (GLint*)malloc(sizeof(GLint));
-    quad.draw_start = (GLint*)malloc(sizeof(GLint));
-    quad.draw_mode = GL_TRIANGLE_STRIP;
-    quad.draw_type = GL_UNSIGNED_SHORT;
-
-    quad.draw_start[0] = 0;
-    quad.draw_count[0] = 4;
-
-    // @hardcoded
-    static const float cube_vertices[] = {
-        -1.0f,  1.0f, -1.0f,
-        -1.0f, -1.0f, -1.0f,
-         1.0f, -1.0f, -1.0f,
-         1.0f, -1.0f, -1.0f,
-         1.0f,  1.0f, -1.0f,
-        -1.0f,  1.0f, -1.0f,
-
-        -1.0f, -1.0f,  1.0f,
-        -1.0f, -1.0f, -1.0f,
-        -1.0f,  1.0f, -1.0f,
-        -1.0f,  1.0f, -1.0f,
-        -1.0f,  1.0f,  1.0f,
-        -1.0f, -1.0f,  1.0f,
-
-         1.0f, -1.0f, -1.0f,
-         1.0f, -1.0f,  1.0f,
-         1.0f,  1.0f,  1.0f,
-         1.0f,  1.0f,  1.0f,
-         1.0f,  1.0f, -1.0f,
-         1.0f, -1.0f, -1.0f,
-
-        -1.0f, -1.0f,  1.0f,
-        -1.0f,  1.0f,  1.0f,
-         1.0f,  1.0f,  1.0f,
-         1.0f,  1.0f,  1.0f,
-         1.0f, -1.0f,  1.0f,
-        -1.0f, -1.0f,  1.0f,
-
-        -1.0f,  1.0f, -1.0f,
-         1.0f,  1.0f, -1.0f,
-         1.0f,  1.0f,  1.0f,
-         1.0f,  1.0f,  1.0f,
-        -1.0f,  1.0f,  1.0f,
-        -1.0f,  1.0f, -1.0f,
-
-        -1.0f, -1.0f, -1.0f,
-        -1.0f, -1.0f,  1.0f,
-         1.0f, -1.0f, -1.0f,
-         1.0f, -1.0f, -1.0f,
-        -1.0f, -1.0f,  1.0f,
-         1.0f, -1.0f,  1.0f
-    };
-    glGenVertexArrays(1, &cube.vao);
-    GLuint cube_vbo;
-    glGenBuffers(1, &cube_vbo);
-
-    gl_state.bind_vao(cube.vao);
-    glBindBuffer(GL_ARRAY_BUFFER, cube_vbo);
-
-    glBufferData(GL_ARRAY_BUFFER, sizeof(cube_vertices), &cube_vertices, GL_STATIC_DRAW);
-
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
-
-    cube.draw_count = (GLint*)malloc(sizeof(GLint));
-    cube.draw_start = (GLint*)malloc(sizeof(GLint));
-    cube.draw_mode = GL_TRIANGLES;
-    cube.draw_type = GL_UNSIGNED_SHORT;
-
-    cube.draw_start[0] = 0;
-    cube.draw_count[0] = sizeof(cube_vertices) / (3.0 * sizeof(*cube_vertices));
-
-    // @hardcoded
-    static const float line_cube_vertices[] = {
-        //0     1.0f, -1.0f, -1.0f,
-        //1     1.0f,  1.0f, -1.0f,
-        //2    -1.0f,  1.0f, -1.0f,
-        //3    -1.0f, -1.0f, -1.0f,
-        //4     1.0f, -1.0f,  1.0f,
-        //5     1.0f,  1.0f,  1.0f,
-        //6    -1.0f, -1.0f,  1.0f,
-        //7    -1.0f,  1.0f,  1.0f
-
-             1.0f, -1.0f, -1.0f,
-             1.0f,  1.0f, -1.0f,
-             1.0f, -1.0f, -1.0f,
-            -1.0f, -1.0f, -1.0f,
-             1.0f, -1.0f, -1.0f,
-             1.0f, -1.0f,  1.0f,
-            -1.0f,  1.0f, -1.0f,
-             1.0f,  1.0f, -1.0f,
-            -1.0f,  1.0f, -1.0f,
-            -1.0f, -1.0f, -1.0f,
-            -1.0f,  1.0f, -1.0f,
-            -1.0f,  1.0f,  1.0f,
-            -1.0f, -1.0f,  1.0f,
-            -1.0f, -1.0f, -1.0f,
-            -1.0f, -1.0f,  1.0f,
-             1.0f, -1.0f,  1.0f,
-            -1.0f, -1.0f,  1.0f,
-            -1.0f,  1.0f,  1.0f,
-             1.0f,  1.0f,  1.0f,
-             1.0f,  1.0f, -1.0f,
-             1.0f,  1.0f,  1.0f,
-             1.0f, -1.0f,  1.0f,
-             1.0f,  1.0f,  1.0f,
-            -1.0f,  1.0f,  1.0f,
-    };
-    glGenVertexArrays(1, &line_cube.vao);
-    GLuint line_cube_vbo;
-    glGenBuffers(1, &line_cube_vbo);
-
-    gl_state.bind_vao(line_cube.vao);
-    glBindBuffer(GL_ARRAY_BUFFER, line_cube_vbo);
-
-    glBufferData(GL_ARRAY_BUFFER, sizeof(line_cube_vertices), &line_cube_vertices, GL_STATIC_DRAW);
-
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
-
-    line_cube.draw_count = (GLint*)malloc(sizeof(GLint));
-    line_cube.draw_start = (GLint*)malloc(sizeof(GLint));
-    line_cube.draw_mode = GL_LINES;
-    line_cube.draw_type = GL_UNSIGNED_SHORT;
-
-    line_cube.draw_start[0] = 0;
-    line_cube.draw_count[0] = sizeof(line_cube_vertices) / (2.0 * sizeof(*line_cube_vertices));
-
-    asset_manager.loadMeshFile(&water_grid, "data/mesh/water_grid.mesh");
-    simplex_gradient = asset_manager.createTexture("data/textures/2d_simplex_gradient_seamless.png");
-    asset_manager.loadTexture(simplex_gradient, "data/textures/2d_simplex_gradient_seamless.png", GL_RGB, GL_REPEAT);
-    simplex_value = asset_manager.createTexture("data/textures/2d_simplex_value_seamless.png");
-    asset_manager.loadTexture(simplex_value, "data/textures/2d_simplex_value_seamless.png", GL_RED, GL_REPEAT);
+    quad = asset_manager.createMesh("quad");
+    createQuadMesh(quad);
+    cube = asset_manager.createMesh("cube");
+    createCubeMesh(cube);
+    line_cube = asset_manager.createMesh("line_cube");
+    createLineCubeMesh(line_cube);
+    // Might move tessellated_grid onto water so it can set its own resolution
+    tessellated_grid = asset_manager.createMesh("grid");
+    createTessellatedGridMesh(tessellated_grid, glm::ivec2(50, 50));
+    
+    water_noise = asset_manager.createTexture("data/textures/waterNoise.png");
+    asset_manager.loadTexture(water_noise, water_noise->handle, GL_RED, GL_REPEAT);
+    water_normal1 = asset_manager.createTexture("data/textures/water_normal.png");
+    asset_manager.loadTexture(water_normal1, water_normal1->handle, GL_RGB, GL_REPEAT, true);
+    water_normal2 = asset_manager.createTexture("data/textures/waterNM1.png");
+    asset_manager.loadTexture(water_normal2, water_normal2->handle, GL_RGB, GL_REPEAT, true);
+    water_foam = asset_manager.createTexture("data/textures/water_foam.png");
+    asset_manager.loadTexture(water_foam, water_foam->handle, GL_RGB, GL_REPEAT);
 
     // Create per-pixel jitter lookup textures
     //createJitter3DTexture(jitter_lookup_64, JITTER_SIZE, 8, 8);	// 8 'estimation' samples, 64 total samples
@@ -827,20 +697,69 @@ void initGraphics(AssetManager& asset_manager) {
     initSharedUbo();
     initBloomFbo();
     initBoneMatricesUbo();
+    initLightsUbo();
     initWaterColliderFbo();
 }
 
 void drawCube() {
-    gl_state.bind_vao(cube.vao);
-    glDrawArrays(cube.draw_mode, cube.draw_start[0], cube.draw_count[0]);
+    gl_state.bind_vao(cube->vao);
+    glDrawArrays(cube->draw_mode, cube->draw_start[0], cube->draw_count[0]);
 }
 void drawLineCube() {
-    gl_state.bind_vao(line_cube.vao);
-    glDrawArrays(line_cube.draw_mode, line_cube.draw_start[0], line_cube.draw_count[0]);
+    gl_state.bind_vao(line_cube->vao);
+    glDrawArrays(line_cube->draw_mode, line_cube->draw_start[0], line_cube->draw_count[0]);
 }
 void drawQuad() {
-    gl_state.bind_vao(quad.vao);
-    glDrawArrays(quad.draw_mode, quad.draw_start[0], quad.draw_count[0]);
+    gl_state.bind_vao(quad->vao);
+    glDrawArrays(quad->draw_mode, quad->draw_start[0], quad->draw_count[0]);
+}
+void drawTessellatedGrid() {
+    gl_state.bind_vao(tessellated_grid->vao);
+    glDrawArrays(tessellated_grid->draw_mode, tessellated_grid->draw_start[0], tessellated_grid->draw_count[0]);
+}
+
+void clearBloomFbo() {
+    for (auto& mip : bloom_mip_infos) {
+        glDeleteTextures(1, &mip.texture);
+    }
+    bloom_mip_infos.clear();
+    glDeleteFramebuffers(1, &bloom_fbo);
+    bloom_fbo = GL_FALSE;
+}
+
+void initBloomFbo(bool resize) {
+    clearBloomFbo();
+
+    glGenFramebuffers(1, &bloom_fbo);
+    gl_state.bind_framebuffer(bloom_fbo);
+
+    auto mip_size = glm::vec2(window_width, window_height);
+    for (int i = 0; i < BLOOM_DOWNSAMPLES; ++i) {
+        auto& mip = bloom_mip_infos.emplace_back();
+
+        mip_size *= 0.5f;
+        mip.size = mip_size;
+
+        glGenTextures(1, &mip.texture);
+        gl_state.bind_texture(0, mip.texture);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R11F_G11F_B10F, mip_size.x, mip_size.y, 0, GL_RGB, GL_FLOAT, NULL);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        // we clamp to the edge as the blur filter would otherwise sample repeated texture values
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+        if (mip.size.x <= 1 || mip.size.y <= 1)
+            break;
+    }
+
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, bloom_mip_infos[0].texture, 0);
+    unsigned int attachments[1] = { GL_COLOR_ATTACHMENT0 };
+    glDrawBuffers(1, attachments);
+
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        std::cerr << "Bloom framebuffer not complete.\n";
+    }
 }
 
 // https://bruop.github.io/exposure/, and https://knarkowicz.wordpress.com/2016/01/09/automatic-exposure/
@@ -866,9 +785,9 @@ void blurBloomFbo(double dt) {
     gl_state.bind_program(Shaders::downsample.program());
     glUniform2f(Shaders::downsample.uniform("resolution"), window_width, window_height);
 
-    if(do_msaa) 
-        gl_state.bind_texture(0, hdr_buffer_resolve_multisample);
-    else        
+    if (do_msaa)
+        gl_state.bind_texture(0, hdr_buffer_copy);
+    else
         gl_state.bind_texture(0, hdr_buffer);
 
     for (int i = 0; i < bloom_mip_infos.size(); ++i) {
@@ -941,13 +860,16 @@ void clearFramebuffer() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 }
 
-static void resolveMultisampleHdrBuffer() {
+static void resolveHdrBuffer() {
+    auto read_framebuffer = gl_state.read_framebuffer, write_framebuffer = gl_state.write_framebuffer;
     gl_state.bind_framebuffer(hdr_fbo, GlBufferFlags::READ);
-    gl_state.bind_framebuffer(hdr_fbo_resolve_multisample, GlBufferFlags::WRITE);
+    gl_state.bind_framebuffer(hdr_fbo_copy, GlBufferFlags::WRITE);
     glBlitFramebuffer(0, 0, window_width, window_height, 0, 0, window_width, window_height, GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+    gl_state.bind_framebuffer(read_framebuffer, GlBufferFlags::READ);
+    gl_state.bind_framebuffer(write_framebuffer, GlBufferFlags::WRITE);
 }
 
-void drawSkybox(const Texture* skybox, const Camera &camera) {
+void drawSkybox(const Texture* skybox, const Camera& camera) {
     gl_state.set_flags(GlFlags::DEPTH_READ | GlFlags::DEPTH_WRITE);
     glDepthFunc(GL_LEQUAL);
 
@@ -962,6 +884,36 @@ void drawSkybox(const Texture* skybox, const Camera &camera) {
     drawCube();
 
     glDepthFunc(GL_LESS);
+}
+
+void createLightQueue(LightQueue& q, const EntityManager& entity_manager) {
+    q.point_lights.clear();
+
+    for (int i = 0; i < ENTITY_COUNT; ++i) {
+        if (entity_manager.entities[i] == nullptr) continue;
+        auto l = reinterpret_cast<PointLightEntity*>(entity_manager.entities[i]);
+        if (!entityInherits(l->type, POINT_LIGHT_ENTITY)) continue;
+
+        q.point_lights.push_back(l);
+    }
+}
+
+void addLightsToRenderQueue(RenderQueue& q, LightQueue& lights) {
+    for (int i = 0; i < 2; i++) {
+        auto& items = (i == 0) ? q.opaque_items : q.transparent_items;
+
+        for (auto& ri : items) {
+            // @todo BVH
+            for (const auto& l : lights.point_lights) {
+                if (ri.lights.point_lights.size() >= MAX_LIGHTS)
+                    break;
+
+                if (distanceToAabb(ri.aabb, l->position) < l->radius) {
+                    ri.lights.point_lights.push_back(l);
+                }
+            }
+        }
+    }
 }
 
 void createRenderQueue(RenderQueue& q, const EntityManager& entity_manager, const bool lightmapping) {
@@ -979,7 +931,7 @@ void createRenderQueue(RenderQueue& q, const EntityManager& entity_manager, cons
         ri.flags = GlFlags::DEPTH_READ | GlFlags::DEPTH_WRITE | GlFlags::CULL;
 
         if (entityInherits(m_e->type, ANIMATED_MESH_ENTITY)) {
-            if (lightmapping) 
+            if (lightmapping)
                 continue;
 
             auto a_e = (AnimatedMeshEntity*)m_e;
@@ -997,12 +949,13 @@ void createRenderQueue(RenderQueue& q, const EntityManager& entity_manager, cons
             sri.submesh_i = i;
             sri.model = createModelMatrix(mesh.transforms[i], m_e->position, m_e->rotation, m_e->scale);
             sri.draw_shadow = m_e->casts_shadow;
-            sri.aabb = &mesh.aabbs[i];
+            sri.aabb = transformAABB(mesh.aabbs[i], sri.model);
 
             const auto& lu = m_e->overidden_materials.find(i); // @note using the submesh index is intentional as it allows any part of a meshes material to be overriden
             if (lu == m_e->overidden_materials.end()) {
                 sri.mat = &m_e->mesh->materials[mesh.material_indices[i]];
-            } else {
+            }
+            else {
                 sri.mat = &lu->second;
             }
 
@@ -1032,9 +985,7 @@ void frustrumCullRenderQueue(RenderQueue& q, const Camera& camera) {
         auto& items = (i == 0) ? q.opaque_items : q.transparent_items;
 
         for (auto& ri : items) {
-            auto t_aabb = transformAABB(*ri.aabb, ri.model);
-
-            ri.culled = !f_planes.isAabbInFrustrum(t_aabb);
+            ri.culled = !f_planes.isAabbInFrustrum(ri.aabb);
         }
     }
 }
@@ -1049,7 +1000,7 @@ void uncullRenderQueue(RenderQueue& q) {
     }
 }
 
-static void drawRenderItem(const RenderItem& ri, const glm::mat4x4* vp, const bool shadow=false) {
+static void drawRenderItem(const RenderItem& ri, const glm::mat4x4* vp, const bool shadow = false) {
     if ((shadow && !ri.draw_shadow) || (!shadow && ri.culled))
         return;
 
@@ -1059,7 +1010,7 @@ static void drawRenderItem(const RenderItem& ri, const glm::mat4x4* vp, const bo
     else {
         gl_state.set_flags(ri.flags);
     }
-    
+
     Shader& s = shadow ? Shaders::shadow : Shaders::unified;
     // Determine shader program from macros, @todo move to render queue construction, 
     // in future this could also be a LUT from material type
@@ -1068,6 +1019,8 @@ static void drawRenderItem(const RenderItem& ri, const glm::mat4x4* vp, const bo
     s.set_macro("ALPHA_CLIP", !!(mat.type & MaterialType::ALPHA_CLIP), false);
     s.set_macro("VEGETATION", !!(mat.type & MaterialType::VEGETATION), false);
     if (!shadow) {
+        s.set_macro("LIGHTS", ri.lights.point_lights.size(), false);
+        s.set_macro("SPRITESHEETS", !!(mat.type & MaterialType::SPRITESHEETS), false);
         s.set_macro("PBR", !!(mat.type & MaterialType::PBR), false);
         s.set_macro("METALLIC", !!(mat.type & MaterialType::METALLIC), false);
         s.set_macro("EMISSIVE", !!(mat.type & MaterialType::EMISSIVE), false);
@@ -1093,7 +1046,12 @@ static void drawRenderItem(const RenderItem& ri, const glm::mat4x4* vp, const bo
 
             uniform.bind(s.uniform(name));
         }
-    } else if (!!(mat.type & MaterialType::ALPHA_CLIP)) { // Only need to bind clip texture for shadows
+
+        if (ri.lights.point_lights.size() > 0) {
+            writeLightsUbo(ri.lights);
+        }
+    }
+    else if (!!(mat.type & MaterialType::ALPHA_CLIP)) { // Only need to bind clip texture for shadows
         const auto& lu = mat.textures.find(TextureSlot::ALPHA_CLIP);
         if (lu != mat.textures.end()) {
             const auto& binding = lu->first;
@@ -1116,7 +1074,6 @@ static void drawRenderItem(const RenderItem& ri, const glm::mat4x4* vp, const bo
             glUniform1f(s.uniform("time"), glfwGetTime());
     }
 
-    // If bone animated write bone matrices
     if (ri.bone_matrices) {
         writeBoneMatricesUbo(*ri.bone_matrices);
     }
@@ -1153,44 +1110,67 @@ void drawRenderQueue(const RenderQueue& q, Environment& env, const Camera& camer
     for (const auto& ri : q.transparent_items) {
         drawRenderItem(ri, &camera.vp);
     }
-    
+
     // @todo integrate with transparent render queue
     if (q.water) {
-        gl_state.set_flags(GlFlags::CULL | GlFlags::DEPTH_READ | GlFlags::BLEND);
+        auto& w = *q.water;
+
+        gl_state.set_flags(GlFlags::CULL | GlFlags::DEPTH_READ | GlFlags::DEPTH_WRITE | GlFlags::BLEND);
         gl_state.set_blend_mode(GlBlendMode::ALPHA);
 
         Shaders::water.set_macro("SHADOWS", do_shadows, false);
         Shaders::water.set_macro("VOLUMETRICS", do_volumetrics, false);
         Shaders::water.activate_macros();
         gl_state.bind_program(Shaders::water.program());
-        
-        // Copy depth buffer
-        glCopyTextureSubImage2D(hdr_depth_copy, 0, 0, 0, 0, 0, window_width, window_height);
+
+        // Resolve hdr buffer so we can read and write simultaneously
+        resolveHdrBuffer();
+        gl_state.bind_texture(TextureSlot::SCREEN_COLOR, hdr_buffer_copy);
         gl_state.bind_texture(TextureSlot::SCREEN_DEPTH, hdr_depth_copy);
 
-        gl_state.bind_texture(TextureSlot::SIMPLEX_GRADIENT, simplex_gradient->id);
-        gl_state.bind_texture(TextureSlot::SIMPLEX_VALUE, simplex_value->id);
+        gl_state.bind_texture(TextureSlot::WATER_NOISE, water_noise->id);
+        gl_state.bind_texture(TextureSlot::WATER_FOAM, water_foam->id);
+        gl_state.bind_texture(TextureSlot::WATER_NORMALS_1, water_normal1->id);
+        gl_state.bind_texture(TextureSlot::WATER_NORMALS_2, water_normal2->id);
         gl_state.bind_texture(TextureSlot::WATER_COLLIDER, water_collider_buffers[water_collider_final_fbo]);
-    
-        auto model = createModelMatrix(q.water->position, glm::quat(), q.water->scale);
-        auto mvp = camera.vp * model;
-        glUniformMatrix4fv(Shaders::water.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
+
+        auto model = createModelMatrix(w.position, glm::quat(), w.scale);
+        //auto mvp = camera.vp * model;
+        //glUniformMatrix4fv(Shaders::water.uniform("mvp"), 1, GL_FALSE, &mvp[0][0]);
         glUniformMatrix4fv(Shaders::water.uniform("model"), 1, GL_FALSE, &model[0][0]);
-        glUniform4fv(Shaders::water.uniform("shallow_color"), 1, &q.water->shallow_color[0]);
-        glUniform4fv(Shaders::water.uniform("deep_color"), 1, &q.water->deep_color[0]);
-        glUniform4fv(Shaders::water.uniform("foam_color"), 1, &q.water->foam_color[0]);
+        
+        //glUniform4fv(Shaders::water.uniform("ssr_settings"), 1, &w.ssr_settings[0]);
+        //glUniform1fv(Shaders::water.uniform("depth_fade_distance"), 1, &w.depth_fade_distance);
 
-        if (water_grid.complete) {
-            gl_state.bind_vao(water_grid.vao);
-            glDrawElements(water_grid.draw_mode, water_grid.draw_count[0], water_grid.draw_type, 
-                            (GLvoid*)(sizeof(*water_grid.indices)*water_grid.draw_start[0]));
-        }
+        glUniform4fv(Shaders::water.uniform("normal_scroll_direction"), 1, &w.normal_scroll_direction[0]);
+        
+        glUniform3fv(Shaders::water.uniform("surface_col"), 1, &w.surface_col[0]);
+        glUniform3fv(Shaders::water.uniform("floor_col"), 1, &w.floor_col[0]);
+        glUniform3fv(Shaders::water.uniform("refraction_tint_col"), 1, &w.refraction_tint_col[0]);
 
+        glUniform2fv(Shaders::water.uniform("normal_scroll_speed"), 1, &w.normal_scroll_speed[0]);
+        glUniform2fv(Shaders::water.uniform("tilling_size"), 1, &w.tilling_size[0]);
+        
+        glUniform1fv(Shaders::water.uniform("refraction_distortion_factor"), 1, &w.refraction_distortion_factor);
+        glUniform1fv(Shaders::water.uniform("refraction_height_factor"), 1, &w.refraction_height_factor);
+        glUniform1fv(Shaders::water.uniform("refraction_distance_factor"), 1, &w.refraction_distance_factor);
+        glUniform1fv(Shaders::water.uniform("foam_height_start"), 1, &w.foam_height_start);
+        glUniform1fv(Shaders::water.uniform("foam_angle_exponent"), 1, &w.foam_angle_exponent);
+        glUniform1fv(Shaders::water.uniform("foam_tilling"), 1, &w.foam_tilling);
+        glUniform1fv(Shaders::water.uniform("foam_brightness"), 1, &w.foam_brightness);
+        glUniform1fv(Shaders::water.uniform("roughness"), 1, &w.roughness);
+        glUniform1fv(Shaders::water.uniform("reflectance"), 1, &w.reflectance);
+        glUniform1fv(Shaders::water.uniform("specular_intensity"), 1, &w.specular_intensity);
+        glUniform1fv(Shaders::water.uniform("floor_height"), 1, &w.floor_height);
+        glUniform1fv(Shaders::water.uniform("peak_height"), 1, &w.peak_height);
+        glUniform1fv(Shaders::water.uniform("extinction_coefficient"), 1, &w.extinction_coefficient);
+
+        drawTessellatedGrid();
         gl_state.set_blend_mode(GlBlendMode::OVERWRITE);
     }
     
     if (do_msaa) {
-        resolveMultisampleHdrBuffer();
+        resolveHdrBuffer();
     }
 }
 
@@ -1222,7 +1202,7 @@ void drawPost(const Camera &camera){
     glUniform1f(Shaders::post.uniform("exposure"), exposure);
 
     if (do_msaa) {
-        gl_state.bind_texture(TextureSlot::SCREEN_COLOR, hdr_buffer_resolve_multisample);
+        gl_state.bind_texture(TextureSlot::SCREEN_COLOR, hdr_buffer_copy);
     } else {
         gl_state.bind_texture(TextureSlot::SCREEN_COLOR, hdr_buffer);
     }
@@ -1260,8 +1240,8 @@ void convoluteIrradianceFromCubemap(Texture *in_tex, Texture *out_tex, GLint for
     gl_state.bind_framebuffer(FBO);
     gl_state.bind_renderbuffer(RBO);
 
-    static const glm::mat4 projection = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 10.0f);
-    static const glm::mat4 views[] =
+    const glm::mat4 projection = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 10.0f);
+    const glm::mat4 views[] =
     {
        glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3( 1.0f,  0.0f,  0.0f), glm::vec3(0.0f, -1.0f,  0.0f)),
        glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(-1.0f,  0.0f,  0.0f), glm::vec3(0.0f, -1.0f,  0.0f)),
@@ -1288,7 +1268,6 @@ void convoluteIrradianceFromCubemap(Texture *in_tex, Texture *out_tex, GLint for
     gl_state.bind_program(Shaders::diffuse_convolution.program());
 
     gl_state.bind_viewport(out_tex->resolution.x, out_tex->resolution.y);
-    gl_state.bind_framebuffer(FBO);
     for (unsigned int i = 0; i < 6; ++i) {
         auto vp = projection * glm::mat4(glm::mat3(views[i])); // removes translation
         glUniformMatrix4fv(Shaders::diffuse_convolution.uniform("vp"), 1, GL_FALSE, &vp[0][0]);
@@ -1299,6 +1278,8 @@ void convoluteIrradianceFromCubemap(Texture *in_tex, Texture *out_tex, GLint for
         drawCube();
     }
 
+    // @todo fix when id is deleted
+    gl_state.bind_renderbuffer(GL_FALSE);
     gl_state.bind_framebuffer(GL_FALSE);
     glDeleteFramebuffers(1, &FBO);
     glDeleteRenderbuffers(1, &RBO);
@@ -1317,8 +1298,8 @@ void convoluteSpecularFromCubemap(Texture* in_tex, Texture* out_tex, GLint forma
     gl_state.bind_framebuffer(FBO);
     gl_state.bind_renderbuffer(RBO);
 
-    static const glm::mat4 projection = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 10.0f);
-    static const glm::mat4 views[] =
+    const glm::mat4 projection = glm::perspective(glm::radians(90.0f), 1.0f, 0.1f, 10.0f);
+    const glm::mat4 views[] =
     {
        glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3( 1.0f,  0.0f,  0.0f), glm::vec3(0.0f, -1.0f,  0.0f)),
        glm::lookAt(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(-1.0f,  0.0f,  0.0f), glm::vec3(0.0f, -1.0f,  0.0f)),
@@ -1341,7 +1322,6 @@ void convoluteSpecularFromCubemap(Texture* in_tex, Texture* out_tex, GLint forma
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
     glGenerateMipmap(GL_TEXTURE_CUBE_MAP); // Since we store different roughnesses in mip maps
 
     gl_state.bind_program(Shaders::specular_convolution.program());
@@ -1360,8 +1340,7 @@ void convoluteSpecularFromCubemap(Texture* in_tex, Texture* out_tex, GLint forma
             auto vp = projection * glm::mat4(glm::mat3(views[i])); // removes translation @speed precompute
             glUniformMatrix4fv(Shaders::specular_convolution.uniform("vp"), 1, GL_FALSE, &vp[0][0]);
 
-            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-                GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, out_tex->id, mip);
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, out_tex->id, mip);
             glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
             drawCube();
@@ -1370,6 +1349,8 @@ void convoluteSpecularFromCubemap(Texture* in_tex, Texture* out_tex, GLint forma
         mip_resolution /= 2; // Set resolution appropriate to mip
     }
 
+    // @todo fix when id is deleted
+    gl_state.bind_renderbuffer(GL_FALSE);
     gl_state.bind_framebuffer(GL_FALSE);
     glDeleteFramebuffers(1, &FBO);
     glDeleteRenderbuffers(1, &RBO);
@@ -1389,7 +1370,6 @@ bool createEnvironmentFromCubemap(Environment& env, AssetManager &asset_manager,
             return false;
         }
     }
-
 
     env.skybox_irradiance = asset_manager.createTexture("skybox_irradiance");
     convoluteIrradianceFromCubemap(env.skybox, env.skybox_irradiance, format);
@@ -1428,7 +1408,7 @@ Texture *createJitter3DTexture(AssetManager &asset_manager, int size, int sample
                 x = k % (samples_u / 2);
                 y = (samples_v - 1) - k / (samples_u / 2);
 
-                // generate points on a regular samples_u x samples_v rectangular grid
+                // generate points on a regular samples_u x samples_v rectangular tessellated_grid
                 v[0] = (float)(x * 2 + 0.5f) / samples_u;
                 v[1] = (float)(y + 0.5f) / samples_v;
                 v[2] = (float)(x * 2 + 1 + 0.5f) / samples_u;
@@ -1462,4 +1442,24 @@ Texture *createJitter3DTexture(AssetManager &asset_manager, int size, int sample
     tex->format = GL_RGBA;
     tex->complete = true;
     return tex;
+}
+
+// @note assumes framebuffer is screen sized
+void writeFramebufferToTga(std::string path) {
+    int* buffer = new int[window_width * window_height * 3];
+    glReadPixels(0, 0, window_width, window_height, GL_BGR, GL_UNSIGNED_BYTE, buffer);
+
+    FILE* fp = fopen(path.c_str(), "wb");
+    if (!fp) {
+        std::cerr << "Failed to open file %s to write TGA to path: " << path << "\n";
+        return;
+    }
+
+    std::cout << "----------------Writing Frame to TGA " << path << "----------------\n";
+    short  TGAhead[] = { 0, 2, 0, 0, 0, 0, (short)window_width, (short)window_height, 24 };
+    fwrite(TGAhead, sizeof(TGAhead), 1, fp);
+    fwrite(buffer, 3 * window_width * window_height, 1, fp);
+    delete[] buffer;
+
+    fclose(fp);
 }

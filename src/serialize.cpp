@@ -168,18 +168,21 @@ void readAnimatedMeshEntity(AnimatedMeshEntity* e, AssetManager& assets, FILE* f
 void writeWaterEntity(WaterEntity* e, FILE* f) {
     fwrite(&e->position, sizeof(e->position), 1, f);
     fwrite(&e->scale, sizeof(e->scale), 1, f);
-
-    fwrite(&e->shallow_color, sizeof(e->shallow_color), 1, f);
-    fwrite(&e->deep_color, sizeof(e->deep_color), 1, f);
-    fwrite(&e->foam_color, sizeof(e->foam_color), 1, f);
 }
 void readWaterEntity(WaterEntity* e, FILE* f) {
     fread(&e->position, sizeof(e->position), 1, f);
     fread(&e->scale, sizeof(e->scale), 1, f);
+}
 
-    fread(&e->shallow_color, sizeof(e->shallow_color), 1, f);
-    fread(&e->deep_color, sizeof(e->deep_color), 1, f);
-    fread(&e->foam_color, sizeof(e->foam_color), 1, f);
+void writePointLightEntity(PointLightEntity* e, FILE* f) {
+    fwrite(&e->position, sizeof(e->position), 1, f);
+    fwrite(&e->radiance, sizeof(e->radiance), 1, f);
+    fwrite(&e->radius, sizeof(e->radius), 1, f);
+}
+void readPointLightEntity(PointLightEntity* e, FILE* f) {
+    fread(&e->position, sizeof(e->position), 1, f);
+    fread(&e->radiance, sizeof(e->radiance), 1, f);
+    fread(&e->radius, sizeof(e->radius), 1, f);
 }
 
 void writeColliderEntity(ColliderEntity* e, FILE* f) {
@@ -215,6 +218,9 @@ void readCamera(Camera& camera, FILE* f) {
 void writeEnvironment(const Environment& env, FILE* f) {
     writeString(env.skybox->handle, f);
 
+    fwrite(&env.sun_color, sizeof(env.sun_color), 1, f);
+    fwrite(&env.sun_direction, sizeof(env.sun_direction), 1, f);
+
     fwrite(&env.fog.anisotropy, sizeof(env.fog.anisotropy), 1, f);
     fwrite(&env.fog.density, sizeof(env.fog.density), 1, f);
     fwrite(&env.fog.noise_amount, sizeof(env.fog.noise_amount), 1, f);
@@ -225,6 +231,9 @@ void readEnvironment(Environment& env, AssetManager& assets, FILE* f) {
     readString(handle, f);
     createEnvironmentFromCubemap(env, assets, handle, GL_RGB16F);
     
+    fread(&env.sun_color, sizeof(env.sun_color), 1, f);
+    fread(&env.sun_direction, sizeof(env.sun_direction), 1, f);
+
     fread(&env.fog.anisotropy, sizeof(env.fog.anisotropy), 1, f);
     fread(&env.fog.density, sizeof(env.fog.density), 1, f);
     fread(&env.fog.noise_amount, sizeof(env.fog.noise_amount), 1, f);
@@ -362,19 +371,19 @@ void writeMesh(const Mesh& mesh, FILE* f) {
     fwrite(&mesh.attributes, sizeof(mesh.attributes), 1, f);
 
     fwrite(&mesh.num_vertices, sizeof(mesh.num_vertices), 1, f);
-    if (mesh.attributes & MESH_ATTRIBUTES_VERTICES)
+    if (!!(mesh.attributes & Mesh::Attributes::VERTICES))
         fwrite(mesh.vertices, sizeof(*mesh.vertices), mesh.num_vertices, f);
-    if (mesh.attributes & MESH_ATTRIBUTES_NORMALS)
+    if (!!(mesh.attributes & Mesh::Attributes::NORMALS))
         fwrite(mesh.normals, sizeof(*mesh.normals), mesh.num_vertices, f);
-    if (mesh.attributes & MESH_ATTRIBUTES_TANGENTS)
+    if (!!(mesh.attributes & Mesh::Attributes::TANGENTS))
         fwrite(mesh.tangents, sizeof(*mesh.tangents), mesh.num_vertices, f);
-    if (mesh.attributes & MESH_ATTRIBUTES_UVS)
+    if (!!(mesh.attributes & Mesh::Attributes::UVS))
         fwrite(mesh.uvs, sizeof(*mesh.uvs), mesh.num_vertices, f);
-    if (mesh.attributes & MESH_ATTRIBUTES_BONES) {
+    if (!!(mesh.attributes & Mesh::Attributes::BONES)) {
         fwrite(mesh.bone_ids, sizeof(*mesh.bone_ids), mesh.num_vertices, f);
         fwrite(mesh.weights, sizeof(*mesh.weights), mesh.num_vertices, f);
     }
-    if (mesh.attributes & MESH_ATTRIBUTES_COLORS)
+    if (!!(mesh.attributes & Mesh::Attributes::COLORS))
         fwrite(mesh.colors, sizeof(*mesh.colors), mesh.num_vertices, f);
 
     fwrite(&mesh.num_materials, sizeof(mesh.num_materials), 1, f);
@@ -417,23 +426,23 @@ bool readMesh(Mesh& mesh, AssetManager& assets, FILE* f) {
     fread(&mesh.num_vertices, sizeof(mesh.num_vertices), 1, f);
     std::cout << "Number of vertices " << mesh.num_vertices << ".\n";
     // @todo allocate in one go and index into buffer
-    if (mesh.attributes & MESH_ATTRIBUTES_VERTICES) {
+    if (!!(mesh.attributes & Mesh::Attributes::VERTICES)) {
         mesh.vertices = reinterpret_cast<decltype(mesh.vertices)>(malloc(sizeof(*mesh.vertices) * mesh.num_vertices));
         fread(mesh.vertices, sizeof(*mesh.vertices), mesh.num_vertices, f);
     }
-    if (mesh.attributes & MESH_ATTRIBUTES_NORMALS) {
+    if (!!(mesh.attributes & Mesh::Attributes::NORMALS)) {
         mesh.normals = reinterpret_cast<decltype(mesh.normals)>(malloc(sizeof(*mesh.normals) * mesh.num_vertices));
         fread(mesh.normals, sizeof(*mesh.normals), mesh.num_vertices, f);
     }
-    if (mesh.attributes & MESH_ATTRIBUTES_TANGENTS) {
+    if (!!(mesh.attributes & Mesh::Attributes::TANGENTS)) {
         mesh.tangents = reinterpret_cast<decltype(mesh.tangents)>(malloc(sizeof(*mesh.tangents) * mesh.num_vertices));
         fread(mesh.tangents, sizeof(*mesh.tangents), mesh.num_vertices, f);
     }
-    if (mesh.attributes & MESH_ATTRIBUTES_UVS) {
+    if (!!(mesh.attributes & Mesh::Attributes::UVS)) {
         mesh.uvs = reinterpret_cast<decltype(mesh.uvs)>(malloc(sizeof(*mesh.uvs) * mesh.num_vertices));
         fread(mesh.uvs, sizeof(*mesh.uvs), mesh.num_vertices, f);
     }
-    if (mesh.attributes & MESH_ATTRIBUTES_BONES) {
+    if (!!(mesh.attributes & Mesh::Attributes::BONES)) {
         mesh.bone_ids = reinterpret_cast<decltype(mesh.bone_ids)>(malloc(sizeof(*mesh.bone_ids) * mesh.num_vertices));
         fread(mesh.bone_ids, sizeof(*mesh.bone_ids), mesh.num_vertices, f);
 
@@ -441,7 +450,7 @@ bool readMesh(Mesh& mesh, AssetManager& assets, FILE* f) {
         fread(mesh.weights, sizeof(*mesh.weights), mesh.num_vertices, f);
         std::cout << "Loaded bone ids and weights.\n";
     }
-    if (mesh.attributes & MESH_ATTRIBUTES_COLORS) {
+    if (!!(mesh.attributes & Mesh::Attributes::COLORS)) {
         mesh.colors = reinterpret_cast<decltype(mesh.colors)>(malloc(sizeof(*mesh.colors) * mesh.num_vertices));
         fread(mesh.colors, sizeof(*mesh.colors), mesh.num_vertices, f);
     }
@@ -487,7 +496,7 @@ bool readMesh(Mesh& mesh, AssetManager& assets, FILE* f) {
     calculateAABB(mesh.aabbs[mesh.num_submeshes], mesh.vertices, mesh.num_vertices, mesh.indices, mesh.num_indices);
 }
 
-constexpr uint16_t LEVEL_FILE_VERSION = 2U;
+constexpr uint16_t LEVEL_FILE_VERSION = 3U;
 constexpr uint16_t LEVEL_FILE_MAGIC = 7123U;
 void writeLevel(Level& level, FILE* f) {
     fwrite(&LEVEL_FILE_MAGIC, sizeof(LEVEL_FILE_MAGIC), 1, f);
@@ -515,6 +524,9 @@ void writeLevel(Level& level, FILE* f) {
         }
         if (entityInherits(e->type, WATER_ENTITY)) {
             writeWaterEntity((WaterEntity*)e, f);
+        }
+        if (entityInherits(e->type, POINT_LIGHT_ENTITY)) {
+            writePointLightEntity((PointLightEntity*)e, f);
         }
         if (entityInherits(e->type, COLLIDER_ENTITY)) {
             writeColliderEntity((ColliderEntity*)e, f);
@@ -573,6 +585,9 @@ bool readLevel(Level& level, AssetManager& assets, FILE* f) {
         }
         if (entityInherits(e->type, WATER_ENTITY)) {
             readWaterEntity((WaterEntity*)e, f);
+        }
+        if (entityInherits(e->type, POINT_LIGHT_ENTITY)) {
+            readPointLightEntity((PointLightEntity*)e, f);
         }
         if (entityInherits(e->type, COLLIDER_ENTITY)) {
             readColliderEntity((ColliderEntity*)e, f);

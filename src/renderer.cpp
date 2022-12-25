@@ -22,7 +22,9 @@ bool GlState::init() {
     // Configure gl global state
     glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);
     glEnable(GL_SCISSOR_TEST);
+    glEnable(GL_LINE_SMOOTH);
     glCullFace(GL_BACK);
+    glPatchParameteri(GL_PATCH_VERTICES, 3);
 
     // Set clear color, doesn't really matter since we use a skybox anyway
     glClearColor(0.0, 0.0, 0.0, 1.0);
@@ -139,6 +141,23 @@ bool GlState::set_blend_mode(GlBlendMode mode) {
             break;
         }
         blend_mode = mode;
+        return true;
+    }
+    return false;
+}
+
+bool GlState::set_cull_mode(GlCullMode mode) {
+    if (mode != cull_mode) {
+        switch (mode)
+        {
+        case GlCullMode::BACK:
+            glCullFace(GL_BACK);
+            break;
+        case GlCullMode::FRONT:
+            glCullFace(GL_FRONT);
+            break;
+        }
+        cull_mode = mode;
         return true;
     }
     return false;

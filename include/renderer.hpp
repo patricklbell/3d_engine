@@ -36,7 +36,11 @@ enum class GlBlendMode : uint64_t {
     REVERSE_ALPHA,
     ADDITIVE,
     MULTIPLICATIVE,
+};
 
+enum class GlCullMode : uint64_t {
+    FRONT = 0,
+    BACK,
 };
 
 struct GlState {
@@ -57,6 +61,7 @@ struct GlState {
     bool add_flags(GlFlags add);
     bool remove_flags(GlFlags remove);
     bool set_blend_mode(GlBlendMode mode);
+    bool set_cull_mode(GlCullMode mode);
 
     bool check_errors(std::string_view file, const int line, std::string_view function);
 
@@ -67,6 +72,7 @@ struct GlState {
     GLuint renderbuffer = GL_FALSE;
     GlFlags flags = GlFlags::ALL;
     GlBlendMode blend_mode = GlBlendMode::NONE;
+    GlCullMode cull_mode = GlCullMode::BACK;
     GLuint vao = GL_FALSE;
     GLuint program = GL_FALSE;
     glm::ivec4 viewport = glm::ivec4(0);
@@ -74,16 +80,24 @@ struct GlState {
 };
 extern GlState gl_state;
 
+#define MAX_LIGHTS 4
+
+struct PointLightEntity;
+struct LightQueue {
+    std::vector<PointLightEntity*> point_lights;
+};
+
 struct RenderItem {
     Material* mat;
     uint64_t submesh_i;
     Mesh* mesh;
-    AABB* aabb;
+    std::array<glm::mat4, MAX_BONES>* bone_matrices = nullptr;
 
     GlFlags flags;
 
     glm::mat4x4 model;
-    std::array<glm::mat4, MAX_BONES>* bone_matrices = nullptr;
+    AABB aabb;
+    LightQueue lights;
     bool draw_shadow = true;
     bool culled = false;
 };

@@ -26,13 +26,13 @@ struct Id {
 };
 
 enum EntityType : uint64_t {
-    ENTITY = 0,
-    MESH_ENTITY = 1 << 0,
-    WATER_ENTITY = 1 << 1,
-    COLLIDER_ENTITY = (1 << 2) | MESH_ENTITY,
-    // Empty slot
+    ENTITY               = 0,
+    MESH_ENTITY          =  1 << 0,
+    WATER_ENTITY         =  1 << 1,
+    COLLIDER_ENTITY      = (1 << 2) | MESH_ENTITY,
+    POINT_LIGHT_ENTITY   =  1 << 3,
     ANIMATED_MESH_ENTITY = (1 << 4) | MESH_ENTITY,
-    PLAYER_ENTITY = (1 << 5) | ANIMATED_MESH_ENTITY,
+    PLAYER_ENTITY        = (1 << 5) | ANIMATED_MESH_ENTITY,
 };
 struct Entity {
     EntityType type = ENTITY;
@@ -40,7 +40,6 @@ struct Entity {
     Entity(Id _id = NULLID) : id(_id) {
     }
 };
-
 
 struct MeshEntity : Entity {
     glm::vec3 position = glm::vec3(0.0);
@@ -58,6 +57,16 @@ struct MeshEntity : Entity {
 
     MeshEntity(Id _id = NULLID) : Entity(_id) {
         type = EntityType::MESH_ENTITY;
+    }
+};
+
+struct PointLightEntity : Entity {
+    glm::vec3 position = glm::vec3(0.0);
+    glm::vec3 radiance = glm::vec3(1.0);
+    float radius = 1.0;
+    
+    PointLightEntity(Id _id = NULLID) : Entity(_id) {
+        type = EntityType::POINT_LIGHT_ENTITY;
     }
 };
 
@@ -140,9 +149,28 @@ struct WaterEntity : Entity {
     glm::vec3 position = glm::vec3(0.0);
     glm::mat3 scale = glm::mat3(1.0);
 
-    glm::vec4 shallow_color = glm::vec4(0.20, 0.7, 1.0, 1.0);
-    glm::vec4 deep_color = glm::vec4(0.08, 0.4, 0.8, 1.0);
-    glm::vec4 foam_color = glm::vec4(1.0, 1.0, 1.0, 1.0);
+    //glm::vec4 ssr_settings{ 0.5, 20.0, 10.0, 20.0 };
+    //float depth_fade_distance{ 0.5f };
+
+    glm::vec3 refraction_tint_col{ 0.003f, 0.599f, 0.812f };
+    glm::vec3 surface_col{ 0.465, 0.797, 0.991 };
+    glm::vec3 floor_col{ 0.165, 0.397, 0.491 };
+    glm::vec4 normal_scroll_direction{ 1.0f, 0.0f, 0.0f, 1.0f };
+    glm::vec2 normal_scroll_speed{ 0.01f, 0.01f };
+    glm::vec2 tilling_size{ 5.0f, 5.0f };
+    float refraction_distortion_factor{ 0.04f };
+    float refraction_height_factor{ 2.5f };
+    float refraction_distance_factor{ 15.0f };
+    float foam_height_start{ 0.8f };
+    float foam_angle_exponent{ 80.0f };
+    float foam_tilling{ 2.0f };
+    float foam_brightness{ 0.8f };
+    float roughness{ 0.08f };
+    float reflectance{ 0.55f };
+    float specular_intensity{ 125.0f };
+    float floor_height{ 5.0 };
+    float peak_height{ 6.0 };
+    float extinction_coefficient{ 0.4 };
 
     WaterEntity(Id _id = NULLID) : Entity(_id) {
         type = EntityType::WATER_ENTITY;
@@ -207,6 +235,8 @@ inline Entity* allocateEntity(Id id, EntityType type) {
         return new AnimatedMeshEntity(id);
     case PLAYER_ENTITY:
         return new PlayerEntity(id);
+    case POINT_LIGHT_ENTITY:
+        return new PointLightEntity(id);
 
     default:
         return new Entity(id);
@@ -224,6 +254,8 @@ inline constexpr size_t entitySize(EntityType type) {
         return sizeof(WaterEntity);
     case PLAYER_ENTITY:
         return sizeof(PlayerEntity);
+    case POINT_LIGHT_ENTITY:
+        return sizeof(PointLightEntity);
 
     default:
         return sizeof(Entity);
@@ -251,6 +283,9 @@ inline Entity* copyEntity(Entity* src) {
         break;
     case PLAYER_ENTITY:
         *((PlayerEntity*)cpy) = *((PlayerEntity*)src);
+        break;
+    case POINT_LIGHT_ENTITY:
+        *((PointLightEntity*)cpy) = *((PointLightEntity*)src);
         break;
     default:
         std::cerr << "Critical error, unknown entity type " << src->type << " in copyEntity!\n";

@@ -7,7 +7,6 @@ namespace Shaders {
 	extern Shader unified;
 	extern Shader shadow;
 	extern Shader water;
-	extern Shader vegetation;
 	extern Shader debug;
 	extern Shader post;
 	extern Shader skybox;

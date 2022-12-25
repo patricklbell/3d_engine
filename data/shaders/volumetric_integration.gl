@@ -1,4 +1,6 @@
 #begin COMPUTE
+#macro ANISOTROPY 1
+#macro LIGHTS     0
 
 #load lib/constants.gl
 
@@ -6,9 +8,13 @@ layout(local_size_x = LOCAL_SIZE_X, local_size_y = LOCAL_SIZE_Y, local_size_z = 
 
 layout(binding = 0, rgba16f) uniform writeonly image3D integrated_vol;
 
+#load lib/constants.gl
 #load lib/shared.gl
 #load lib/shadows.gl
 #load lib/utilities.gl
+#if LIGHTS
+#load lib/lights_ubo.gl
+#endif
 
 layout(binding = 0) uniform sampler2D bluenoise_map;
 layout(binding = 1) uniform sampler3D prev_vol;
@@ -18,7 +24,9 @@ uniform mat4 prev_vp;
 uniform vec3 t1t2e1;
 
 // @todo make fog vols and global height based fog
+#if ANISOTROPY
 uniform float anisotropy; // How much effect the light direction has on the fogs visibility
+#endif
 uniform float density;
 uniform bool do_accumulation;
 uniform ivec3 vol_size;
@@ -73,7 +81,7 @@ float phase_function(vec3 V, vec3 light, float g)
     float gsq = g * g;
     float denom  = 1.0 + gsq - 2.0 * g * cos_theta;
     denom = denom * denom * denom;
-    denom = sqrt(max(0.0, denom));
+    denom = sqrt(max(EPSILON, denom));
     return (1.0 - gsq) / denom;
 }
 
@@ -116,7 +124,36 @@ float sdBox( vec3 p, vec3 b )
   return length(max(q,0.0)) + min(max(q.x,max(q.y,q.z)),0.0);
 }
 
-//#load lib/noise.gl
+vec3 directionalLight(vec3 V, vec3 P) {
+    float visibility = 1.0 - shadowness(0.0, P); // @todo @hardcoded good NdtoL to change bias
+    vec3 color = visibility * sun_color;
+#if ANISOTROPY
+    color *= phase_function(V, -sun_direction, anisotropy);
+#endif
+
+    return color;
+}
+
+#if LIGHTS
+vec3 pointLights(vec3 V, vec3 P) {
+    vec3 color = vec3(0.0);
+    for (int i = 0; i < MAX_LIGHTS; i++) {
+        if (any(greaterThan(light_radiances[i], vec3(0)))) {
+            vec3 L = light_positions[i] - P;
+            float L_sqr = max(dot(L, L), EPSILON);
+
+            vec3 radiance = light_radiances[i] / L_sqr;
+
+#if ANISOTROPY
+            color += radiance * phase_function(V, L/sqrt(L_sqr), anisotropy);
+#else
+            color += radiance;
+#endif
+        }
+    }
+    return color;
+}
+#endif
 
 void main() {
     ivec3 coord = ivec3(gl_GlobalInvocationID.xyz);
@@ -134,12 +171,10 @@ void main() {
         vec3 V = normalize(camera_position - jittered_world_pos);
         
         vec3 lighting = sun_color*.4; // @todo Set ambient fog color
-
-        // Add directional lighting
-        {
-            float visibility = 1.0 - shadowness(0.0, jittered_world_pos); // @todo @hardcoded good NdtoL to change bias
-            lighting += visibility * sun_color * phase_function(V, -sun_direction, anisotropy);
-        }
+        lighting += directionalLight(V, jittered_world_pos);
+#if LIGHTS
+        lighting += pointLights(V, jittered_world_pos);
+#endif
 
         // ScrollNoise(warp, _WindSpeed, _NoiseFogScale, _WindDir, _NoiseFogAmount, -0.3, 8.0);
         float calc_density = density * clamp(ScrollNoise(jittered_world_pos, 3.0*wind_strength, noise_scale, wind_direction, noise_amount, -0.3, 8.0), 0.0, 1.0 - EPSILON);

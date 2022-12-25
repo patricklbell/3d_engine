@@ -1,8 +1,9 @@
 #begin VERTEX
-#macro ANIMATED_BONES 0
-#macro SHADOWS 0
-#macro ALPHA_CLIP 0
-#macro VEGETATION 0
+#macro ANIMATED_BONES   0
+#macro SHADOWS          0
+#macro ALPHA_CLIP       0
+#macro VEGETATION       0
+#macro SPRITESHEETS     0
 
 layout (location = 0) in vec3  in_vertex;
 layout (location = 1) in vec3  in_normal;
@@ -20,7 +21,9 @@ layout (location = 7) in vec4 in_color;
 
 out vec3 position;
 out vec2 texcoord;
-out mat3 TBN;
+out vec3 T;
+out vec3 B;
+out vec3 N;
 
 #load lib/shared.gl
 uniform mat4 mvp;
@@ -34,6 +37,13 @@ uniform mat4 model;
 uniform vec2 wind_direction;
 uniform float wind_strength;
 #load lib/vegetation.gl
+#endif
+
+#if SPRITESHEETS
+uniform float spritesheet_speed;
+uniform float spritesheet_time_offset;
+uniform int spritesheet_tile_number;
+uniform float spritesheet_tile_width;
 #endif
 
 void main() {
@@ -58,25 +68,26 @@ void main() {
     gl_Position = mvp * vertex;
 	position = (model * vertex).xyz;
 	texcoord = in_texcoord;
+#if SPRITESHEETS
+    int tile_offset = int(floor(time*spritesheet_speed + spritesheet_time_offset));
+    texcoord.x += (tile_offset % spritesheet_tile_number) * spritesheet_tile_width;
+#endif
 
 #if ANIMATED_BONES
-    // Copied this from forum post so might be wrong or inefficient
-    mat3 bone_normal_transform = transpose(inverse(mat3(bone_transform)));
-
-	vec3 T = normalize(vec3(model * vec4(bone_normal_transform*in_tangent, 0.0)));
-	vec3 N = normalize(vec3(model * vec4(bone_normal_transform*in_normal, 0.0)));
+	T = normalize(vec3(model * bone_transform * vec4(in_tangent, 0.0)));
+	N = normalize(vec3(model * bone_transform * vec4(in_normal, 0.0)));
 #else
-    vec3 T = normalize(vec3(model * vec4(in_tangent, 0.0)));
-	vec3 N = normalize(vec3(model * vec4(in_normal, 0.0)));
+    T = normalize(vec3(model * vec4(in_tangent, 0.0)));
+	N = normalize(vec3(model * vec4(in_normal, 0.0)));
 #endif
 
 	// Re-orthogonalize T with respect to N
     // Didn't seem to have any benefits
 	//T = normalize(T - dot(T, N) * N);
-	vec3 B = cross(N, T);
+	B = cross(N, T);
 
 	// Transpose of perpendicular matrix is inverse
-	TBN = mat3(T, B, N);
+	//TBN = mat3(T, B, N);
 }
 
 #end
@@ -89,6 +100,7 @@ void main() {
 #macro EMISSIVE             0
 #macro DEBUG_SHADOWS        0
 #macro METALLIC             0
+#macro LIGHTS               0
 
 #load lib/shared.gl
 #load lib/shadows.gl
@@ -100,7 +112,9 @@ void main() {
 
 in vec3 position;
 in vec2 texcoord;
-in mat3 TBN;
+in vec3 T;
+in vec3 B;
+in vec3 N;
 
 layout (location = 0) out vec4 out_color;
 
@@ -160,6 +174,8 @@ void main() {
     vec3 diffuse = diffuse_mult*diffuse_alpha.rgb;
 #endif // PBR
 
+    mat3 TBN = mat3(normalize(T),normalize(B),normalize(N));
+
 	// obtain TBN normal from normal map in range [0,1]
     vec3 normal = texture(normal_map, texcoord).rgb;
     // transform normal vector to range [-1,1]
@@ -202,36 +218,37 @@ void main() {
 #endif // DEBUG_SHADOWS
 
 #if GLOBAL_ILLUMINATION
-    const vec3 ambient = ambient_mult *texture(ambient_map, texcoord).rgb;
+    const vec3 ambient = ambient_mult*texture(ambient_map, texcoord).rgb;
 #elif AO
-    const float ambient = ambient_mult*texture(ambient_map, texcoord).r;
+    float ambient = ambient_mult*texture(ambient_map, texcoord).r;
 #else
-    const float ambient = 1.0;
+    float ambient = 1.0;
 #endif
 
 #if PBR
 
     float roughness  = roughness_mult*texture(roughness_map, texcoord).r; 
+
 #if METALLIC
     float metallic   = metal_mult    *texture(metallic_map, texcoord).r; 
 #else
-    float metallic = 0.0;
+    const float metallic = 0.0;
 #endif
 
-    vec3 hdr_color = brdfSchlickGGX(position, normal, albedo, metallic, roughness, -sun_direction, sun_color, camera_position, ambient);
+    vec3 hdr_color = brdf(position, normal, albedo, metallic, roughness, vec3(ambient));
 
 #else // PBR
 
     float specular = specular_mult  *texture(specular_map, texcoord).r; 
     float shininess = shininess_mult*texture(shininess_map, texcoord).r; 
 
-    vec3 hdr_color = blinnPhongLighting(position, normal, sun_direction, sun_color, camera_position, 
 #if GLOBAL_ILLUMINATION
-    ambient,
+    vec3 ambient_col = ambient;
 #else
-    diffuse*ambient,
+    vec3 ambient_col = diffuse * ambient;
 #endif
-    diffuse, diffuse*specular, shininess);
+
+    vec3 hdr_color = blinnPhongLighting(position, normal, ambient_col, diffuse, diffuse*specular, shininess);
 
 #endif // PBR
 

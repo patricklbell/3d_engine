@@ -52,8 +52,10 @@ RaycastResult raycastPlane(const glm::vec3& center, const glm::vec3& normal, Ray
 RaycastResult raycastBoundedPlane(const glm::vec3& center, const glm::vec3& normal, const glm::vec3& bounds, Raycast& raycast);
 RaycastResult raycastCube(const glm::vec3& center, const glm::vec3& scale, Raycast& raycast);
 RaycastResult raycastAabb(const AABB& aabb, Raycast& raycast);
+RaycastResult raycastSphere(const glm::vec3& center, const float scale, Raycast& raycast);
 
 float distanceBetweenLines(const glm::vec3& l1_origin, const glm::vec3& l1_direction, const glm::vec3& l2_origin, const glm::vec3& l2_direction, float& l1_t, float& l2_t);
+float distanceToAabb(const AABB& aabb, glm::vec3& point);
 
 // ------------ constexpr function implementations ------------ 
 constexpr uint64_t log2(uint64_t n) {

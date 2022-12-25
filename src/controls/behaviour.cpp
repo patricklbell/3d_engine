@@ -29,7 +29,7 @@ RaycastResult raycastEntities(Raycast& raycast, EntityManager& entity_manager, b
         if (!colliders && e->type & EntityType::WATER_ENTITY) {
             auto w_e = (WaterEntity*)e;
 
-            glm::vec3 bounds{ w_e->scale[0][0], w_e->scale[1][1], w_e->scale[2][2] };
+            glm::vec3 bounds{ 50*w_e->scale[0][0], w_e->scale[1][1], 50*w_e->scale[2][2] }; // @todo, @hardcoded
             entity_result = raycastBoundedPlane(w_e->position + bounds*glm::vec3(0.5,0,0.5), glm::vec3(0, 1, 0), bounds, raycast);
         }
         else if (!colliders && e->type & EntityType::MESH_ENTITY && ((MeshEntity*)e)->mesh != nullptr) {
@@ -56,6 +56,10 @@ RaycastResult raycastEntities(Raycast& raycast, EntityManager& entity_manager, b
             auto c = (ColliderEntity*)entity_manager.entities[i];
             auto bounds = glm::vec3(c->collider_scale[0][0], c->collider_scale[1][1], c->collider_scale[2][2]);
             entity_result = raycastCube(c->collider_position + bounds/2.0f, bounds, raycast);
+        }
+        else if (Editor::draw_lights && e->type & EntityType::POINT_LIGHT_ENTITY) {
+            auto l = (PointLightEntity*)entity_manager.entities[i];
+            entity_result = raycastSphere(l->position, l->radius, raycast);
         }
 
         if (entity_result.hit && entity_result.t < result.t) {
@@ -131,6 +135,11 @@ void handleEditorControls(EntityManager*& entity_manager, AssetManager& asset_ma
         if (Controls::editor.isAction("toggle_aabbs_visibility")) {
             Editor::draw_aabbs = !Editor::draw_aabbs;
             pushInfoMessage(Editor::draw_aabbs ? "AABBs shown" : "AABBs hidden");
+        }
+
+        if (Controls::editor.isAction("toggle_lights_visibility")) {
+            Editor::draw_lights = !Editor::draw_lights;
+            pushInfoMessage(Editor::draw_lights ? "Lights shown" : "Lights hidden");
         }
 
         if (Controls::editor.isAction("focus_camera") && Editor::selection.ids.size()) {

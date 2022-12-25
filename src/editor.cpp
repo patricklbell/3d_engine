@@ -52,6 +52,7 @@ namespace Editor {
     Mesh arrow_mesh;
     Mesh block_arrow_mesh;
     Mesh ring_mesh;
+    Mesh sphere_mesh;
 
     GizmoMode gizmo_mode = GizmoMode::NONE;
     glm::vec3 translation_snap = glm::vec3(1.0);
@@ -62,6 +63,7 @@ namespace Editor {
     std::string im_directory_dialog_type;
 
     bool do_terminal;
+    bool draw_lights = false;
     bool draw_debug_wireframe = true;
     bool draw_colliders = false;
     bool draw_aabbs = false;
@@ -366,6 +368,7 @@ void initEditorGui(AssetManager &asset_manager){
     asset_manager.loadMeshFile(&arrow_mesh, "data/mesh/arrow.mesh");
     asset_manager.loadMeshFile(&block_arrow_mesh, "data/mesh/block_arrow.mesh");
     asset_manager.loadMeshFile(&ring_mesh, "data/mesh/ring.mesh");
+    asset_manager.loadMeshFile(&sphere_mesh, "data/mesh/sphere.mesh");
 
     entity_type_to_string[ENTITY] = "Basic Entity";
     entity_type_to_string[MESH_ENTITY] = "Mesh";
@@ -691,6 +694,12 @@ static bool addWaterCommand(std::vector<std::string>& input_tokens, std::string&
     return false;
 }
 
+static bool addLightCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
+    auto l = (PointLightEntity*)entity_manager.createEntity(POINT_LIGHT_ENTITY);
+    selection.addEntity(l);
+    return true;
+}
+
 static bool toggleBloomCommand(std::vector<std::string>& input_tokens, std::string& output, EntityManager& entity_manager, AssetManager& asset_manager) {
     graphics::do_bloom = !graphics::do_bloom;
     if (graphics::do_bloom) {
@@ -763,6 +772,7 @@ const std::map
     {"new_level", newLevelCommand},
     {"list_mesh", listMeshCommand},
     {"add_mesh", addMeshCommand},
+    {"add_light", addLightCommand},
     {"add_animated_mesh", addAnimatedMeshCommand},
     {"add_collider", addColliderCommand},
     {"load_model", loadModelCommand},
@@ -820,10 +830,10 @@ void ImTerminal(EntityManager &entity_manager, AssetManager &asset_manager, bool
         ImGui::SetNextWindowSize(ImVec2(window_width, height));
 
         ImGui::PushStyleColor(ImGuiCol_WindowBg, IM_COL32(0,0,0,200));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0);
+        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, ImGui::GetTextLineHeight()/2.0));
         ImGui::Begin("Terminal", NULL, ImGuiWindowFlags_NoDecoration);
         ImGui::PopStyleColor();
-
-        ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0,5));
 
         auto len = std::min(command_history.size(), result_history.size());
         for(int i = 0; i < len; ++i) {
@@ -831,12 +841,13 @@ void ImTerminal(EntityManager &entity_manager, AssetManager &asset_manager, bool
             if(result_history[i] != "")  ImGui::TextWrapped("%s", result_history[i].c_str());
         }
 
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0, 2));
+        ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(0, 0));
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, IM_COL32(0, 0, 0, 0));
+        ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
+        ImGui::PushStyleColor(ImGuiCol_BorderShadow, IM_COL32(0, 0, 0, 0));
         ImGui::Text(prompt);
         ImGui::SameLine();
-
-        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(0,0));
-        ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(0,0));
-        ImGui::PushStyleColor(ImGuiCol_FrameBg, IM_COL32(0,0,0,0));
 
         static bool edit_made = false;
         static bool up_press = false;
@@ -973,8 +984,8 @@ void ImTerminal(EntityManager &entity_manager, AssetManager &asset_manager, bool
             }
         }
 
-        ImGui::PopStyleVar(3);
-        ImGui::PopStyleColor();
+        ImGui::PopStyleVar(4);
+        ImGui::PopStyleColor(3);
 
         if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY())
             ImGui::SetScrollHereY(1.0f);
@@ -1323,7 +1334,6 @@ void drawWaterDebug(WaterEntity* w, const Camera &camera, bool flash = false) {
     gl_state.set_flags(GlFlags::CULL);
 
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-    glEnable(GL_LINE_SMOOTH);
 
     Shaders::debug.set_macro("WATER", true);
     gl_state.bind_program(Shaders::debug.program());
@@ -1337,10 +1347,7 @@ void drawWaterDebug(WaterEntity* w, const Camera &camera, bool flash = false) {
     glUniform1f(Shaders::debug.uniform("shaded"), 0.0);
     glUniform1f(Shaders::debug.uniform("flashing"), flash ? 1.0: 0.0);
 
-    if (graphics::water_grid.complete) {
-        gl_state.bind_vao(graphics::water_grid.vao);
-        glDrawElements(graphics::water_grid.draw_mode, graphics::water_grid.draw_count[0], graphics::water_grid.draw_type, (GLvoid*)(sizeof(GLubyte)*graphics::water_grid.draw_start[0]));
-    }
+    drawTessellatedGrid();
    
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
     Shaders::debug.set_macro("WATER", false);
@@ -1351,7 +1358,6 @@ void drawMeshCube(const glm::vec3 &pos, const glm::quat &rot, const glm::mat3x3 
     gl_state.set_flags(GlFlags::CULL);
 
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-    glEnable(GL_LINE_SMOOTH);
 
     gl_state.bind_program(Shaders::debug.program());
     auto model = createModelMatrix(pos, rot, scl);
@@ -1374,7 +1380,6 @@ void drawAABB(AABB& aabb, glm::mat4 transform, const Camera& camera) {
     gl_state.set_flags(GlFlags::CULL);
 
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-    glEnable(GL_LINE_SMOOTH);
 
     gl_state.bind_program(Shaders::debug.program());
 
@@ -1401,7 +1406,6 @@ void drawFrustrum(Camera &drawn_camera, const Camera& camera) {
     gl_state.set_flags(GlFlags::CULL);
 
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-    glEnable(GL_LINE_SMOOTH);
 
     gl_state.bind_program(Shaders::debug.program());
     // Transform into drawn camera's view space, then into world space
@@ -1421,12 +1425,11 @@ void drawFrustrum(Camera &drawn_camera, const Camera& camera) {
     glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 }
 
-void drawMeshWireframe(const Mesh &mesh, const glm::mat4& g_model_rot_scl, const glm::mat4& g_model_pos, const Camera &camera, bool flash = false, int submesh_i = -1){
+void drawMeshWireframe(const Mesh &mesh, const glm::mat4& g_model_rot_scl, const glm::mat4& g_model_pos, const Camera &camera, bool flash = false, int submesh_i = -1, bool cull=true){
     bindBackbuffer();
-    gl_state.set_flags(GlFlags::CULL);
+    gl_state.set_flags(cull ? GlFlags::CULL : GlFlags::NONE);
 
     glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-    glEnable(GL_LINE_SMOOTH);
 
     gl_state.bind_program(Shaders::debug.program());
     glUniform4f(Shaders::debug.uniform("color"), 1.0, 1.0, 1.0, 1.0);
@@ -1596,17 +1599,18 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
 
                     auto g_model_rot_scl = glm::mat4_cast(m_e->rotation) * glm::mat4x4(m_e->scale);
                     auto g_model_pos = glm::translate(glm::mat4x4(1.0), m_e->position);
-                    drawMeshWireframe(mesh, g_model_rot_scl, g_model_pos, camera, true, selection.submesh_i);
+                    drawMeshWireframe(mesh, g_model_rot_scl, g_model_pos, camera, true, selection.submesh_i, true);
                 }
 
             }
         }
     }
-
-    if (draw_aabbs) {
+    if (draw_aabbs || draw_lights) {
         for (int i = 0; i < ENTITY_COUNT; i++) {
             auto e = entity_manager.entities[i];
-            if (e && entityInherits(e->type, MESH_ENTITY)) {
+            if (!e) continue;
+
+            if (draw_aabbs && entityInherits(e->type, MESH_ENTITY)) {
                 auto m_e = (MeshEntity*)e;
                 if (m_e->mesh && m_e->mesh->complete) {
                     auto& mesh = *m_e->mesh;
@@ -1615,6 +1619,10 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
                         drawAABB(mesh.aabbs[i], createModelMatrix(mesh.transforms[i], m_e->position, m_e->rotation, m_e->scale), camera);
                     }
                 }
+            }
+            if (draw_lights && entityInherits(e->type, POINT_LIGHT_ENTITY)) {
+                auto l_e = (PointLightEntity*)e;
+                drawMeshWireframe(sphere_mesh, glm::scale(glm::mat4(1.0), glm::vec3(l_e->radius)), glm::translate(glm::mat4(1.0), l_e->position), camera, false, -1, false);
             }
         }
     }
@@ -1836,7 +1844,7 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
                                 return false;
                             std::string id = tex->handle + std::to_string((uint64_t)slot);
 
-                            static int channels = (int)getChannelsForFormat(tex->format);
+                            int channels = (int)getChannelsForFormat(tex->format);
                             ImGui::Text("Channels: ");
                             ImGui::SameLine();
                             ImGui::SetNextItemWidth(ImGui::GetColumnWidth() - ImGui::CalcTextSize("Channels: ").x);
@@ -1881,7 +1889,7 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
                                 if (ImGui::ImageButton(tex_id, ImVec2(ImGui::GetColumnWidth(), ImGui::GetColumnWidth()))) {
                                     im_file_dialog.SetPwd(exepath + "/data/textures");
                                     selected_texture = &tex;
-                                    im_file_dialog_type = "mat.tex";
+                                    im_file_dialog_type = "texture";
                                     im_file_dialog.SetCurrentTypeFilterIndex(2);
                                     im_file_dialog.SetTypeFilters(image_file_extensions);
                                     im_file_dialog.Open();
@@ -1972,34 +1980,46 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
                             if (ImGui::Checkbox(type_name.c_str(), &is_type)) {
                                 mat.type = is_type ? (mat.type | type) : (mat.type & (~type));
 
-                                static const auto add_mat_type = [&is_type, &type](Material& mat, TextureSlot slot, std::string uniform) {
+                                static const auto add_mat_tex = [&is_type, &type](Material& mat, TextureSlot slot) {
                                     if (is_type) {
-                                        if (uniform != "")
-                                            mat.uniforms.emplace(uniform, default_material->uniforms[uniform]);
                                         mat.textures.emplace(slot, default_material->textures[slot]);
+                                    } else {
+                                        mat.textures.erase(slot);
+                                    }
+                                };
+                                static const auto add_mat_uniform = [&is_type, &type](Material& mat, std::string uniform) {
+                                    if (is_type) {
+                                        mat.uniforms.emplace(uniform, default_material->uniforms[uniform]);
                                     }
                                     else {
-                                        if (uniform != "")
-                                            mat.uniforms.erase(uniform);
-                                        mat.textures.erase(slot);
+                                        mat.uniforms.erase(uniform);
                                     }
                                 };
 
                                 switch (type)
                                 {
                                 case MaterialType::EMISSIVE:
-                                    add_mat_type(mat, TextureSlot::EMISSIVE, "emissive_mult");
+                                    add_mat_tex(mat, TextureSlot::EMISSIVE);
+                                    add_mat_uniform(mat, "emissive_mult");
                                     break;
                                 case MaterialType::AO:
-                                    add_mat_type(mat, TextureSlot::AO, "ambient_mult");
+                                    add_mat_tex(mat, TextureSlot::AO);
+                                    add_mat_uniform(mat, "ambient_mult");
                                     break;
                                 case MaterialType::LIGHTMAPPED:
-                                    add_mat_type(mat, TextureSlot::GI, "ambient_mult");
+                                    add_mat_tex(mat, TextureSlot::GI);
+                                    add_mat_uniform(mat, "ambient_mult");
                                     break;
                                 case MaterialType::METALLIC:
-                                    add_mat_type(mat, TextureSlot::METAL, "metal_mult");
+                                    add_mat_tex(mat, TextureSlot::METAL);
+                                    add_mat_uniform(mat, "metal_mult");
                                     break;
-
+                                case MaterialType::SPRITESHEETS:
+                                    add_mat_uniform(mat, "spritesheet_speed");
+                                    add_mat_uniform(mat, "spritesheet_time_offset");
+                                    add_mat_uniform(mat, "spritesheet_tile_width");
+                                    add_mat_uniform(mat, "spritesheet_tile_number");
+                                    break;
                                 default:
                                     break;
                                 }
@@ -2014,6 +2034,7 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
                         ImGui::NextColumn();
                         make_type_ui(*mat, MaterialType::VEGETATION);
                         make_type_ui(*mat, MaterialType::ALPHA_CLIP);
+                        make_type_ui(*mat, MaterialType::SPRITESHEETS);
                         ImGui::Columns();
 
                         ImGui::SetCursorPosY(ImGui::GetCursorPosY() + ImGui::GetTextLineHeight());
@@ -2045,7 +2066,14 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
                                 ImGui::SetNextItemWidth(ImGui::GetColumnWidth() - ImGui::CalcTextSize(name.c_str()).x);
                                 switch (uniform.type) {
                                 case Uniform::Type::FLOAT:
-                                    ImGui::SliderFloat(name.c_str(), (float*)uniform.data, 0.0f, 1.0f, "%.3f", ImGuiSliderFlags_ClampOnInput);
+                                    // @todo uniform bounds
+                                    if (name == "spritesheet_speed")
+                                        ImGui::SliderFloat(name.c_str(), (float*)uniform.data, 0.0f, 100.0f, "%.3f", ImGuiSliderFlags_ClampOnInput);
+                                    else
+                                        ImGui::SliderFloat(name.c_str(), (float*)uniform.data, 0.0f, 1.0f, "%.3f", ImGuiSliderFlags_ClampOnInput);
+                                    break;
+                                case Uniform::Type::INT:
+                                    ImGui::InputInt(name.c_str(), (int*)uniform.data);
                                     break;
                                 case Uniform::Type::VEC3:
                                     ImGui::ColorEdit3(name.c_str(), (float*)uniform.data, ImGuiColorEditFlags_HDR | ImGuiColorEditFlags_Float | ImGuiColorEditFlags_DisplayRGB);
@@ -2071,50 +2099,108 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
                 
                 glm::quat _r = glm::quat();
                 transform_active = editTransform(camera, w_e->position, _r, w_e->scale, TransformType::POS_SCL) != TransformType::NONE;
-                ImGui::TextWrapped("Shallow Color:");
-                ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
-                ImGui::ColorEdit4("##shallow_color", (float*)(&w_e->shallow_color));
-                ImGui::TextWrapped("Deep Color:");
-                ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
-                ImGui::ColorEdit4("##deep_color", (float*)(&w_e->deep_color));
-                ImGui::TextWrapped("Foam Color:");
-                ImGui::SetNextItemWidth(ImGui::GetColumnWidth());
-                ImGui::ColorEdit4("##foam_color", (float*)(&w_e->foam_color));
+                ImGui::ColorEdit3("Surface Color", &w_e->surface_col[0]);
+                ImGui::ColorEdit3("Seafloor Color", &w_e->floor_col[0]);
+                ImGui::SliderFloat("Floor Height", &w_e->floor_height, 0.0f, 100.0f, "%.3f", ImGuiSliderFlags_ClampOnInput);
+                ImGui::SliderFloat("Peak Height", &w_e->peak_height, 0.0f, 100.0f, "%.3f", ImGuiSliderFlags_ClampOnInput);
+
+                ImGui::DragFloat2("Normal Scroll Speed", &w_e->normal_scroll_speed[0], 0.01f, 0.0f, 10.0f, "%.3f", 1.0f);
+                ImGui::DragFloat2("Tilling Size", &w_e->tilling_size[0], 0.01f, 0.0f, 10.0f, "%.3f", 1.0f);
+
+                if (ImGui::CollapsingHeader("Distortion", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    ImGui::Indent(10);
+                    ImGui::SliderFloat("Strength", &w_e->refraction_distortion_factor, 0.0f, 1.0f, "%.3f", ImGuiSliderFlags_ClampOnInput);
+                    ImGui::SliderFloat("Height", &w_e->refraction_height_factor, 0.0f, 10.0f, "%.3f", ImGuiSliderFlags_ClampOnInput);
+                    ImGui::SliderFloat("Distance", &w_e->refraction_distance_factor, 0.0f, camera.frustrum.far_plane, "%.3f", ImGuiSliderFlags_ClampOnInput);
+                    ImGui::ColorEdit3("Tint", &w_e->refraction_tint_col[0]);
+                    ImGui::Unindent(10);
+                }
+
+                if (ImGui::CollapsingHeader("Foam", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    ImGui::Indent(10);
+                    ImGui::SliderFloat("Height", &w_e->foam_height_start, 0.0f, 10.0, "%.3f", ImGuiSliderFlags_ClampOnInput);
+                    ImGui::SliderFloat("Angle Exponent", &w_e->foam_angle_exponent, 1.0f, 100.0, "%.3f", ImGuiSliderFlags_ClampOnInput);
+                    ImGui::SliderFloat("Brightness", &w_e->foam_brightness, 0.0f, 1.0f, "%.3f", ImGuiSliderFlags_ClampOnInput);
+                    ImGui::SliderFloat("Tilling", &w_e->foam_tilling, 0.1f, 10.0f, "%.3f", ImGuiSliderFlags_ClampOnInput);
+                    ImGui::Unindent(10);
+                }
+
+                if (ImGui::CollapsingHeader("Material", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    ImGui::Indent(10);
+                    ImGui::SliderFloat("Roughness", &w_e->roughness, 0.0f, 1.0f, "%.3f", ImGuiSliderFlags_ClampOnInput);
+                    ImGui::SliderFloat("Reflectance", &w_e->reflectance, 0.0f, 1.0f, "%.3f", ImGuiSliderFlags_ClampOnInput);
+                    ImGui::SliderFloat("Specullarity", &w_e->specular_intensity, 0.0f, 200.0f, "%.3f", ImGuiSliderFlags_ClampOnInput);
+                    ImGui::SliderFloat("Extinction", &w_e->extinction_coefficient, 0.0f, 1.0f, "%.3f", ImGuiSliderFlags_ClampOnInput);
+                    ImGui::Unindent(10);
+                }
 
                 if (ImGui::CollapsingHeader("Noise Textures")) {
-                    ImGui::Text("Gradient");
-                    ImGui::SameLine();
-                    auto cursor = ImGui::GetCursorPos();
-                    cursor.x += img_w;
-                    ImGui::SetCursorPos(cursor);
-                    ImGui::Text("Value");
-                    void* tex_simplex_gradient = (void*)(intptr_t)graphics::simplex_gradient->id;
-                    if (ImGui::ImageButton(tex_simplex_gradient, ImVec2(img_w, img_w))) {
-                        im_file_dialog.SetPwd(exepath + "/data/textures");
-                        im_file_dialog_type = "simplexGradient";
-                        im_file_dialog.SetCurrentTypeFilterIndex(2);
-                        im_file_dialog.SetTypeFilters(image_file_extensions);
-                        im_file_dialog.Open();
-                    }
-                    ImGui::SameLine();
-                    void* tex_simplex_value = (void*)(intptr_t)graphics::simplex_value->id;
-                    if (ImGui::ImageButton(tex_simplex_value, ImVec2(img_w, img_w))) {
-                        im_file_dialog.SetPwd(exepath + "/data/textures");
-                        im_file_dialog_type = "simplexValue";
-                        im_file_dialog.SetCurrentTypeFilterIndex(2);
-                        im_file_dialog.SetTypeFilters(image_file_extensions);
-                        im_file_dialog.Open();
+                    //ImGui::Text("Gradient");
+                    //ImGui::SameLine();
+                    //auto cursor = ImGui::GetCursorPos();
+                    //cursor.x += img_w;
+                    //ImGui::SetCursorPos(cursor);
+                    //ImGui::Text("Value");
+                    //void* tex_simplex_gradient = (void*)(intptr_t)graphics::simplex_gradient->id;
+                    //if (ImGui::ImageButton(tex_simplex_gradient, ImVec2(img_w, img_w))) {
+                    //    im_file_dialog.SetPwd(exepath + "/data/textures");
+                    //    im_file_dialog_type = "simplexGradient";
+                    //    im_file_dialog.SetCurrentTypeFilterIndex(2);
+                    //    im_file_dialog.SetTypeFilters(image_file_extensions);
+                    //    im_file_dialog.Open();
+                    //}
+                    //ImGui::SameLine();
+                    //void* tex_simplex_value = (void*)(intptr_t)graphics::simplex_value->id;
+                    //if (ImGui::ImageButton(tex_simplex_value, ImVec2(img_w, img_w))) {
+                    //    im_file_dialog.SetPwd(exepath + "/data/textures");
+                    //    im_file_dialog_type = "simplexValue";
+                    //    im_file_dialog.SetCurrentTypeFilterIndex(2);
+                    //    im_file_dialog.SetTypeFilters(image_file_extensions);
+                    //    im_file_dialog.Open();
+                    //}
+                }
+
+                if (ImGui::CollapsingHeader("Collider")) {
+                    void* tex_water_collider = (void*)(intptr_t)graphics::water_collider_buffers[graphics::water_collider_final_fbo];
+                    ImGui::Image(tex_water_collider, ImVec2(sidebar_w - 5 * pad, sidebar_w - 5 * pad));
+
+                    if (ImGui::Button("Update", button_size)) {
+                        RenderQueue q;
+                        createRenderQueue(q, entity_manager);
+                        bindDrawWaterColliderMap(q, w_e);
+                        distanceTransformWaterFbo(w_e);
+                        bindBackbuffer();
                     }
                 }
-                void* tex_water_collider = (void*)(intptr_t)graphics::water_collider_buffers[graphics::water_collider_final_fbo];
-                ImGui::Image(tex_water_collider, ImVec2(sidebar_w - 5*pad, sidebar_w - 5*pad));
+            }
+            if (entityInherits(selection.type, POINT_LIGHT_ENTITY)) {
+                glm::quat _r;
+                glm::mat3 _s;
+                glm::vec3 pos = selection.avg_position;
+                transform_active = editTransform(camera, pos, _r, _s, TransformType::POS) != TransformType::NONE;
+                for (const auto& id : selection.ids) {
+                    auto l = (PointLightEntity*)entity_manager.getEntity(id);
+                    if (l) {
+                        l->position += pos - selection.avg_position;
+                    }
+                }
+                selection.avg_position = pos;
 
-                if (ImGui::Button("Update", button_size)) {
-                    RenderQueue q;
-                    createRenderQueue(q, entity_manager);
-                    bindDrawWaterColliderMap(q, w_e);
-                    distanceTransformWaterFbo(w_e);
-                    bindBackbuffer();
+                if (selection.ids.size() == 1) {
+                    auto l_e = (PointLightEntity*)fe;
+                    selection.avg_position = l_e->position;
+                    float radiance_strength = glm::max(glm::length(l_e->radiance), 0.0001f);
+                    if (ImGui::InputFloat("Strength", &radiance_strength, 0.1, 4.0)) {
+                        l_e->radiance = radiance_strength * glm::normalize(l_e->radiance);
+                    }
+                    auto radiance = glm::normalize(l_e->radiance);
+                    if (ImGui::ColorEdit3("Color", &radiance[0], ImGuiColorEditFlags_Float)) {
+                        l_e->radiance = radiance_strength * glm::normalize(radiance);
+                    };
+
+                    if (ImGui::InputFloat("Cutoff Radius", &l_e->radius, 0.1, 4.0)) {
+                        l_e->radius = glm::max(l_e->radius, 0.0f);
+                    };
                 }
             }
             if (entityInherits(selection.type, ANIMATED_MESH_ENTITY) && selection.ids.size() == 1) {
@@ -2222,11 +2308,7 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
             } else if(im_file_dialog_type == "loadModelAssimp"){
                 auto mesh = asset_manager.createMesh(p);
                 asset_manager.loadMeshAssimp(mesh, p);
-            } else if (im_file_dialog_type == "simplexValue") {
-                global_assets.loadTexture(graphics::simplex_value, p, GL_RED);
-            } else if (im_file_dialog_type == "simplexGradient") {
-                global_assets.loadTexture(graphics::simplex_gradient, p, GL_RGB);
-            } else if(im_file_dialog_type == "mat.tex") {
+            } else if(im_file_dialog_type == "texture") {
                 if (selected_texture) {
                     // Assets might already been loaded so just use it
                     (*selected_texture) = asset_manager.getTexture(p);

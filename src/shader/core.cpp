@@ -124,6 +124,12 @@ bool Shader::load_file(std::string_view path) {
 		else if (line == "#begin COMPUTE") {
 			stage_type = Shader::Type::COMPUTE;
 		}
+		else if (line == "#begin TESSELLATION_CONTROL") {
+			stage_type = Shader::Type::TESSELLATION_CONTROL;
+		}
+		else if (line == "#begin TESSELLATION_EVALUATION") {
+			stage_type = Shader::Type::TESSELLATION_EVALUATION;
+		}
 		else {	
 			continue;
 		}
@@ -135,8 +141,7 @@ bool Shader::load_file(std::string_view path) {
 			if (!load_shader_chunk(f, chunk, stage_dependencies, macros)) 
 				return false;
 			dependencies.merge(stage_dependencies);
-		}
-		else {
+		} else {
 			std::cerr << "Duplicate section: " << line << " encountered loading " << path << ", breaking\n";
 			break;
 		}
@@ -222,6 +227,8 @@ static const std::unordered_map<Shader::Type, std::string> shader_type_to_name =
 	{ Shader::Type::FRAGMENT, "Fragment" },
 	{ Shader::Type::GEOMETRY, "Geometry" },
 	{ Shader::Type::COMPUTE, "Compute" },
+	{ Shader::Type::TESSELLATION_CONTROL, "Tessellation Control" },
+	{ Shader::Type::TESSELLATION_EVALUATION, "Tessellation Evaluation" },
 };
 
 // Note that prepend should be null terminated
@@ -258,6 +265,12 @@ bool Shader::compile(std::string_view _prepend) {
 			break;
 		case Type::COMPUTE:
 			id = compile_shader(GL_COMPUTE_SHADER, sources);
+			break;
+		case Type::TESSELLATION_CONTROL:
+			id = compile_shader(GL_TESS_CONTROL_SHADER, sources);
+			break;
+		case Type::TESSELLATION_EVALUATION:
+			id = compile_shader(GL_TESS_EVALUATION_SHADER, sources);
 			break;
 		default:
 			break;

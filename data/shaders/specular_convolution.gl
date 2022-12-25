@@ -1,6 +1,5 @@
 #begin VERTEX
 layout (location = 0) in vec3 in_position;
-layout (location = 1) in vec2 in_texcoord;
 
 out vec3 position;
 
@@ -22,7 +21,7 @@ uniform float texelSphericalArea; // Perface resolution of cubemap
 
 #load lib/constants.gl
 #load lib/noise.gl
-#load lib/pbr.gl
+#load lib/pbr_helpers.gl
 
 // Modified from https://learnopengl.com/PBR/IBL/Specular-IBL
 // Takes a Reimann sum of a hemisphere of samples to approximate the 

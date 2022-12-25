@@ -17,6 +17,8 @@ void writeAnimatedMeshEntity(AnimatedMeshEntity * e, FILE * f);
 void readAnimatedMeshEntity(AnimatedMeshEntity * e, AssetManager& assets, FILE * f);
 void writeWaterEntity(WaterEntity * e, FILE * f);
 void readWaterEntity(WaterEntity * e, FILE * f);
+void writePointLightEntity(PointLightEntity* e, FILE* f);
+void readPointLightEntity(PointLightEntity* e, FILE* f);
 void writeColliderEntity(ColliderEntity * e, FILE * f);
 void readColliderEntity(ColliderEntity * e, FILE * f);
 void writePlayerEntity(PlayerEntity * e, FILE * f);
