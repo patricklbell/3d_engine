@@ -1,7 +1,7 @@
 # 3D Engine
 ![Crytek's Sponza scene](https://github.com/patricklbell/3d_engine/blob/main/data/screenshots/sponza.png?raw=true)
 A rendering and game engine with as many features as I felt like, including:
-- Multiple material types (PBR, water, emissive, Blinn-Phong, etc.)[^1]
+- Multiple material types (PBR, emissive, Blinn-Phong, etc.)[^1]
 - Directional lighting with cascaded shadow maps and point lights
 - Physically based volumetric lighting based on EA's [extinction volume method](https://www.ea.com/frostbite/news/physically-based-unified-volumetric-rendering-in-frostbite)
 - Water shader with dynamic tesselation, and lighting based on [Alex Tardif's](https://alextardif.com/Water.html) and [Jean-Phillipe Grenier's](https://80.lv/articles/river-editor-water-simulation-in-real-time/) articles, this is more of a prototype but water is hard to get right[^2]
@@ -16,7 +16,7 @@ A rendering and game engine with as many features as I felt like, including:
   Some of the different material types, from left to right: Blinn-Phong, PBR dielectric, PBR metallic with IBL, emissive. Let me know if there are any errors in the PBR calculations (I doubt it properly conserves energy).
 
 [^2]: ![Water](https://github.com/patricklbell/3d_engine/blob/main/data/screenshots/water.png?raw=true)
-  Water with Tesselation shader to create dynamic level of detail.
+  Water with tessellation shader to create dynamic level of detail.
 
 ## Building
 All the dependencies are built statically except OpenGL.
