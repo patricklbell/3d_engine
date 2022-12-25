@@ -1,4 +1,4 @@
-#load lib/constants.gl
+#load lib/constants.glsl
 
 // Takes N, halfway vector between view angle and light angle
 // Parameter a -> alpha describing roughness usually alpha = roughness^2

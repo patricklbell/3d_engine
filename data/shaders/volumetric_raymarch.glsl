@@ -1,5 +1,5 @@
 #begin COMPUTE
-#load lib/constants.gl
+#load lib/constants.glsl
 
 layout(local_size_x = LOCAL_SIZE_X, local_size_y = LOCAL_SIZE_Y, local_size_z = LOCAL_SIZE_Z) in;
 
@@ -9,7 +9,7 @@ layout(binding = 0) uniform sampler3D integrated_vol;
 
 uniform ivec3 vol_size;
 
-#load lib/utilities.gl
+#load lib/utilities.glsl
 
 float slice_thickness(float z, float z_max) {
     return FAR*abs(linearToExponentialDistribution((z + 1.0) / z_max) - linearToExponentialDistribution(z / z_max));

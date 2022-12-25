@@ -6,7 +6,7 @@ out vec3 position;
 out vec2 view_ray;
 out vec2 texcoord;
 
-#load lib/constants.gl
+#load lib/constants.glsl
 uniform vec2 resolution;
 
 void main() {
@@ -34,8 +34,8 @@ in vec2 view_ray;
 
 out vec4 out_color;
 
-#load lib/constants.gl
-#load lib/shared.gl
+#load lib/constants.glsl
+#load lib/shared.glsl
 
 uniform vec2 resolution;
 

@@ -1,4 +1,4 @@
-#load lib/shared.gl
+#load lib/shared.glsl
 layout(binding = 10) uniform sampler3D accumulated_volumetric_vol;
 
 // Should probably be in lib
@@ -48,8 +48,8 @@ vec4 textureTricubic(sampler3D tex, vec3 coord)
 
 #macro TRICUBIC 1
 
-#load lib/constants.gl
-#load lib/utilities.gl
+#load lib/constants.glsl
+#load lib/utilities.glsl
 
 vec3 addInscatteredVolumetrics(vec3 color, vec3 frag_coord) {
 	float uv_z = exponentialToLinearDistribution(depthToLinear(frag_coord.z));

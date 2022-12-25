@@ -2,18 +2,18 @@
 #macro ANISOTROPY 1
 #macro LIGHTS     0
 
-#load lib/constants.gl
+#load lib/constants.glsl
 
 layout(local_size_x = LOCAL_SIZE_X, local_size_y = LOCAL_SIZE_Y, local_size_z = LOCAL_SIZE_Z) in;
 
 layout(binding = 0, rgba16f) uniform writeonly image3D integrated_vol;
 
-#load lib/constants.gl
-#load lib/shared.gl
-#load lib/shadows.gl
-#load lib/utilities.gl
+#load lib/constants.glsl
+#load lib/shared.glsl
+#load lib/shadows.glsl
+#load lib/utilities.glsl
 #if LIGHTS
-#load lib/lights_ubo.gl
+#load lib/lights_ubo.glsl
 #endif
 
 layout(binding = 0) uniform sampler2D bluenoise_map;

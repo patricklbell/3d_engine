@@ -1,4 +1,4 @@
-#load lib/constants.gl
+#load lib/constants.glsl
 
 float depthToDist(float d){
   float z_ndc = 2.0*d - 1.0; // Convert from 0 -> 1 to NDC

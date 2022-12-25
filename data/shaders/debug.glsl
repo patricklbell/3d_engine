@@ -9,12 +9,12 @@ layout (location = 1) in vec3 in_normal;
 #if ANIMATED_BONES
 layout (location = 5) in ivec4 in_bone_ids;
 layout (location = 6) in vec4  in_weights;
-#load lib/bone_ubo.gl
+#load lib/bone_ubo.glsl
 #endif
 
 #if WATER
 layout (location = 3) in vec2 in_texcoord;
-#load lib/waves.gl
+#load lib/waves.glsl
 #endif
 
 #if VEGETATION

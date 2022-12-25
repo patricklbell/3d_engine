@@ -35,30 +35,30 @@ namespace Shaders {
 		bool success = true;
 		std::string prepend = gl_state.glsl_version + graphics::shadow_shader_macro + graphics::animation_macro + graphics::volumetric_shader_macro + graphics::lights_macro + '\0';
 
-		success&=unified.load_file_compile("data/shaders/unified.gl", prepend);
-		success&=shadow.load_file_compile("data/shaders/null.gl", prepend);
-		success&=water.load_file_compile("data/shaders/water.gl", prepend);
-		success&=debug.load_file_compile("data/shaders/debug.gl", prepend);
-		success&=post.load_file_compile("data/shaders/post.gl", prepend);
-		success&=skybox.load_file_compile("data/shaders/skybox.gl", prepend);
+		success&=unified.load_file_compile("data/shaders/unified.glsl", prepend);
+		success&=shadow.load_file_compile("data/shaders/null.glsl", prepend);
+		success&=water.load_file_compile("data/shaders/water.glsl", prepend);
+		success&=debug.load_file_compile("data/shaders/debug.glsl", prepend);
+		success&=post.load_file_compile("data/shaders/post.glsl", prepend);
+		success&=skybox.load_file_compile("data/shaders/skybox.glsl", prepend);
 
-		success&=specular_convolution.load_file_compile("data/shaders/specular_convolution.gl", prepend);
-		success&=diffuse_convolution.load_file_compile("data/shaders/diffuse_convolution.gl", prepend);
-		success&=generate_brdf_lut.load_file_compile("data/shaders/generate_brdf_lut.gl", prepend);
+		success&=specular_convolution.load_file_compile("data/shaders/specular_convolution.glsl", prepend);
+		success&=diffuse_convolution.load_file_compile("data/shaders/diffuse_convolution.glsl", prepend);
+		success&=generate_brdf_lut.load_file_compile("data/shaders/generate_brdf_lut.glsl", prepend);
 
-		success&=gaussian_blur.load_file_compile("data/shaders/gaussian_blur.gl", prepend);
-		success&=downsample.load_file_compile("data/shaders/downsample.gl", prepend);
-		success&=blur_upsample.load_file_compile("data/shaders/blur_upsample.gl", prepend);
+		success&=gaussian_blur.load_file_compile("data/shaders/gaussian_blur.glsl", prepend);
+		success&=downsample.load_file_compile("data/shaders/downsample.glsl", prepend);
+		success&=blur_upsample.load_file_compile("data/shaders/blur_upsample.glsl", prepend);
 
-		success&=plane_projection.load_file_compile("data/shaders/plane_projection.gl", prepend);
-		success&=jump_flood.load_file_compile("data/shaders/jump_flood.gl", prepend);
-		success&=jfa_to_distance.load_file_compile("data/shaders/jfa_to_distance.gl", prepend);
+		success&=plane_projection.load_file_compile("data/shaders/plane_projection.glsl", prepend);
+		success&=jump_flood.load_file_compile("data/shaders/jump_flood.glsl", prepend);
+		success&=jfa_to_distance.load_file_compile("data/shaders/jfa_to_distance.glsl", prepend);
 
-		success&=volumetric_integration.load_file_compile("data/shaders/volumetric_integration.gl", prepend);
-		success&=volumetric_raymarch.load_file_compile("data/shaders/volumetric_raymarch.gl", prepend);
+		success&=volumetric_integration.load_file_compile("data/shaders/volumetric_integration.glsl", prepend);
+		success&=volumetric_raymarch.load_file_compile("data/shaders/volumetric_raymarch.glsl", prepend);
 
-		success &= lightmap_hemisphere.load_file_compile("data/shaders/lightmapper/hemisphere.gl", prepend);
-		success &= lightmap_downsample.load_file_compile("data/shaders/lightmapper/downsample.gl", prepend);
+		success &= lightmap_hemisphere.load_file_compile("data/shaders/lightmapper/hemisphere.glsl", prepend);
+		success &= lightmap_downsample.load_file_compile("data/shaders/lightmapper/downsample.glsl", prepend);
 
 		return success;
 	}

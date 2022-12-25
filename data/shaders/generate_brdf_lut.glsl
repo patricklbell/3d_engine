@@ -17,9 +17,9 @@ in vec2 texcoord;
 
 out vec2 out_color;
 
-#load lib/constants.gl
-#load lib/noise.gl
-#load lib/pbr_helpers.gl
+#load lib/constants.glsl
+#load lib/noise.glsl
+#load lib/pbr_helpers.glsl
 
 // https://learnopengl.com/PBR/IBL/Specular-IBL
 // Creates LUT for each NdotL and roughness, to precompute brdf geometry function

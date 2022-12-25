@@ -25,18 +25,18 @@ out vec3 T;
 out vec3 B;
 out vec3 N;
 
-#load lib/shared.gl
+#load lib/shared.glsl
 uniform mat4 mvp;
 uniform mat4 model;
 
 #if ANIMATED_BONES
-#load lib/bone_ubo.gl
+#load lib/bone_ubo.glsl
 #endif
 
 #if VEGETATION
 uniform vec2 wind_direction;
 uniform float wind_strength;
-#load lib/vegetation.gl
+#load lib/vegetation.glsl
 #endif
 
 #if SPRITESHEETS
@@ -102,12 +102,12 @@ void main() {
 #macro METALLIC             0
 #macro LIGHTS               0
 
-#load lib/shared.gl
-#load lib/shadows.gl
-#load lib/pbr.gl
-#load lib/blinn.gl
+#load lib/shared.glsl
+#load lib/shadows.glsl
+#load lib/pbr.glsl
+#load lib/blinn.glsl
 #if VOLUMETRICS
-#load lib/volumetrics.gl
+#load lib/volumetrics.glsl
 #endif
 
 in vec3 position;

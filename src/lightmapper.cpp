@@ -136,7 +136,7 @@ bool runLightmapper(Level& level, AssetManager &asset_manager) {
 			entityInherits(m_e->type, ANIMATED_MESH_ENTITY))
 			continue;
 
-		for (int j = m_e->mesh->num_submeshes-1; j >= m_e->mesh->num_submeshes - 1; j--) {
+		for (int j = 0; j < m_e->mesh->num_submeshes; j++) {
 			auto& model = models.emplace_back(createModelMatrix(m_e->mesh->transforms[j], m_e->position, m_e->rotation, m_e->scale));
 			auto t_aabb = transformAABB(m_e->mesh->aabbs[j], model);
 			float dimension_t = linearstep(min_aabb_size, max_aabb_size, glm::length(t_aabb.size));

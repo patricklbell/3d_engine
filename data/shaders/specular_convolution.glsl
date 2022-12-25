@@ -19,9 +19,9 @@ layout(binding = 0) uniform samplerCube cubemap;
 uniform float roughness;
 uniform float texelSphericalArea; // Perface resolution of cubemap
 
-#load lib/constants.gl
-#load lib/noise.gl
-#load lib/pbr_helpers.gl
+#load lib/constants.glsl
+#load lib/noise.glsl
+#load lib/pbr_helpers.glsl
 
 // Modified from https://learnopengl.com/PBR/IBL/Specular-IBL
 // Takes a Reimann sum of a hemisphere of samples to approximate the 

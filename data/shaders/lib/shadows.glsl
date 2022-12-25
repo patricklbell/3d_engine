@@ -1,7 +1,7 @@
 layout(binding = 5) uniform sampler2DArray shadow_map;
 layout(binding = 6) uniform sampler3D jitter_vol; // Only needed if using Nvidia method
 
-#load lib/shadow_ubo.gl
+#load lib/shadow_ubo.glsl
 
 //const vec2 poisson_disk[16] = vec2[]( 
 //   vec2( -0.94201624, -0.39906216 ), 

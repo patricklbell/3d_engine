@@ -1,12 +1,12 @@
-#load lib/constants.gl
-#load lib/pbr_helpers.gl
+#load lib/constants.glsl
+#load lib/pbr_helpers.glsl
 
-#load lib/shared.gl
+#load lib/shared.glsl
 #if SHADOWS
-#load lib/shadows.gl
+#load lib/shadows.glsl
 #endif
 #if LIGHTS
-#load lib/lights_ubo.gl
+#load lib/lights_ubo.glsl
 #endif
 
 #macro IBL 1

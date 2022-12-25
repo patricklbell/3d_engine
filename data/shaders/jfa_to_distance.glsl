@@ -19,7 +19,7 @@ out vec4 out_color;
 layout(binding = 0) uniform sampler2D image;
 uniform vec2 dimensions;
 
-#load lib/constants.gl
+#load lib/constants.glsl
 
 vec4 make_distance_transform(in vec2 fragcoord) {
     vec4 data = texture(image, texcoord);

@@ -19,7 +19,7 @@ out vec4 out_color;
 
 layout(binding = 0) uniform samplerCube cubemap;
 
-#load lib/constants.gl
+#load lib/constants.glsl
 
 // Modified from https://learnopengl.com/PBR/IBL/Diffuse-irradiance
 // Takes a Reimann sum of a hemisphere of samples to approximate the 

@@ -24,7 +24,7 @@ layout (location = 0) out vec4 out_color;
 layout(binding = 3) uniform samplerCube skybox;
 
 #if VOLUMETRICS
-#load lib/volumetrics.gl
+#load lib/volumetrics.glsl
 #endif
 
 void main()

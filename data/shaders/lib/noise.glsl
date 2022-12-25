@@ -1,4 +1,4 @@
-#load lib/constants.gl
+#load lib/constants.glsl
 
 // ---- Hammersley Low-Discrepancy Series ----
 float radicalInverse_VdC(uint bits) 

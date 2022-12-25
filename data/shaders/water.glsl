@@ -26,7 +26,7 @@ out TCS_TES {
 
 const float factor = 4.0;
 
-#load lib/shared.gl
+#load lib/shared.glsl
 uniform mat4 model;
 
 void main()
@@ -81,8 +81,8 @@ out TES_FS {
 uniform mat4 model;
 uniform mat4 shadow_mvp;
 
-#load lib/shared.gl
-#load lib/waves.gl
+#load lib/shared.glsl
+#load lib/waves.glsl
 
 void main()
 { 
@@ -116,13 +116,13 @@ void main()
 #macro VOLUMETRICS 1
 #macro RAYMARCH_SSR 0
 
-#load lib/constants.gl
-#load lib/shared.gl
-#load lib/utilities.gl
-#load lib/pbr.gl
+#load lib/constants.glsl
+#load lib/shared.glsl
+#load lib/utilities.glsl
+#load lib/pbr.glsl
 
 #if VOLUMETRICS
-#load lib/volumetrics.gl
+#load lib/volumetrics.glsl
 #endif
 
 #define EDGE_SCALE      1.252

@@ -1,14 +1,14 @@
 #define LIGHT_POWER       0.3
 #define AMBIENT_POWER   0.1
 
-#load lib/constants.gl
+#load lib/constants.glsl
 
-#load lib/shared.gl
+#load lib/shared.glsl
 #if SHADOWS
-#load lib/shadows.gl
+#load lib/shadows.glsl
 #endif
 #if LIGHTS
-#load lib/lights_ubo.gl
+#load lib/lights_ubo.glsl
 #endif
 
 vec3 blinnPhong(vec3 V, vec3 N, vec3 L, vec3 L_col, vec3 diffuse_col, vec3 specular_col, float shininess) {

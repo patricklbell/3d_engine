@@ -21,14 +21,14 @@ layout (location = 7) in vec4 in_color;
 #if ANIMATED_BONES
 layout (location = 5) in ivec4 in_bone_ids;
 layout (location = 6) in vec4  in_weights;
-#load lib/bone_ubo.gl
+#load lib/bone_ubo.glsl
 #endif
 
 #if VEGETATION
 uniform float time;
 uniform vec2 wind_direction;
 uniform float wind_strength;
-#load lib/vegetation.gl
+#load lib/vegetation.glsl
 #endif
 
 uniform mat4 model;
@@ -64,7 +64,7 @@ void main() {
 layout(triangles, invocations=CASCADE_NUM) in;
 layout(triangle_strip, max_vertices=3) out;
 
-#load lib/shadow_ubo.gl
+#load lib/shadow_ubo.glsl
 
 #if ALPHA_CLIP
 in VS_OUT {
