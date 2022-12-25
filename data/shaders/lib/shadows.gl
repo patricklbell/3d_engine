@@ -56,7 +56,7 @@ float calculateShadowness(float NdotL, vec3 position, int layer) {
     }
 
     // calculate bias (based on depth map resolution and slope)
-    float bias = max(0.002 * (1.0 - NdotL), 0.001);
+    float bias = max(0.002 * (1.0 - NdotL), 0.005);
     if (layer == CASCADE_NUM)
     {
         bias *= 1 / (far_plane * 0.5f);
