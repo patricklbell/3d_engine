@@ -1895,10 +1895,11 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
                                     im_file_dialog.Open();
                                 }
                             }
+                            return true;
                         };
 
                         Material* mat;
-                        auto& lu = m_e->overidden_materials.find(selection.submesh_i);
+                        auto lu = m_e->overidden_materials.find(selection.submesh_i);
                         if (lu == m_e->overidden_materials.end()) {
                             mat = &mesh->materials[mesh->material_indices[selection.submesh_i]];
 
@@ -2292,7 +2293,8 @@ void drawEditorGui(EntityManager &entity_manager, AssetManager &asset_manager){
             std::cout << "Selected filename at path " << p << ".\n";
             if (im_file_dialog_type == "loadLevel") {
                 std::string dummy;
-                loadLevelCommand(std::vector<std::string>{ "load_level", p }, dummy, entity_manager, asset_manager);
+                std::vector<std::string> command{ "load_level", p };
+                loadLevelCommand(command, dummy, entity_manager, asset_manager);
             } else if (im_file_dialog_type == "changeMesh") {
                 auto mesh = asset_manager.getMesh(p);
                 if (mesh == nullptr) {

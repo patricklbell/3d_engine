@@ -256,7 +256,7 @@ struct AssetManager {
     // @note that this function could cause you to "lose" a texture if the path is the same
     Texture* createTexture(const std::string &handle);
     bool loadTextureFromAssimp(Texture *&tex, aiMaterial* mat, const aiScene* scene, aiTextureType texture_type, GLint internal_format=GL_FALSE, bool floating = false);
-    bool AssetManager::loadColorFromAssimp(Texture*& tex, aiMaterial* ai_mat, const char* pKey, unsigned int type, unsigned int idx, GLint format=GL_RGBA, bool floating=false);
+    bool loadColorFromAssimp(Texture*& tex, aiMaterial* ai_mat, const char* pKey, unsigned int type, unsigned int idx, GLint format=GL_RGBA, bool floating=false);
     static bool loadTexture(Texture *tex, const std::string &path, GLenum format=GL_RGBA, const GLint wrap = GL_REPEAT, bool floating = false, bool trilinear = true);
     static bool loadCubemapTexture(Texture *tex, const std::array<std::string, FACE_NUM_FACES> &paths, GLenum format = GL_RGBA, const GLint wrap = GL_REPEAT, bool floating = false, bool trilinear = true);
 

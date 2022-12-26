@@ -52,7 +52,7 @@ float noisep(vec3 x) {
                    mix( hash(n+270.0), hash(n+271.0),f.x),f.y),f.z);
 }
 
-float ScrollNoise(vec3 pos, float speed, float scale, vec3 dir, float amount, float bias = 0.0, float mult = 1.0) {
+float ScrollNoise(vec3 pos, float speed, float scale, vec3 dir, float amount, float bias, float mult) {
 	float time = time * speed;
 	float noiseScale = scale;
 	vec3 noiseScroll = dir * time;
