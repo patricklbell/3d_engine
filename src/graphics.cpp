@@ -1445,10 +1445,8 @@ Texture *createJitter3DTexture(AssetManager &asset_manager, int size, int sample
 }
 
 void writeFramebufferToTga(std::string path) {
-    GLint framebuffer_dimensions[4] = { 0 };
-    glGetIntegerv(GL_VIEWPORT, framebuffer_dimensions);
-    GLint& w = gl_state.viewport.z;
-    GLint& h = gl_state.viewport.w;
+    GLint& w = window_width;
+    GLint& h = window_height;
 
     int* buffer = new int[w * h * 3];
     glReadPixels(0, 0, w, h, GL_BGR, GL_UNSIGNED_BYTE, buffer);
@@ -1460,8 +1458,12 @@ void writeFramebufferToTga(std::string path) {
     }
 
     std::cout << "----------------Writing Frame to TGA " << path << "----------------\n";
-    short  TGAhead[] = { 0, 2, 0, 0, 0, 0, (short)w, (short)h, 24 };
-    fwrite(TGAhead, sizeof(TGAhead), 1, fp);
+    char TGAheadType[] = { 0, 0, 2, 0, 0, 0, 0, 0};
+    short TGAheadImage[] = { 0, 0, (short)w, (short)h };
+    char TGAheadFormat[] = { 24, 0 };
+    fwrite(TGAheadType, sizeof(TGAheadType), 1, fp);
+    fwrite(TGAheadImage, sizeof(TGAheadImage), 1, fp);
+    fwrite(TGAheadFormat, sizeof(TGAheadFormat), 1, fp);
     fwrite(buffer, 3 * w * h, 1, fp);
     delete[] buffer;
 
