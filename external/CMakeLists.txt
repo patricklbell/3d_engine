@@ -57,7 +57,7 @@ target_link_libraries(GLEW_210
 
 
 ### ASSIMP ###
-# AssImp already has a CMakeLists.txt so let's use these
+# AssImp already has a CMakeLists.txt so let's use theirs
 
 set(ASSIMP_BUILD_ALL_IMPORTERS_BY_DEFAULT OFF)
 set(ASSIMP_BUILD_GLTF_IMPORTER ON)
@@ -145,3 +145,17 @@ if(UNIX)
 	endif(ALSA_FOUND)
 	add_compile_definitions(WITH_ALSA)
 endif()
+
+## Jolt
+include (FetchContent)
+
+set(INTERPROCEDURAL_OPTIMIZATION ON)
+
+FetchContent_Declare(
+  JoltPhysics
+  GIT_REPOSITORY "https://github.com/jrouwe/JoltPhysics"
+  GIT_TAG "v4.0.1"
+  SOURCE_SUBDIR "Build"
+)
+FetchContent_MakeAvailable(JoltPhysics)
+SET_INTERPROCEDURAL_OPTIMIZATION() # Enable link time optimization in Release and Distribution mode if requested and available

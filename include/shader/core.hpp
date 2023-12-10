@@ -16,7 +16,7 @@ struct Shader {
     void clear_loaded();
     bool update_from_dependencies();
     constexpr GLuint program() { return active_program; }
-    bool Shader::activate_macros(); // Returns true if recompile was necessary
+    bool activate_macros(); // Returns true if recompile was necessary
     bool set_macro(std::string_view macro, bool value, bool activate = true);
     GLuint uniform(std::string_view name);
 

@@ -672,7 +672,7 @@ bool AssetManager::loadMeshAssimpScene(Mesh *mesh, const std::string &path, cons
         }
 
         // Remove any null pointers from value initializer of std unordered map
-        for (auto& it = mat.textures.cbegin(); it != mat.textures.cend();) {
+        for (auto it = mat.textures.cbegin(); it != mat.textures.cend();) {
             if (!it->second) {
                 mat.textures.erase(it++);    // or "it = m.erase(it)" since C++11
             } else {

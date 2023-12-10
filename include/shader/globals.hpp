@@ -33,4 +33,4 @@ namespace Shaders {
 	bool live_update();
 };
 
-#endif SHADER_GLOBALS_HPP
+#endif

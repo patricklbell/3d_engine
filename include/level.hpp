@@ -4,6 +4,11 @@
 #include "graphics.hpp"
 #include "entities.hpp"
 #include "assets.hpp"
+#include "physics.hpp"
+
+#include <Jolt/Jolt.h>
+#include "Jolt/Physics/PhysicsSystem.h"
+#include "Jolt/Physics/PhysicsScene.h"
 
 struct FogProperties {
     float anisotropy = 0.2;
@@ -28,12 +33,11 @@ struct Level {
 
     EntityManager entities;
     Camera camera;
+    Environment environment;
 
     enum class Type : uint64_t {
         BASIC = 0,
     } type = Type::BASIC;
-
-    Environment environment;
 };
 
 extern Level loaded_level;

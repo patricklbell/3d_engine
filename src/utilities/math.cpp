@@ -331,7 +331,7 @@ Raycast mouseToRaycast(glm::ivec2 mouse_position, glm::ivec2 screen_size, glm::m
     return Raycast(glm::vec3(ray_start_world), glm::normalize(glm::vec3(ray_end_world - ray_start_world)));
 }
 
-AABB&& transformAABB(AABB& aabb, glm::mat4 transform) {
+AABB transformAABB(AABB& aabb, glm::mat4 transform) {
     // Translate center
     const glm::vec3 t_center{ transform * glm::vec4(aabb.center, 1.f) };
 

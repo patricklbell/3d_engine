@@ -37,11 +37,11 @@ struct RaycastResult {
 struct AABB {
     glm::vec3 center;
     glm::vec3 size;
-    static AABB&& FromMinMax(glm::vec3 min, glm::vec3 max) {
+    static AABB FromMinMax(glm::vec3 min, glm::vec3 max) {
         return AABB{ (max + min) * 0.5f, (max - min) * 0.5f };
     }
 };
-AABB&& transformAABB(AABB& aabb, glm::mat4 transform);
+AABB transformAABB(AABB& aabb, glm::mat4 transform);
 
 Raycast mouseToRaycast(glm::ivec2 mouse_position, glm::ivec2 screen_size, glm::mat4 inv_vp);
 RaycastResult raycastTriangleCull(const glm::vec3 vertices[3], Raycast& raycast);

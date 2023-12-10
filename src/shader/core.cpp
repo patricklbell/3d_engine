@@ -68,7 +68,8 @@ static bool load_shader_chunk(std::ifstream &f, std::string &chunk,
 					dependencies[loadpath].path = loadpath;
 					dependencies[loadpath].last_write_time = std::filesystem::last_write_time(loadpath);
 
-					load_shader_chunk(std::ifstream(loadpath), chunk, dependencies, macros);
+          std::ifstream lf{loadpath};
+					load_shader_chunk(lf, chunk, dependencies, macros);
 				}
 			}
 		}
@@ -94,7 +95,7 @@ static bool load_shader_chunk(std::ifstream &f, std::string &chunk,
 }
 
 bool Shader::load_file(std::string_view path) {
-	std::ifstream f(path);
+	std::ifstream f{std::string(path)};
 	if (!f) {
 		std::cerr << "Failed to open shader file " << path << "\n";
 		return false;
@@ -318,7 +319,7 @@ bool Shader::activate_macros() {
 	if (active_hash == hash) 
 		return false;
 
-	auto& program_lu = programs.find(hash);
+	auto program_lu = programs.find(hash);
 	if (program_lu == programs.end()) {
 		compile();
 		return true;
@@ -331,7 +332,7 @@ bool Shader::activate_macros() {
 }
 
 bool Shader::set_macro(std::string_view macro, bool value, bool activate) {
-	auto& macro_lu = macros.find(std::string(macro));
+	auto macro_lu = macros.find(std::string(macro));
 	if (macro_lu == macros.end()) {
 		std::cerr << "Unknown macro " << macro << " for shader " << handle << "\n";
 		return false;
@@ -341,8 +342,9 @@ bool Shader::set_macro(std::string_view macro, bool value, bool activate) {
 	macro_lu->second = value;
 
 	if (activate) {
-		activate_macros();
+		return activate_macros();
 	}
+  return false;
 }
 
 // ----------------------------------------------------------------------------

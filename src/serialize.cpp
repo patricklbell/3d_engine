@@ -241,7 +241,7 @@ void readEnvironment(Environment& env, AssetManager& assets, FILE* f) {
 }
 
 void writeMaterial(const Material& mat, FILE* f) {
-    static const auto write_texture = [&f](Texture* tex, FILE* f) {
+    static const auto write_texture = [](Texture* tex, FILE* f) {
         uint64_t format = tex->format;
         fwrite(&format, sizeof(format), 1, f);
 
@@ -256,7 +256,7 @@ void writeMaterial(const Material& mat, FILE* f) {
         }
     };
 
-    static const auto write_uniform = [&f](const Uniform &u, FILE* f) {
+    static const auto write_uniform = [](const Uniform &u, FILE* f) {
         fwrite(&u.type, sizeof(u.type), 1, f);
         fwrite(u.data, Uniform::size(u.type), 1, f);
     };
@@ -494,6 +494,8 @@ bool readMesh(Mesh& mesh, AssetManager& assets, FILE* f) {
         calculateAABB(mesh.aabbs[i], mesh.vertices, mesh.num_vertices, &mesh.indices[mesh.draw_start[i]], mesh.draw_count[i]);
     }
     calculateAABB(mesh.aabbs[mesh.num_submeshes], mesh.vertices, mesh.num_vertices, mesh.indices, mesh.num_indices);
+
+    return true;
 }
 
 constexpr uint16_t LEVEL_FILE_VERSION = 3U;

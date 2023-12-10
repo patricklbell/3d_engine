@@ -1,6 +1,9 @@
 #ifndef THREADPOOL_HPP
 #define THREADPOOL_HPP
 
+#include <thread>
+#include <atomic>
+#include <condition_variable>
 #include <mutex>
 #include <queue>
 #include <functional>

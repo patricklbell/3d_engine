@@ -3,11 +3,15 @@
 
 #include <camera/globals.hpp>
 
+#include <Jolt/Jolt.h>
+#include "Jolt/Math/Real.h"
+
 #include <utilities/math.hpp>
 #include "entities.hpp"
 #include "level.hpp"
 
 #include "game_behaviour.hpp"
+#include "physics.hpp"
 
 GameState gamestate;
 
@@ -154,6 +158,39 @@ void resetGameState() {
     gamestate.level = loaded_level;
     auto look_dir = glm::normalize(gamestate.level.camera.target - gamestate.level.camera.position);
     initCameraMove(gamestate.level.camera.position - look_dir * 6.0f, gamestate.level.camera.position, 1.2f);
+
+    if (physics::system != nullptr) delete physics::system;
+    physics::system = new JPH::PhysicsSystem();
+    physics::system->Init(
+        1024, 0, 1024, 1024, 
+        physics::broad_phase_layer_interface, physics::object_vs_broadphase_layer_filter, physics::object_vs_object_layer_filter
+    );
+
+    auto &bi = physics::system->GetBodyInterface();
+    JPH::BodyIDVector body_ids;
+    for (int i = 0; i < ENTITY_COUNT; ++i) {
+        auto e = gamestate.level.entities.entities[i];
+        if (e == nullptr) continue;
+
+        if (entityInherits(e->type, EntityType::MESH_ENTITY)) {
+            auto me = reinterpret_cast<MeshEntity*>(e);
+
+            if (me->body_settings != nullptr) {
+                auto body = bi.CreateBody(*me->body_settings);
+                if (body == nullptr) {
+                    std::cerr << "Failed to add body to physics system, maybe not enough storage?\n";
+                    continue;
+                }
+
+                body->SetUserData(me->id.to_phys());
+                me->body_id = body->GetID();
+                body_ids.push_back(body->GetID());
+            }
+        }
+    }
+	auto add_state = bi.AddBodiesPrepare(body_ids.data(), (int)body_ids.size());
+	bi.AddBodiesFinalize(body_ids.data(), (int)body_ids.size(), add_state, JPH::EActivation::Activate);
+
     gamestate.initialized = true;
 }
 
@@ -163,14 +200,4 @@ void playGame() {
     }
 
     gamestate.is_active = true;
-}
-
-void updateGameEntities(float dt, EntityManager& entity_manager) {
-    updateCameraMove(dt);
-
-    if (entity_manager.player != NULLID) {
-        auto player = (PlayerEntity*)entity_manager.getEntity(entity_manager.player);
-        if(player != nullptr) 
-            updatePlayerEntity(entity_manager, dt, *player);
-    }
 }
