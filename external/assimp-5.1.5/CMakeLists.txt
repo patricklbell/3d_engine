@@ -270,7 +270,7 @@ ELSEIF(MSVC)
   ENDIF()
   # disable "elements of array '' will be default initialized" warning on MSVC2013
   IF(MSVC12)
-    ADD_COMPILE_OPTIONS(/wd4351)	
+    ADD_COMPILE_OPTIONS(/wd4351)
   ENDIF()
   ADD_COMPILE_OPTIONS(/wd4244) #supress warning for double to float conversion if Double precission is activated
   SET(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /D_DEBUG /Zi /Od")

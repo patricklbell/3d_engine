@@ -64,7 +64,7 @@ namespace graphics {
     //
     // Volumetric Fog
     //
-    bool do_volumetrics = true;
+    bool do_volumetrics = false;
     const glm::ivec3 VOLUMETRIC_RESOLUTION{ 160, 90, 128 };
     constexpr int NUM_BLUE_NOISE_TEXTURES = 16;
     // For now use the same texture for all PM

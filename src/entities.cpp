@@ -5,10 +5,15 @@
 #include <glm/gtx/common.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <Jolt/Jolt.h>
+#include <Jolt/Physics/Body/BodyCreationSettings.h>
+
 #include <utilities/math.hpp>
 
 #include "assets.hpp"
 #include "entities.hpp"
+#include "physics.hpp"
+#include "game_behaviour.hpp"
 
 // Used for messages, doesn't change editor state
 #include "editor.hpp"
@@ -388,4 +393,42 @@ bool PlayerEntity::step_forward() {
     if (Editor::debug_animations)
         pushInfoMessage("Added STEP_FORWARD action");
     return true;
+}
+
+
+void tickEntities(EntityManager& entities, float dt, bool is_playing) {
+    for (int i = 0; i < ENTITY_COUNT; ++i) {
+        auto e = entities.entities[i];
+        if (e == nullptr) continue;
+
+        if (entityInherits(e->type, EntityType::MESH_ENTITY)) {
+            auto me = reinterpret_cast<MeshEntity*>(e);
+            
+            if (is_playing && !me->body_id.IsInvalid()) {
+                auto& body_interface = physics::system->GetBodyInterfaceNoLock();
+                auto pos = body_interface.GetCenterOfMassPosition(me->body_id);
+                auto rot = body_interface.GetRotation(me->body_id).GetXYZW();
+
+                me->position = std::move(glm::vec3(pos.mValue[0], pos.mValue[1], pos.mValue[2]));
+                me->rotation = std::move(glm::quat(rot.mValue[0], rot.mValue[1], rot.mValue[2], rot.mValue[3]));
+            }
+        }
+        if (entityInherits(e->type, EntityType::ANIMATED_MESH_ENTITY)) {
+            auto ae = reinterpret_cast<AnimatedMeshEntity*>(e);
+
+            if (is_playing || ae->draw_animated) {
+                ae->tick(dt);
+            }
+        }
+    }
+
+    if (is_playing) {
+        updateCameraMove(dt);
+
+        if (entities.player != NULLID) {
+            auto player = (PlayerEntity*)entities.getEntity(entities.player);
+            if(player != nullptr) 
+                updatePlayerEntity(entities, dt, *player);
+        }
+    }
 }

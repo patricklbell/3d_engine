@@ -6,8 +6,12 @@
 
 #include <glm/gtc/quaternion.hpp>
 
+#include <Jolt/Jolt.h>
+#include "Jolt/Physics/Body/BodyCreationSettings.h"
+
 #include "globals.hpp"
 #include "assets.hpp"
+#include "physics.hpp"
 
 #define NULLID Id(-1, -1)
 
@@ -22,7 +26,12 @@ struct Id {
         return (i == other.i) && (v == other.v);
     }
     Id(int _i, int _v) : i(_i), v(_v) {}
+    Id(uint64_t phys_id) : i(phys_id >> 16), v(phys_id & 0xffff) {}
     Id() : i(-1), v(-1) {}
+
+    constexpr uint64_t to_phys() {
+        return (i << 16) | i;
+    }
 };
 
 enum EntityType : uint64_t {
@@ -42,6 +51,9 @@ struct Entity {
 };
 
 struct MeshEntity : Entity {
+    JPH::BodyCreationSettings* body_settings = nullptr;
+    JPH::BodyID body_id = JPH::BodyID();
+
     glm::vec3 position = glm::vec3(0.0);
     glm::quat rotation = glm::quat();
     glm::mat3 scale = glm::mat3(1.0);
@@ -57,6 +69,10 @@ struct MeshEntity : Entity {
 
     MeshEntity(Id _id = NULLID) : Entity(_id) {
         type = EntityType::MESH_ENTITY;
+    }
+    ~MeshEntity() {
+        if (body_settings != nullptr)
+            delete body_settings;
     }
 };
 
@@ -335,7 +351,7 @@ struct EntityManager {
     inline void clear() {
         // Delete entities
         for (uint64_t i = 0; i < ENTITY_COUNT; i++) {
-            if (entities[i] != nullptr) free(entities[i]);
+            if (entities[i] != nullptr) delete entities[i];
             entities[i] = nullptr;
         }
         memset(versions, 0, sizeof(versions));
@@ -387,7 +403,7 @@ struct EntityManager {
             int i = delete_entity_stack.top();
             delete_entity_stack.pop();
             free_entity_stack.push(i);
-            if (entities[i] != nullptr) free(entities[i]);
+            if (entities[i] != nullptr) delete entities[i];
             entities[i] = nullptr;
         }
     }
@@ -397,17 +413,8 @@ struct EntityManager {
         setEntity(id.i, e);
         return e;
     }
-
-    void tickAnimatedMeshes(float dt, bool paused) {
-        for (int i = 0; i < ENTITY_COUNT; ++i) {
-            auto e = reinterpret_cast<AnimatedMeshEntity*>(entities[i]);
-
-            if (e != nullptr && entityInherits(e->type, EntityType::ANIMATED_MESH_ENTITY) && (!paused || e->draw_animated)) {
-                e->tick(dt);
-                continue;
-            }
-        }
-    }
 };
+
+void tickEntities(EntityManager& entities, float dt, bool is_playing);
 
 #endif // ENTITIES_CORE_HPP

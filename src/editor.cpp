@@ -1,4 +1,4 @@
-#include "globals.hpp"
+#include <globals.hpp>
 
 #include <stack>
 #include <limits>

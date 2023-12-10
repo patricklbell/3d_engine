@@ -1,5 +1,6 @@
 #include <iostream>
 #include <sstream>
+#include <thread>
 
 #include <GL/glew.h>
 #include <GLFW/glfw3.h>
@@ -12,6 +13,14 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
+#include <glm/detail/type_vec.hpp>
+
+#include <Jolt/Jolt.h>
+#include <Jolt/Physics/PhysicsSettings.h>
+#include <Jolt/Physics/Collision/Shape/BoxShape.h>
+#include <Jolt/Physics/Collision/Shape/SphereShape.h>
+#include <Jolt/Physics/Body/BodyCreationSettings.h>
+#include <Jolt/Physics/Body/BodyActivationListener.h>
 
 #include <controls/behaviour.hpp>
 #include <controls/globals.hpp>
@@ -27,6 +36,7 @@
 #include "entities.hpp"
 #include "level.hpp"
 #include "game_behaviour.hpp"
+#include "physics.hpp"
 
 // Defined in globals.hpp
 GLFWwindow* window;
@@ -62,6 +72,11 @@ int main() {
     if (!gl_state.init())
         return cleanup();
 
+    // 
+    // Initialize physics engine
+    //
+    initPhysics();
+
 #if DO_MULTITHREAD
     ThreadPool thread_pool;
     thread_pool.start();
@@ -89,8 +104,34 @@ int main() {
 
     AssetManager local_assets;
     initDefaultLevel(loaded_level, local_assets);
-    //loadLevel(loaded_level, local_assets, "data/levels/water_test.level");
     Cameras::update_cameras_for_level();
+
+    // Testing physics
+    auto mesh = local_assets.createMesh("cube");
+    local_assets.loadMeshFile(mesh, "data/mesh/cube.mesh");
+
+    auto box = (MeshEntity*)loaded_level.entities.createEntity(MESH_ENTITY);
+    box->mesh = mesh;
+    box->position += glm::vec3(0,5,0);
+    box->body_settings = new JPH::BodyCreationSettings(
+        new JPH::BoxShape(JPH::RVec3(1,1,1)), 
+        JPH::RVec3(0.0, 5.0, 0.0), 
+        JPH::Quat::sEulerAngles(JPH::RVec3(0.1,0.3,0.2)), 
+        JPH::EMotionType::Dynamic, 
+        physics::Layers::MOVING
+    );
+
+    auto floor = (MeshEntity*)loaded_level.entities.createEntity(MESH_ENTITY);
+    floor->mesh = mesh;
+    floor->scale[0][0] *= 10;
+    floor->scale[2][2] *= 10;
+    floor->body_settings = new JPH::BodyCreationSettings(
+        new JPH::BoxShape(JPH::RVec3(10, 1, 10)), 
+        JPH::RVec3(0.0, 0.0, 0.0), 
+        JPH::Quat::sIdentity(), 
+        JPH::EMotionType::Static, 
+        physics::Layers::NON_MOVING
+    );
 
     double last_time = glfwGetTime();
     double last_filesystem_hotswap_check = last_time;
@@ -105,7 +146,6 @@ int main() {
         double current_time = glfwGetTime();
         double true_dt = true_time_pause ? 0.0 : (current_time - last_time) * true_time_warp;
         last_time = current_time;
-        float dt = 1.0/60.0 * physics_time_warp;
 
         // Hotswap shader files every second
         if (current_time - last_filesystem_hotswap_check >= 1.0) {
@@ -130,7 +170,6 @@ int main() {
                 initBloomFbo(true);
         }
 
-        auto old_entities_ptr = entities_ptr;
         entities_ptr = get_active_entities();
 
         // Handle controls and inputs, @note this involves changing the active entities
@@ -142,9 +181,12 @@ int main() {
         EntityManager& entities = *entities_ptr;
 
         // Update entity states and animations
-        entities.tickAnimatedMeshes(true_dt, !gamestate.is_active);
-        if (gamestate.is_active)
-            updateGameEntities(true_dt, entities);
+        tickEntities(entities, true_dt, gamestate.is_active);
+        if (gamestate.is_active) {
+            // Step the world
+            float dt = 1.0/60.0 * physics_time_warp;
+            physics::system->Update(dt, 1, physics::temp_allocator, physics::job_system);
+        }
 
         auto old_camera_ptr = camera_ptr;
         camera_ptr = Cameras::get_active_camera();
@@ -222,6 +264,9 @@ int main() {
 
 
 int cleanup() {
+    // cleanup physics
+    cleanupPhysics();
+
     // Clean up SoLoud
     soloud.deinit();
 
