@@ -507,7 +507,7 @@ bool parameterizeAndPackMesh(Mesh* mesh) {
         }
     }
 
-    memcpy(mesh->indices, xmesh.indexArray, mesh->num_indices * sizeof(*mesh->indices));
+    std::memcpy(mesh->indices, xmesh.indexArray, mesh->num_indices * sizeof(*mesh->indices));
 
     if (!!(mesh->attributes & Mesh::Attributes::NORMALS)) {
         // Recalculate tangents @todo assimp load flags

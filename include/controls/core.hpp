@@ -1,5 +1,5 @@
-#ifndef CONTROLS_CORE_HPP
-#define CONTROLS_CORE_HPP
+#ifndef ENGINE_CONTROLS_CORE_HPP
+#define ENGINE_CONTROLS_CORE_HPP
 
 #include <unordered_map>
 #include <string>
@@ -54,4 +54,4 @@ namespace Controls {
 	};
 };
 
-#endif // CONTROLS_CORE_HPP
+#endif // ENGINE_CONTROLS_CORE_HPP

@@ -409,8 +409,8 @@ void tickEntities(EntityManager& entities, float dt, bool is_playing) {
                 auto pos = body_interface.GetCenterOfMassPosition(me->body_id);
                 auto rot = body_interface.GetRotation(me->body_id).GetXYZW();
 
-                me->position = std::move(glm::vec3(pos.mValue[0], pos.mValue[1], pos.mValue[2]));
-                me->rotation = std::move(glm::quat(rot.mValue[0], rot.mValue[1], rot.mValue[2], rot.mValue[3]));
+                me->position = std::move(glm::vec3(pos.GetX(), pos.GetY(), pos.GetY()));
+                me->rotation = std::move(glm::quat(rot.GetX(), rot.GetY(), rot.GetZ(), rot.GetW()));
             }
         }
         if (entityInherits(e->type, EntityType::ANIMATED_MESH_ENTITY)) {

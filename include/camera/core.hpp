@@ -1,5 +1,5 @@
-#ifndef CAMERA_CORE_HPP
-#define CAMERA_CORE_HPP
+#ifndef ENGINE_CAMERA_CORE_HPP
+#define ENGINE_CAMERA_CORE_HPP
 
 #include <glm/glm.hpp>
 #include <utilities/math.hpp>
@@ -54,4 +54,4 @@ struct FrustrumCollider {
     bool isAabbInFrustrum(AABB& aabb);
 };
 
-#endif // CAMERA_CORE_HPP
+#endif // ENGINE_CAMERA_CORE_HPP

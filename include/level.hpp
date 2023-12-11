@@ -1,14 +1,9 @@
-#ifndef LEVEL_HPP
-#define LEVEL_HPP
+#ifndef ENGINE_LEVEL_HPP
+#define ENGINE_LEVEL_HPP
 
 #include "graphics.hpp"
 #include "entities.hpp"
 #include "assets.hpp"
-#include "physics.hpp"
-
-#include <Jolt/Jolt.h>
-#include "Jolt/Physics/PhysicsSystem.h"
-#include "Jolt/Physics/PhysicsScene.h"
 
 struct FogProperties {
     float anisotropy = 0.2;
@@ -46,4 +41,4 @@ void initDefaultLevel(Level& level, AssetManager& assets);
 bool saveLevel(Level& level, const std::string& path);
 bool loadLevel(Level& level, AssetManager& assets, const std::string& path);
 
-#endif // LEVEL_HPP
+#endif // ENGINE_LEVEL_HPP

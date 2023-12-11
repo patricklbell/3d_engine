@@ -1,5 +1,5 @@
-#ifndef ASSETS_HPP
-#define ASSETS_HPP
+#ifndef ENGINE_ASSETS_HPP
+#define ENGINE_ASSETS_HPP
 
 #include <string>
 #include <vector>
@@ -18,9 +18,6 @@
 
 #include <assimp/scene.h> 
 
-#ifdef _WINDOWS
-#define NOMINMAX 
-#endif
 #include <soloud.h>
 #include <soloud_thread.h>
 #include <soloud_wav.h>
@@ -43,7 +40,6 @@ enum AssetType : char {
 struct Material;
 
 struct Mesh {
-    bool complete = false;
     std::string handle;
 
     enum class Attributes : char {
@@ -99,6 +95,8 @@ struct Mesh {
     // Culling information @todo
     AABB* aabbs = nullptr; // Is num_submeshes + 1 long, the last AABB is for the whole mesh
 
+    bool complete = false;
+
     ~Mesh();
 };
 void createMeshVao(Mesh* mesh);
@@ -112,10 +110,10 @@ void calculateAABB(AABB& aabb, glm::vec3* vertices, uint64_t num_vertices, unsig
 #define MAX_BONES 1000
 
 struct AnimatedMesh {
-    bool complete = false;
-    std::string handle;
-
     ~AnimatedMesh(); // Frees C arrays
+
+    std::string handle;
+    bool complete = false;
 
     uint64_t num_bones = 0;
     std::vector<glm::mat4> bone_offsets; // This could be c array, but requires some work
@@ -204,7 +202,7 @@ struct Audio {
     SoLoud::WavStream wav_stream;
 };
 
-inline void hash_combine(std::size_t& seed) { }
+inline void hash_combine(std::size_t& seed) { seed = 0x31290; }
 
 template <typename T, typename... Rest>
 inline void hash_combine(std::size_t& seed, const T& v, Rest... rest) {
@@ -345,31 +343,26 @@ struct Uniform {
 
     Uniform(glm::vec4 val) {
         type = Type::VEC4;
-        data = malloc(size(type));
-        new (data) glm::vec4(val);
+        data = new glm::vec4(val);
     }
     Uniform(glm::vec3 val) {
         type = Type::VEC3;
-        data = malloc(size(type));
-        new (data) glm::vec3(val);
+        data = new glm::vec3(val);
     }
     Uniform(glm::vec2 val) {
         type = Type::VEC2;
-        data = malloc(size(type));
-        new (data) glm::vec2(val);
+        data = new glm::vec2(val);
     }
     Uniform(float val) {
         type = Type::FLOAT;
-        data = malloc(size(type));
-        new (data) GLfloat(val);
+        data = new GLfloat(val);
     }
     Uniform(int val) {
         type = Type::INT;
-        data = malloc(size(type));
-        new (data) GLint(val);
+        data = new GLint(val);
     }
-    Uniform(void* _data, Type _type) 
-    { // We used placement new so we can also pass a pre allocated buffer
+    Uniform(void* _data, Type _type) // data should be allocated with new
+    {   // We used placement new so we can also pass a pre allocated buffer
         data = _data;
         type = _type;
     }
@@ -415,19 +408,19 @@ struct Uniform {
     }
 
     ~Uniform() {
-        free(data);
+        delete(data);
     }
 
     // Copy constructor shouldn't be called by map, @check this
     Uniform& operator=(const Uniform& u) {
-        data = malloc(size(u.type));
-        memcpy(data, u.data, size(u.type));
+        data = ::operator new(size(u.type));
+        std::memcpy(data, u.data, size(u.type));
         type = u.type;
         return *this;
     };
     Uniform(const Uniform& u) {
-        data = malloc(size(u.type));
-        memcpy(data, u.data, size(u.type));
+        data = ::operator new(size(u.type));
+        std::memcpy(data, u.data, size(u.type));
         type = u.type;
     }
 
@@ -449,4 +442,5 @@ std::string getTextureSlotName(const Material& mat, TextureSlot slot);
 
 std::ostream &operator<<(std::ostream &os, const Texture &t);
 std::ostream &operator<<(std::ostream &os, const Material &m);
-#endif
+
+#endif // ENGINE_ASSETS_HPP

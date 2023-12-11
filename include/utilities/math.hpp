@@ -1,5 +1,5 @@
-#ifndef UTILITIES_MATH_HPP
-#define UTILITIES_MATH_HPP
+#ifndef ENGINE_UTILITIES_MATH_HPP
+#define ENGINE_UTILITIES_MATH_HPP
 
 #include <ostream>
 #include <algorithm>
@@ -26,12 +26,12 @@ struct Raycast {
 
 // This contains the result of a raycast, anything other than hit and t is not garaunteed to be updated
 struct RaycastResult {
-    bool hit = false;
-    operator bool() const { return hit;  }
+    operator bool() const { return hit; }
 
     unsigned int indice; // @note this is the actual array index, so you don't need to multiply by 3
     float t = FLT_MAX, u = -1.0, v = -1.0; // This distance to the intersection, the uv coordinates on the triangle
     glm::vec3 normal;
+    bool hit = false;
 };
 
 struct AABB {
@@ -62,7 +62,7 @@ constexpr uint64_t log2(uint64_t n) {
     return ((n < 2) ? 1 : 1 + log2(n / 2));
 }
 
-constexpr uint64_t nextPowerOf2(int tex_x, int tex_y) {
+constexpr uint64_t nextPowerOf2(unsigned int tex_x, unsigned int tex_y) {
     uint64_t v = std::max(tex_x, tex_y);
 
     v--;
@@ -133,4 +133,4 @@ GLM_FUNC_QUALIFIER vecType<T, P> linearstep(vecType<T, P> const& edge0, vecType<
     return glm::clamp((x - edge0) / (edge1 - edge0), static_cast<T>(0), static_cast<T>(1));
 }
 
-#endif // UTILITIES_MATH_HPP
+#endif // ENGINE_UTILITIES_MATH_HPP

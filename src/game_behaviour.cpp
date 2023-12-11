@@ -4,7 +4,7 @@
 #include <camera/globals.hpp>
 
 #include <Jolt/Jolt.h>
-#include "Jolt/Math/Real.h"
+#include <Jolt/Math/Real.h>
 
 #include <utilities/math.hpp>
 #include "entities.hpp"
@@ -159,7 +159,8 @@ void resetGameState() {
     auto look_dir = glm::normalize(gamestate.level.camera.target - gamestate.level.camera.position);
     initCameraMove(gamestate.level.camera.position - look_dir * 6.0f, gamestate.level.camera.position, 1.2f);
 
-    if (physics::system != nullptr) delete physics::system;
+    if (physics::system != nullptr)
+        delete physics::system;
     physics::system = new JPH::PhysicsSystem();
     physics::system->Init(
         1024, 0, 1024, 1024, 

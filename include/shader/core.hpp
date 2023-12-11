@@ -1,5 +1,5 @@
-#ifndef SHADER_CORE_HPP
-#define SHADER_CORE_HPP
+#ifndef ENGINE_SHADER_CORE_HPP
+#define ENGINE_SHADER_CORE_HPP
 
 #include <unordered_map>
 #include <filesystem>
@@ -52,4 +52,4 @@ private:
 };
 
 
-#endif // SHADER_CORE_HPP
+#endif // ENGINE_SHADER_CORE_HPP

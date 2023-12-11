@@ -1,5 +1,5 @@
-#ifndef GAME_BEHAVIOUR_HPP
-#define GAME_BEHAVIOUR_HPP
+#ifndef ENGINE_GAME_BEHAVIOUR_HPP
+#define ENGINE_GAME_BEHAVIOUR_HPP
 
 #include "entities.hpp"
 #include "graphics.hpp"
@@ -10,7 +10,7 @@ void resetGameState();
 
 void initCameraMove(glm::vec3 origin, glm::vec3 target, float duration);
 void updateCameraMove(float dt);
-void updatePlayerEntity(EntityManager& entity_manager, float dt, PlayerEntity &player);
+void updatePlayerEntity(EntityManager& entity_manager, float dt, PlayerEntity& player);
 
 struct GameState {
 	Level level;
@@ -21,4 +21,4 @@ struct GameState {
 
 extern GameState gamestate;
 
-#endif // GAME_BEHAVIOUR_HPP
+#endif // ENGINE_GAME_BEHAVIOUR_HPP

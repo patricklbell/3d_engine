@@ -19,10 +19,13 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 if(MSVC)
 	set(_GLFW_WIN32, true)
+endif(MSVC)
+
+if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "MSVC")
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /std:c++17")
 else()
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17")
-endif(MSVC)
+endif()
 
 #
 # configuration flags
@@ -39,6 +42,8 @@ find_package(OpenGL REQUIRED)
 add_compile_definitions(GLM_FORCE_SSE2)
 
 # Jolt physics
+#set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ON)
+#set(INTERPROCEDURAL_OPTIMIZATION ON)
 set(CROSS_PLATFORM_DETERMINISTIC OFF) # deterministic across platforms
 set(FLOATING_POINT_EXCEPTIONS_ENABLED OFF) # only on msvc
 set(OBJECT_LAYER_BITS 16)
@@ -52,81 +57,6 @@ set(USE_TZCNT ON)
 set(USE_F16C ON)
 set(USE_FMADD ON)
 
-include_directories(
-	external/glfw-3.3.7/include/
-	external/glm-0.9.7.1/
-	external/soloud20200207/include/
-	external/glew-2.1.0/include/
-	external/imgui/include/
-	external/assimp-5.1.5/include/
-	external/stb/
-	external/lightmapper/
-	external/indicators/
-	external/xatlas/
-	include/
-)
-
-# Compile external dependencies 
-add_subdirectory(external)
-
-set(ALL_LIBS
-	${OPENGL_LIBRARY}
-	glfw
-	GLEW_210
-	assimp
-	SOLOUD
-  Jolt
-)
-
-add_definitions(
-	-DTW_STATIC
-	-DTW_NO_LIB_PRAGMA
-	-DTW_NO_DIRECT3D
-	-DGLEW_STATIC
-	-D_CRT_SECURE_NO_WARNINGS
-  -DUSE_ASSIMP
-)
-
-set(SOURCES 
-	src/controls/core.cpp
-	src/controls/behaviour.cpp
-	src/controls/globals.cpp
-
-	src/camera/core.cpp
-	src/camera/globals.cpp
-
-	src/shader/core.cpp
-	src/shader/globals.cpp
-
-	src/utilities/math.cpp
-	src/utilities/strings.cpp
-
-	src/level.cpp
-	src/renderer.cpp
-	src/serialize.cpp
-	src/threadpool.cpp
-	src/texture.cpp
-	src/editor.cpp
-	src/assets.cpp
-	src/primitives.cpp
-	src/entities.cpp
-	src/game_behaviour.cpp
-	src/lightmapper.cpp
-	src/graphics.cpp
-	src/physics.cpp
-
-  external/imgui/imgui_draw.cpp
-  external/imgui/imgui_impl_glfw.cpp
-  external/imgui/imgui_impl_opengl3.cpp
-  external/imgui/imgui_widgets.cpp
-	external/imgui/imgui_tables.cpp
-  external/imgui/imgui_stdlib.cpp
-  external/imgui/imgui.cpp
-	external/xatlas/xatlas.cpp
-
-	src/main.cpp
-)
-
 if (MSVC)
 	# 64 bit architecture
 	set(CMAKE_VS_PLATFORM_TOOLSET_HOST_ARCHITECTURE "x64")
@@ -139,7 +69,7 @@ if (MSVC)
 	endif()
 
 	# Set general compiler flags
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Zc:__cplusplus /Gm- /Wall /WX /MP /nologo /diagnostics:classic /FC /fp:except- /Zc:inline")
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Zc:__cplusplus /Gm- /W4 /MP /nologo /diagnostics:classic /FC /fp:except-")
 	
 	# Optionally generate debug symbols
 	if (GENERATE_DEBUG_SYMBOLS)
@@ -206,23 +136,86 @@ else()
 		set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pthread")
 	endif()
 endif()
-set(CMAKE_EXE_LINKER_FLAGS_DISTRIBUTION "${CMAKE_EXE_LINKER_FLAGS_RELEASE}") # Set linker flags
 
+set(CMAKE_EXE_LINKER_FLAGS_DISTRIBUTION "${CMAKE_EXE_LINKER_FLAGS_RELEASE}") # Set linker flags
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON) # generate compile_commands.json
 
+
+include_directories(
+	external/glfw-3.3.7/include/
+	external/glm-0.9.7.1/
+	external/soloud20200207/include/
+	external/glew-2.1.0/include/
+	external/assimp-5.3.1/include/
+	external/imgui/include/
+	external/stb/
+	external/lightmapper/
+	external/indicators/
+	external/xatlas/
+	external/JoltPhysics-4.0.1/Jolt
+	include/
+)
+
+# Compile external dependencies 
+add_subdirectory(external)
+
+set(ALL_LIBS
+	${OPENGL_LIBRARY}
+	glfw
+	GLEW_210
+	assimp
+	SOLOUD
+	ImGui
+	XAtlas
+	Jolt
+)
+
+add_definitions(
+	-DTW_STATIC
+	-DTW_NO_LIB_PRAGMA
+	-DTW_NO_DIRECT3D
+	-DGLEW_STATIC
+	-D_CRT_SECURE_NO_WARNINGS
+	-DUSE_ASSIMP
+	-DNOMINMAX
+)
+
+set(SOURCES 
+	src/controls/core.cpp
+	src/controls/behaviour.cpp
+	src/controls/globals.cpp
+
+	src/camera/core.cpp
+	src/camera/globals.cpp
+
+	src/shader/core.cpp
+	src/shader/globals.cpp
+
+	src/utilities/math.cpp
+	src/utilities/strings.cpp
+
+	src/level.cpp
+	src/renderer.cpp
+	src/serialize.cpp
+	src/threadpool.cpp
+	src/texture.cpp
+	src/editor.cpp
+	src/assets.cpp
+	src/primitives.cpp
+	src/entities.cpp
+	src/game_behaviour.cpp
+	src/lightmapper.cpp
+	src/graphics.cpp
+	src/physics.cpp
+
+	src/main.cpp
+)
+
 add_executable (engine ${SOURCES})
-target_include_directories(engine PUBLIC ${JoltPhysics_SOURCE_DIR}/..)
 target_link_libraries(engine ${ALL_LIBS})
 
-# Copy data files, better to just simlink or copy manually
-#if(MSVC)
-#add_custom_target(copy-runtime-files ALL
-#    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/data ${CMAKE_BINARY_DIR}/${CMAKE_BUILD_TYPE}/data)
-#else()
-#add_custom_target(copy-runtime-files ALL
-#    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/data ${CMAKE_BINARY_DIR}/data)
-#endif()
 set_property(DIRECTORY PROPERTY VS_STARTUP_PROJECT "engine")
+set_target_properties(engine PROPERTIES VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 
 # Copy compile_commands.json
 if( EXISTS "${CMAKE_CURRENT_BINARY_DIR}/compile_commands.json" )

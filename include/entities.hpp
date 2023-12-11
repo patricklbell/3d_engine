@@ -1,5 +1,5 @@
-#ifndef ENTITIES_CORE_HPP
-#define ENTITIES_CORE_HPP
+#ifndef ENGINE_ENTITIES_CORE_HPP
+#define ENGINE_ENTITIES_CORE_HPP
 #include <cstddef>
 #include <stack>
 #include <iostream>
@@ -25,7 +25,7 @@ struct Id {
     constexpr bool operator==(const Id& other) const {
         return (i == other.i) && (v == other.v);
     }
-    Id(int _i, int _v) : i(_i), v(_v) {}
+    Id(uint64_t _i, uint16_t _v) : i(_i), v(_v) {}
     Id(uint64_t phys_id) : i(phys_id >> 16), v(phys_id & 0xffff) {}
     Id() : i(-1), v(-1) {}
 
@@ -35,13 +35,13 @@ struct Id {
 };
 
 enum EntityType : uint64_t {
-    ENTITY               = 0,
-    MESH_ENTITY          =  1 << 0,
-    WATER_ENTITY         =  1 << 1,
-    COLLIDER_ENTITY      = (1 << 2) | MESH_ENTITY,
-    POINT_LIGHT_ENTITY   =  1 << 3,
+    ENTITY = 0,
+    MESH_ENTITY = 1 << 0,
+    WATER_ENTITY = 1 << 1,
+    COLLIDER_ENTITY = (1 << 2) | MESH_ENTITY,
+    POINT_LIGHT_ENTITY = 1 << 3,
     ANIMATED_MESH_ENTITY = (1 << 4) | MESH_ENTITY,
-    PLAYER_ENTITY        = (1 << 5) | ANIMATED_MESH_ENTITY,
+    PLAYER_ENTITY = (1 << 5) | ANIMATED_MESH_ENTITY,
 };
 struct Entity {
     EntityType type = ENTITY;
@@ -80,7 +80,7 @@ struct PointLightEntity : Entity {
     glm::vec3 position = glm::vec3(0.0);
     glm::vec3 radiance = glm::vec3(1.0);
     float radius = 1.0;
-    
+
     PointLightEntity(Id _id = NULLID) : Entity(_id) {
         type = EntityType::POINT_LIGHT_ENTITY;
     }
@@ -327,7 +327,7 @@ struct EntityManager {
             if (e1.entities[i] != nullptr)
                 entities[i] = copyEntity(e1.entities[i]);
         }
-        memcpy(versions, e1.versions, sizeof(versions[0]) * ENTITY_COUNT);
+        std::memcpy(versions, e1.versions, sizeof(versions[0]) * ENTITY_COUNT);
         free_entity_stack = e1.free_entity_stack;
         delete_entity_stack = e1.delete_entity_stack;
         id_counter = e1.id_counter;
@@ -339,7 +339,7 @@ struct EntityManager {
             if (e1.entities[i] != nullptr)
                 entities[i] = copyEntity(e1.entities[i]);
         }
-        memcpy(versions, e1.versions, sizeof(versions[0]) * ENTITY_COUNT);
+        std::memcpy(versions, e1.versions, sizeof(versions[0]) * ENTITY_COUNT);
         free_entity_stack = e1.free_entity_stack;
         delete_entity_stack = e1.delete_entity_stack;
         id_counter = e1.id_counter;
@@ -363,8 +363,9 @@ struct EntityManager {
         id_counter = 0;
     }
     inline Entity* getEntity(Id id) const {
-        if (id.i < 0 || id.i > ENTITY_COUNT || id.v != versions[id.i]) return nullptr;
-        return entities[id.i];
+        if (id.i >= 0 && id.i < ENTITY_COUNT && id.v == versions[id.i])
+            return entities[id.i];
+        return nullptr;
     }
     void setEntity(uint64_t index, Entity* e) {
         entities[index] = e;
@@ -417,4 +418,4 @@ struct EntityManager {
 
 void tickEntities(EntityManager& entities, float dt, bool is_playing);
 
-#endif // ENTITIES_CORE_HPP
+#endif // ENGINE_ENTITIES_CORE_HPP

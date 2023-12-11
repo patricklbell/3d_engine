@@ -2,16 +2,8 @@
 #include <iostream>
 
 bool GlState::init() {
-#ifdef __APPLE__
     // GL 4.3 + GLSL 430
     glsl_version = "#version 430\n";
-#elif __linux__
-    // GL 4.3 + GLSL 430
-    glsl_version = "#version 430\n";
-#elif _WIN32
-    // GL 4.3 + GLSL 430
-    glsl_version = "#version 430\n";
-#endif
 
     version = std::string((char*)glGetString(GL_VERSION));
     vendor = std::string((char*)glGetString(GL_VENDOR));

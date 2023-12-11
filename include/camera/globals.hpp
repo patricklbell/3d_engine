@@ -1,5 +1,5 @@
-#ifndef CAMERA_GLOBALS_HPP
-#define CAMERA_GLOBALS_HPP
+#ifndef ENGINE_CAMERA_GLOBALS_HPP
+#define ENGINE_CAMERA_GLOBALS_HPP
 
 #include <camera/core.hpp>
 
@@ -8,4 +8,4 @@ namespace Cameras {
 	void update_cameras_for_level();
 };
 
-#endif // CAMERA_GLOBALS_HPP
+#endif // ENGINE_CAMERA_GLOBALS_HPP

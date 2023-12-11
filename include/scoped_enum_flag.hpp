@@ -1,5 +1,5 @@
-#ifndef SCOPED_ENUM_FLAGS
-#define SCOPED_ENUM_FLAGS
+#ifndef ENGINE_SCOPED_ENUM_FLAGS
+#define ENGINE_SCOPED_ENUM_FLAGS
 #include <type_traits>
 #include <cstdint>
 
@@ -93,4 +93,4 @@ inline typename std::underlying_type<T>::type enumc_to_int(T t)
 #define GET_SCOPED_ENUM_FLAG(_1,_2,NAME,...) NAME
 #define SCOPED_ENUM_FLAG(...) SCOPED_ENUM_ID(GET_SCOPED_ENUM_FLAG(__VA_ARGS__, SCOPED_ENUM_FLAG2, SCOPED_ENUM_FLAG1)(__VA_ARGS__))
 
-#endif // SCOPED_ENUM_FLAGS
+#endif // ENGINE_SCOPED_ENUM_FLAGS

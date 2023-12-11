@@ -332,7 +332,7 @@ void readMaterial(Material& mat, AssetManager& asset_manager, FILE* f) {
         fread(&type, sizeof(type), 1, f);
 
         const auto& size = Uniform::size(type);
-        void* data = malloc(size);
+        void* data = ::operator new(size);
         fread(data, size, 1, f);
 
         return std::move(Uniform(data, type));

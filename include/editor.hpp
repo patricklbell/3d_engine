@@ -1,5 +1,5 @@
-#ifndef EDITOR_HPP
-#define EDITOR_HPP
+#ifndef ENGINE_EDITOR_HPP
+#define ENGINE_EDITOR_HPP
 
 #include <string>
 #include <iostream>
@@ -42,23 +42,23 @@ struct InfoMessage {
 
 void pushInfoMessage(std::string contents, InfoMessage::Urgency urgency = InfoMessage::Urgency::NORMAL, float duration = 1.0, std::string id = "");
 
-void initEditorGui(AssetManager &asset_manager);
+void initEditorGui(AssetManager& asset_manager);
 
-void ImTerminal(EntityManager &entity_manager, AssetManager &asset_manager, bool is_active);
+void ImTerminal(EntityManager& entity_manager, AssetManager& asset_manager, bool is_active);
 
 void drawEditorGui(EntityManager& entity_manager, AssetManager& asset_manager);
 void drawGameGui(EntityManager& entity_manager, AssetManager& asset_manager);
 
-bool editorTranslationGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, Camera &camera, const glm::vec3 &snap, bool do_snap);
-bool editorRotationGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, const Camera &camera, float rot_snap, bool do_snap);
-bool editorScalingGizmo(glm::vec3 &pos, glm::quat &rot, glm::mat3 &scl, Camera &camera, const glm::vec3 &snap, bool do_snap);
+bool editorTranslationGizmo(glm::vec3& pos, glm::quat& rot, glm::mat3& scl, Camera& camera, const glm::vec3& snap, bool do_snap);
+bool editorRotationGizmo(glm::vec3& pos, glm::quat& rot, glm::mat3& scl, const Camera& camera, float rot_snap, bool do_snap);
+bool editorScalingGizmo(glm::vec3& pos, glm::quat& rot, glm::mat3& scl, Camera& camera, const glm::vec3& snap, bool do_snap);
 TransformType editTransform(Camera& camera, glm::vec3& pos, glm::quat& rot, glm::mat3& scl, TransformType type);
-void drawWaterDebug(WaterEntity* w, const Camera &camera, bool flash);
-void drawMeshCube(const glm::vec3 &pos, const glm::quat &rot, const glm::mat3x3 &scl, const Camera &camera);
+void drawWaterDebug(WaterEntity* w, const Camera& camera, bool flash);
+void drawMeshCube(const glm::vec3& pos, const glm::quat& rot, const glm::mat3x3& scl, const Camera& camera);
 void drawFrustrum(Camera& drawn_camera, const Camera& camera);
 void drawMeshWireframe(const Mesh& mesh, const glm::mat4& g_model_rot_scl, const glm::mat4& g_model_pos, const Camera& camera, bool flash, int submesh_i, bool cull);
-void drawEditor3DRing(const glm::vec3 &position, const glm::vec3 &direction, const Camera &camera, const glm::vec4 &color, const glm::vec3 &scale, bool shaded=true);
-void drawEditor3DArrow(const glm::vec3 &position, const glm::vec3 &direction, const Camera &camera, const glm::vec4 &color, const glm::vec3 &scale, bool shaded=true, bool block=false);
+void drawEditor3DRing(const glm::vec3& position, const glm::vec3& direction, const Camera& camera, const glm::vec4& color, const glm::vec3& scale, bool shaded = true);
+void drawEditor3DArrow(const glm::vec3& position, const glm::vec3& direction, const Camera& camera, const glm::vec4& color, const glm::vec3& scale, bool shaded = true, bool block = false);
 void drawColliders(const EntityManager& entity_manager, const Camera& camera);
 
 struct ReferenceSelection {
@@ -76,7 +76,7 @@ struct ReferenceSelection {
 struct CopySelection {
     // @note owns memory
     std::vector<Entity*> entities;
-    
+
     void free_clear();
     ~CopySelection();
 };
@@ -122,4 +122,4 @@ namespace Editor {
     extern CopySelection copy_selection;
 }
 
-#endif // EDITOR_HPP
+#endif // ENGINE_EDITOR_HPP

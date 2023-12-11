@@ -1,5 +1,5 @@
-#ifndef CONTROLS_GLOBALS_HPP
-#define CONTROLS_GLOBALS_HPP
+#ifndef ENGINE_CONTROLS_GLOBALS_HPP
+#define ENGINE_CONTROLS_GLOBALS_HPP
 
 #include <controls/core.hpp>
 #include <glm/glm.hpp>
@@ -16,4 +16,4 @@ namespace Controls {
 	void registerCallbacks();
 };
 
-#endif // CONTROLS_GLOBALS_HPP
+#endif // ENGINE_CONTROLS_GLOBALS_HPP

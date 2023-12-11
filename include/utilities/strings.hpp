@@ -1,5 +1,5 @@
-#ifndef UTILITIES_STRING_HPP
-#define UTILITIES_STRING_HPP
+#ifndef ENGINE_UTILITIES_STRING_HPP
+#define ENGINE_UTILITIES_STRING_HPP
 
 #include <string>
 #include <vector>
@@ -9,4 +9,4 @@ bool startsWith(std::string_view str, std::string_view prefix);
 bool endsWith(std::string_view str, std::string_view suffix);
 std::vector<std::string> split(std::string s, std::string delimiter);
 
-#endif // UTILITIES_STRING_HPP
+#endif // ENGINE_UTILITIES_STRING_HPP

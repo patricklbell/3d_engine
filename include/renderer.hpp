@@ -1,5 +1,5 @@
-#ifndef RENDERER_HPP
-#define RENDERER_HPP
+#ifndef ENGINE_RENDERER_HPP
+#define ENGINE_RENDERER_HPP
 
 #include <cstdint>
 #include <array>
@@ -23,9 +23,9 @@ enum class GlFlags : uint64_t {
 SCOPED_ENUM_FLAG(GlFlags);
 
 enum class GlBufferFlags : uint64_t {
-    READ        = 1 << 0,
-    WRITE       = 1 << 1,
-    READ_WRITE  = READ | WRITE,
+    READ = 1 << 0,
+    WRITE = 1 << 1,
+    READ_WRITE = READ | WRITE,
 };
 SCOPED_ENUM_FLAG(GlBufferFlags);
 
@@ -109,4 +109,4 @@ struct RenderQueue {
     WaterEntity* water = nullptr; // @todo Decouple entities from rendering
 };
 
-#endif // RENDERER_HPP
+#endif // ENGINE_RENDERER_HPP

@@ -1,19 +1,6 @@
-#if(MSVC AND NOT "${MSVC_VERSION}" LESS 1400)
-#	add_definitions( "/MP" )
-#endif()
-
-
-add_definitions(
-	-DTW_STATIC
-	-DTW_NO_LIB_PRAGMA
-	-DTW_NO_DIRECT3D
-	-DGLEW_STATIC
-	-D_CRT_SECURE_NO_WARNINGS
-)
-
 ### GLFW ###
 
-add_subdirectory (glfw-3.3.7)
+add_subdirectory(glfw-3.3.7)
 
 include_directories(
 	glfw-3.3.7/include/GLFW/
@@ -59,12 +46,13 @@ target_link_libraries(GLEW_210
 ### ASSIMP ###
 # AssImp already has a CMakeLists.txt so let's use theirs
 
+set(ASSIMP_BUILD_TESTS OFF)
+set(ASSIMP_INSTALL OFF)
+set(ASSIMP_NO_EXPORT ON)
 set(ASSIMP_BUILD_ALL_IMPORTERS_BY_DEFAULT OFF)
 set(ASSIMP_BUILD_GLTF_IMPORTER ON)
 set(ASSIMP_BUILD_OBJ_IMPORTER ON)
-set(ASSIMP_BUILD_FBX_IMPORTER ON)
-set(ASSIMP_BUILD_COLLADA_IMPORTER ON)
-add_subdirectory( assimp-5.1.5 )
+add_subdirectory(assimp-5.3.1)
 
 ### SoLoud ###
 cmake_policy(SET CMP0091 NEW)
@@ -131,7 +119,6 @@ set(SOLOUD_SOURCE
   soloud20200207/src/filter/soloud_waveshaperfilter.cpp
 )
 
-
 add_library(SOLOUD STATIC 
 	${SOLOUD_SOURCE}
 	${SOLOUD_INCLUDE}
@@ -146,16 +133,31 @@ if(UNIX)
 	add_compile_definitions(WITH_ALSA)
 endif()
 
-## Jolt
-include (FetchContent)
-
-set(INTERPROCEDURAL_OPTIMIZATION ON)
-
-FetchContent_Declare(
-  JoltPhysics
-  GIT_REPOSITORY "https://github.com/jrouwe/JoltPhysics"
-  GIT_TAG "v4.0.1"
-  SOURCE_SUBDIR "Build"
+## ImGui ##
+set(IMGUI_SOURCE
+	imgui/imgui_draw.cpp
+	imgui/imgui_impl_glfw.cpp
+	imgui/imgui_impl_opengl3.cpp
+	imgui/imgui_widgets.cpp
+	imgui/imgui_tables.cpp
+	imgui/imgui_stdlib.cpp
+	imgui/imgui.cpp
 )
-FetchContent_MakeAvailable(JoltPhysics)
-SET_INTERPROCEDURAL_OPTIMIZATION() # Enable link time optimization in Release and Distribution mode if requested and available
+
+add_library(ImGui STATIC 
+	${IMGUI_SOURCE}
+	${IMGUI_INCLUDE}
+)
+
+## XAtlas ##
+set(XATLAS_SOURCE
+	xatlas/xatlas.cpp
+)
+
+add_library(XAtlas STATIC 
+	${XATLAS_SOURCE}
+	${XATLAS_INCLUDE}
+)
+
+## Jolt ##
+add_subdirectory(JoltPhysics-4.0.1/Build)

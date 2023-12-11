@@ -1,5 +1,5 @@
-#ifndef GRAPHICS_HPP
-#define GRAPHICS_HPP
+#ifndef ENGINE_GRAPHICS_HPP
+#define ENGINE_GRAPHICS_HPP
 
 #include <cstdint>
 
@@ -18,10 +18,10 @@ extern int    window_width;
 extern int    window_height;
 extern bool   window_resized;
 
-void framebufferSizeCallback(GLFWwindow *window, int width, int height);
+void framebufferSizeCallback(GLFWwindow* window, int width, int height);
 void windowSizeCallback(GLFWwindow* window, int width, int height);
 
-void initGraphics(AssetManager &asset_manager);
+void initGraphics(AssetManager& asset_manager);
 void drawQuad();
 void drawCube();
 void drawLineCube();
@@ -43,7 +43,7 @@ void distanceTransformWaterFbo(WaterEntity* water);
 void clearFramebuffer();
 void bindHdr();
 
-void createRenderQueue(RenderQueue& q, const EntityManager& entity_manager, const bool lightmapping=false);
+void createRenderQueue(RenderQueue& q, const EntityManager& entity_manager, const bool lightmapping = false);
 void createLightQueue(LightQueue& q, const EntityManager& entity_manager);
 void addLightsToRenderQueue(RenderQueue& q, LightQueue& lights);
 void frustrumCullRenderQueue(RenderQueue& q, const Camera& camera);
@@ -56,9 +56,9 @@ void bindBackbuffer();
 void drawPost(const Camera& camera);
 
 void blurBloomFbo(double dt);
-void initBloomFbo(bool resize=false);
+void initBloomFbo(bool resize = false);
 
-void initHdrFbo(bool resize=false);
+void initHdrFbo(bool resize = false);
 
 void convoluteIrradianceFromCubemap(Texture* in_tex, Texture* out_tex, GLint format = GL_RGB);
 void convoluteSpecularFromCubemap(Texture* in_tex, Texture* out_tex, GLint format = GL_RGB);
@@ -94,10 +94,10 @@ namespace graphics {
 
     extern const std::string lights_macro;
 
-    extern Texture *water_noise, *water_normal1, *water_normal2, *water_foam;
+    extern Texture* water_noise, * water_normal1, * water_normal2, * water_foam;
 
     extern bool do_msaa;
     extern int MSAA_SAMPLES;
 }
 
-#endif // GRAPHICS_HPP
+#endif // ENGINE_GRAPHICS_HPP

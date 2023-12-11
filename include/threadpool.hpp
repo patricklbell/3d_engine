@@ -1,5 +1,5 @@
-#ifndef THREADPOOL_HPP
-#define THREADPOOL_HPP
+#ifndef ENGINE_THREADPOOL_HPP
+#define ENGINE_THREADPOOL_HPP
 
 #include <thread>
 #include <atomic>
@@ -23,4 +23,4 @@ struct ThreadPool {
     std::atomic<int> jobs_in_progress = 0;
 };
 
-#endif // THREADPOOL_HPP
+#endif // ENGINE_THREADPOOL_HPP

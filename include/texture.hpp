@@ -1,5 +1,5 @@
-#ifndef TEXTURE_HPP
-#define TEXTURE_HPP
+#ifndef ENGINE_TEXTURE_HPP
+#define ENGINE_TEXTURE_HPP
 
 #include <string>
 #include <vector>
@@ -31,10 +31,10 @@ enum class ImageChannels: int {
 
 struct ImageData {
 	unsigned char* data;
+    bool floating;
 	int x, y;
     ImageChannels n;
     ImageChannels available_n; // How many channels were available
-    bool floating;
 };
 
 ImageChannels getChannelsForFormat(GLenum format);
@@ -48,4 +48,4 @@ GLuint loadImage(std::string_view imagepath, glm::ivec2& resolution, GLenum &for
 GLuint loadCubemap(const std::array<std::string, FACE_NUM_FACES> &paths, glm::ivec2& resolution, 
                    const GLenum format=GL_RGBA, const GLint wrap = GL_REPEAT, bool floating = false, bool trilinear = true);
 
-#endif
+#endif // ENGINE_TEXTURE_HPP

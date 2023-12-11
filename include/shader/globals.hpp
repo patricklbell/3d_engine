@@ -1,5 +1,5 @@
-#ifndef SHADER_GLOBALS_HPP
-#define SHADER_GLOBALS_HPP
+#ifndef ENGINE_SHADER_GLOBALS_HPP
+#define ENGINE_SHADER_GLOBALS_HPP
 
 #include <shader/core.hpp>
 
@@ -33,4 +33,4 @@ namespace Shaders {
 	bool live_update();
 };
 
-#endif
+#endif // ENGINE_SHADER_GLOBALS_HPP

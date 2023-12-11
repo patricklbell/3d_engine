@@ -47,7 +47,7 @@ SoLoud::Soloud soloud;
 float true_time_warp = 1.0, physics_time_warp = 1.0;
 bool true_time_pause = false;
 
-int cleanup();
+bool cleanup();
 bool initialize_glfw();
 bool initialize_sound();
 EntityManager* get_active_entities();
@@ -263,7 +263,7 @@ int main() {
 }
 
 
-int cleanup() {
+bool cleanup() {
     // cleanup physics
     cleanupPhysics();
 
@@ -277,7 +277,7 @@ int cleanup() {
 
     // Close OpenGL window and terminate GLFW
     glfwTerminate();
-    return 1;
+    return true;
 }
 
 bool initialize_glfw() {
@@ -285,7 +285,6 @@ bool initialize_glfw() {
     if (!glfwInit())
     {
         std::cerr << "Failed to initialize GLFW\n";
-        getchar();
         return false;
     }
 

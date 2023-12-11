@@ -1,7 +1,8 @@
-#ifndef PHYSICS_HPP
-#define PHYSICS_HPP
+#ifndef ENGINE_PHYSICS_HPP
+#define ENGINE_PHYSICS_HPP
 
 #include <Jolt/Jolt.h>
+#include <Jolt/RegisterTypes.h>
 #include <Jolt/Core/TempAllocator.h>
 #include <Jolt/Core/JobSystemThreadPool.h>
 #include <Jolt/Physics/PhysicsSystem.h>
@@ -30,7 +31,7 @@ namespace physics {
     {
         static constexpr JPH::BroadPhaseLayer NON_MOVING(0);
         static constexpr JPH::BroadPhaseLayer MOVING(1);
-        static constexpr uint16_t NUM_LAYERS(2);
+        static constexpr JPH::uint NUM_LAYERS(2);
     };
 
 
@@ -65,12 +66,12 @@ namespace physics {
             mObjectToBroadPhase[Layers::MOVING] = BroadPhaseLayers::MOVING;
         }
 
-        virtual uint					GetNumBroadPhaseLayers() const override
+        virtual JPH::uint				GetNumBroadPhaseLayers() const override
         {
             return BroadPhaseLayers::NUM_LAYERS;
         }
 
-        virtual JPH::BroadPhaseLayer			GetBroadPhaseLayer(JPH::ObjectLayer inLayer) const override
+        virtual JPH::BroadPhaseLayer	GetBroadPhaseLayer(JPH::ObjectLayer inLayer) const override
         {
             JPH_ASSERT(inLayer < Layers::NUM_LAYERS);
             return mObjectToBroadPhase[inLayer];
@@ -123,4 +124,4 @@ namespace physics {
 void initPhysics();
 void cleanupPhysics();
 
-#endif // PHYSICS_HPP
+#endif // ENGINE_PHYSICS_HPP

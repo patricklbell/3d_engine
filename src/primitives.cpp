@@ -7,7 +7,7 @@
 
 #include "primitives.hpp"
 
-void createTessellatedGridMesh(Mesh* g, glm::ivec2 tiles) {
+void createTessellatedGridMesh(Mesh* g, glm::uvec2 tiles) {
     Mesh w;
     g->num_vertices = tiles.x * tiles.y * 6;
     g->attributes = Mesh::Attributes::VERTICES | Mesh::Attributes::UVS;
@@ -17,10 +17,10 @@ void createTessellatedGridMesh(Mesh* g, glm::ivec2 tiles) {
     glm::vec3 off(tiles.x*0.5, 0.0, tiles.y*0.5);
     auto size = 1.0f / glm::vec2(tiles);
     int i = 0;
-    for (float x = 0; x < tiles.x; x++) {
-        for (float z = 0; z < tiles.y; z++) {
-            auto bl = glm::vec2(x, z);
-            auto tr = glm::vec2(x, z) + glm::vec2(1);
+    for (int x = 0; x < tiles.x; x++) {
+        for (int z = 0; z < tiles.y; z++) {
+            auto bl = glm::fvec2(x, z);
+            auto tr = glm::fvec2(x, z) + glm::vec2(1);
 
             // Bottom left triangle
             g->vertices[i] = glm::vec3(bl.x, 0.0, bl.y) - off;
@@ -135,7 +135,7 @@ void createCubeMesh(Mesh* c) {
     c->num_vertices = sizeof(vertices) / (3 * sizeof(*vertices));
     c->attributes = Mesh::Attributes::VERTICES;
     c->vertices = reinterpret_cast<decltype(c->vertices)>(malloc(sizeof(*c->vertices) * c->num_vertices));
-    for (int i = 0; i < c->num_vertices; i++) {
+    for (uint64_t i = 0; i < c->num_vertices; i++) {
         c->vertices[i] = glm::vec3(vertices[3 * i], vertices[3 * i + 1], vertices[3 * i + 2]);
     }
 
@@ -180,7 +180,7 @@ void createLineCubeMesh(Mesh* c) {
     c->num_vertices = sizeof(vertices) / (3 * sizeof(*vertices));
     c->attributes = Mesh::Attributes::VERTICES;
     c->vertices = reinterpret_cast<decltype(c->vertices)>(malloc(sizeof(*c->vertices) * c->num_vertices));
-    for (int i = 0; i < c->num_vertices; i++) {
+    for (uint64_t i = 0; i < c->num_vertices; i++) {
         c->vertices[i] = glm::vec3(vertices[3 * i], vertices[3 * i + 1], vertices[3 * i + 2]);
     }
 

@@ -1,10 +1,5 @@
-#ifndef GLOBALS_H
-#define GLOBALS_H
-
-// disable Windows.h min max macros
-#ifdef _WINDOWS
-#define NOMINMAX 
-#endif
+#ifndef ENGINE_GLOBALS_HPP
+#define ENGINE_GLOBALS_HPP
 
 #include <soloud.h>
 #include <soloud_thread.h>
@@ -38,4 +33,4 @@ extern ThreadPool *global_thread_pool;
 
 extern SoLoud::Soloud soloud;
 
-#endif
+#endif // ENGINE_GLOBALS_HPP
